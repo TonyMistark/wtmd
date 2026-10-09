@@ -31,6 +31,8 @@ final class DocumentStore: ObservableObject {
     @Published var previewJump: JumpRequest?
     /// 待插入编辑器的图片引用（EditorTextView 消费后置 nil）。
     @Published var pendingImageInsert: String?
+    /// 当前文档统计（字数/词数/阅读时长）。
+    @Published var statistics = TextStatistics(characters: 0, words: 0, readingMinutes: 0)
     /// 强制预览整体重载的代数（打开新文件时递增，重置滚动位置）。
     @Published var renderGeneration = 0
 
@@ -151,6 +153,7 @@ final class DocumentStore: ObservableObject {
         let result = WTMarkdown.render(text)
         outline = result.outline
         previewHTML = result.html
+        statistics = TextStatistics.count(text)
     }
 
     private func scheduleRender() {

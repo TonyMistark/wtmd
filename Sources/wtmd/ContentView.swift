@@ -144,6 +144,29 @@ struct ContentView: View {
             // 相遇的瞬间：思绪与成文切换时的轻柔过渡
             .animation(.easeInOut(duration: 0.18), value: store.mode)
             .transition(.opacity)
+            .safeAreaInset(edge: .bottom) { statusBar }
+        }
+    }
+
+    /// 状态栏：字数 / 词数 / 阅读时长 —— 写作者的距离感。
+    private var statusBar: some View {
+        HStack(spacing: 14) {
+            Text("\(store.statistics.characters) 字")
+            Text("\(store.statistics.words) 词")
+            if store.statistics.readingMinutes > 0 {
+                Text("约 \(store.statistics.readingMinutes) 分钟读完")
+            }
+            Spacer()
+            Text(store.fileURL?.lastPathComponent ?? "草稿")
+                .foregroundStyle(.tertiary)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 5)
+        .background(.bar)
+        .overlay(alignment: .top) {
+            Divider()
         }
     }
 
