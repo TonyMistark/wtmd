@@ -13,12 +13,16 @@ concurrency:
 
 jobs:
   test:
-    name: Build & Test (macOS ${{ matrix.macOS }})
+    name: Build & Test (macOS ${{ matrix.pretty }})
     runs-on: ${{ matrix.macOS }}
     strategy:
       fail-fast: false
       matrix:
-        macOS: [macos-15, macos-26]
+        include:
+          - macOS: macos-15
+            pretty: "15"
+          - macOS: macos-26
+            pretty: "26"
 
     steps:
       - name: Checkout
