@@ -14,11 +14,56 @@ public struct MarkdownParser: Sendable {
         _ source: String,
         onHeading: ((Int, String, Int) -> Void)? = nil
     ) -> [Block] {
+        var noFootnotes: [Footnote]? = nil
+        return parse(source, onHeading: onHeading, footnotes: &noFootnotes)
+    }
+
+    /// 带脚注收集的解析（渲染入口使用）。
+    func parse(
+        _ source: String,
+        onHeading: ((Int, String, Int) -> Void)?,
+        footnotes: inout [Footnote]?
+    ) -> [Block] {
         let normalized = source
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
-        let lines = normalized.components(separatedBy: "\n")
+        var lines = normalized.components(separatedBy: "\n")
+        // 预扫描：剥离脚注定义行（允许任意位置），收集到 footnotes
+        if footnotes != nil {
+            var defs: [Footnote] = []
+            var kept: [String] = []
+            for line in lines {
+                if let fn = Self.footnoteDefinition(line) {
+                    defs.append(fn)
+                } else {
+                    kept.append(line)
+                }
+            }
+            footnotes = defs
+            lines = kept
+        }
         return parseLines(lines, topLevel: true, onHeading: onHeading)
+    }
+
+    /// 匹配 `    [^id]: 内容` 形式的脚注定义行（缩进 ≤3 空格）。
+    static func footnoteDefinition(_ line: String) -> Footnote? {
+        var indent = 0
+        var view = line[...]
+        while let first = view.first, first == " " || first == "\t" {
+            indent += first == "\t" ? 4 : 1
+            view = view.dropFirst()
+            if indent > 3 { return nil }
+        }
+        guard view.hasPrefix("[^") else { return nil }
+        let afterMarker = view.dropFirst(2)
+        guard let close = afterMarker.firstIndex(of: "]") else { return nil }
+        let id = String(afterMarker[..<close])
+        guard !id.isEmpty, !id.contains(" ") else { return nil }
+        let rest = afterMarker[afterMarker.index(after: close)...]
+        guard rest.hasPrefix(":") else { return nil }
+        let content = String(rest.dropFirst()).trimmingCharacters(in: .whitespaces)
+        guard !content.isEmpty else { return nil }
+        return Footnote(id: id, text: content)
     }
 
     // MARK: - 块级解析

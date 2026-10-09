@@ -11,8 +11,36 @@ public final class HTMLRenderer {
     public init() {}
 
     public func render(_ blocks: [Block]) -> String {
-        renderBlocks(blocks, depth: 0)
+        render(blocks, footnotes: [])
     }
+
+    /// 带脚注的渲染：正文 `[^id]` 替换为上标链接，文末输出脚注区块。
+    public func render(_ blocks: [Block], footnotes: [Footnote]) -> String {
+        // 先收集正文引用顺序（renderInline 会在遍历中登记）
+        footnoteOrder = []
+        let body = renderBlocks(blocks, depth: 0)
+
+        guard !footnoteOrder.isEmpty else { return body }
+
+        let byID = Dictionary(uniqueKeysWithValues: footnotes.map { ($0.id, $0.text) })
+        // 只渲染有定义的引用；悬空引用（无定义）不进区块
+        let definedOrder = footnoteOrder.filter { byID[$0] != nil }
+        guard !definedOrder.isEmpty else { return body }
+
+        var section = "\n<section class=\"footnotes\" data-wtmd-footnotes>\n<ol>\n"
+        for (num, id) in definedOrder.enumerated() {
+            let n = num + 1
+            let text = byID[id] ?? ""
+            let safeID = escapeAttr(id)
+            section += "<li id=\"fn-\(n)\" data-fn-id=\"\(safeID)\">\(renderInline(text))"
+            section += " <a href=\"#fnref-\(n)\" class=\"footnote-backref\" aria-label=\"回到正文\">↩</a></li>\n"
+        }
+        section += "</ol>\n</section>\n"
+        return body + section
+    }
+
+    /// 正文引用出现顺序（渲染过程中登记）。
+    private var footnoteOrder: [String] = []
 
     // MARK: - 块级
 
@@ -118,6 +146,14 @@ public final class HTMLRenderer {
                 code = String(code.dropFirst().dropLast())
             }
             return protect("<code>\(code)</code>")
+        }
+
+        // 脚注引用 [^id]（在图片/链接之前，登记出现顺序）
+        t = replace(t, pattern: "\\[\\^([^\\]\\s]+)\\]") { m in
+            let id = substring(of: t, m.range(at: 1))
+            if !footnoteOrder.contains(id) { footnoteOrder.append(id) }
+            let n = footnoteOrder.firstIndex(of: id)! + 1
+            return protect("<sup id=\"fnref-\(n)\" class=\"footnote-ref\"><a href=\"#fn-\(n)\" data-footnote-id=\"\(escapeAttr(id))\">\(n)</a></sup>")
         }
 
         // 图片

@@ -101,6 +101,20 @@ enum StyleSheet {
       border-top: 1px solid var(--border);
       margin: 2em 0;
     }
+    .footnotes {
+      margin-top: 2.5em;
+      padding-top: 1.2em;
+      border-top: 1px solid var(--border);
+      font-size: 0.9em;
+      color: var(--secondary);
+    }
+    .footnotes ol { padding-left: 1.6em; }
+    sup.footnote-ref a {
+      text-decoration: none;
+      font-size: 0.8em;
+      padding: 0 0.15em;
+    }
+    .footnote-backref { text-decoration: none; }
     ::selection { background: color-mix(in srgb, var(--accent) 25%, transparent); }
     @media print {
       body { padding: 0; max-width: none; }
