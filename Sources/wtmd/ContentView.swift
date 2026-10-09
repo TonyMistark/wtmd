@@ -107,7 +107,12 @@ struct ContentView: View {
                             get: { store.cursorLine },
                             set: { store.cursorLine = $0 }
                         ),
-                        jump: store.editorJump
+                        pendingImageInsert: Binding(
+                            get: { store.pendingImageInsert },
+                            set: { store.pendingImageInsert = $0 }
+                        ),
+                        jump: store.editorJump,
+                        onImagePaste: { store.handleImagePaste($0) }
                     )
                     .overlay(alignment: .topLeading) {
                         if store.text.isEmpty {

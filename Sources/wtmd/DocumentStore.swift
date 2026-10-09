@@ -29,6 +29,8 @@ final class DocumentStore: ObservableObject {
     @Published var sidebarVisible = true
     @Published var editorJump: JumpRequest?
     @Published var previewJump: JumpRequest?
+    /// 待插入编辑器的图片引用（EditorTextView 消费后置 nil）。
+    @Published var pendingImageInsert: String?
     /// 强制预览整体重载的代数（打开新文件时递增，重置滚动位置）。
     @Published var renderGeneration = 0
 
@@ -129,6 +131,18 @@ final class DocumentStore: ObservableObject {
             previewJump = request
         }
         currentSlug = item.slug
+    }
+
+    // MARK: - 图片粘贴落地
+
+    /// 编辑器粘贴回调：图片数据 → assets/ 文件 → 待插入引用。
+    /// 返回 true 表示已处理（编辑器跳过默认粘贴）。
+    func handleImagePaste(_ pngData: Data) -> Bool {
+        guard let saved = ImageAssets.save(pngData: pngData, documentURL: fileURL) else {
+            return false // 用户取消选目录 → 不拦截，继续默认粘贴
+        }
+        pendingImageInsert = saved.relativePath
+        return true
     }
 
     // MARK: - 渲染

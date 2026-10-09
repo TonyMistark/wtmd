@@ -5,7 +5,11 @@ import SwiftUI
 struct EditorTextView: NSViewRepresentable {
     @Binding var text: String
     @Binding var cursorLine: Int
+    /// 待插入的图片引用（由 DocumentStore 生成，插入后清空）。
+    @Binding var pendingImageInsert: String?
     var jump: JumpRequest?
+    /// 图片粘贴落地回调：返回 true 表示已处理。
+    var onImagePaste: ((Data) -> Bool)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -31,6 +35,14 @@ struct EditorTextView: NSViewRepresentable {
             coordinator.lastJumpID = jump.id
             coordinator.jump(toLine: jump.line)
         }
+
+        if let insert = pendingImageInsert, insert != coordinator.lastInsertedImage {
+            coordinator.lastInsertedImage = insert
+            DispatchQueue.main.async { [self] in
+                pendingImageInsert = nil
+            }
+            coordinator.insertAtCursor("![\(insert)](\(insert))")
+        }
     }
 
     // MARK: - Coordinator
@@ -41,12 +53,13 @@ struct EditorTextView: NSViewRepresentable {
         let textView: NSTextView
         var isEditing = false
         var lastJumpID = ""
+        var lastInsertedImage = ""
         private var lineStarts: [Int] = []
 
         init(_ parent: EditorTextView) {
             self.parent = parent
 
-            let textView = NSTextView()
+            let textView = EditorTextPasteView()
             textView.isRichText = false
             textView.allowsUndo = true
             textView.usesFindBar = true
@@ -85,6 +98,9 @@ struct EditorTextView: NSViewRepresentable {
 
             super.init()
             textView.delegate = self
+            textView.onPasteInterceptor = { [weak self] in
+                self?.handleImagePasteIfNeeded() ?? false
+            }
             EditorTextView.highlight(textView)
             rebuildLineStarts()
         }
@@ -100,6 +116,34 @@ struct EditorTextView: NSViewRepresentable {
             EditorTextView.highlight(textView)
             rebuildLineStarts()
             isEditing = false
+        }
+
+        /// 粘贴拦截：粘贴板含图片数据时走落地管线，跳过默认粘贴。
+        func textView(
+            _ textView: NSTextView,
+            doCommandBy commandSelector: Selector
+        ) -> Bool { false }
+
+        /// 光标处插入文本（用于图片引用）。
+        func insertAtCursor(_ snippet: String) {
+            let range = textView.selectedRange()
+            textView.insertText(snippet, replacementRange: range)
+            isEditing = true
+            parent.text = textView.string
+            EditorTextView.highlight(textView)
+            rebuildLineStarts()
+            isEditing = false
+        }
+
+        // MARK: 粘贴拦截
+
+        /// 返回 true 表示本次粘贴已完全处理（图片落地 + 插入引用）。
+        func handleImagePasteIfNeeded() -> Bool {
+            guard let onPaste = parent.onImagePaste else { return false }
+            guard let png = ImageAssets.imagePNGData(from: NSPasteboard.general) else {
+                return false
+            }
+            return onPaste(png)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -134,6 +178,18 @@ struct EditorTextView: NSViewRepresentable {
                 idx = i + 1
             }
             lineStarts = starts
+        }
+    }
+
+    // MARK: - 粘贴拦截子类
+
+    /// 覆写 paste：粘贴板有图片数据时交给落地管线，否则走系统默认。
+    final class EditorTextPasteView: NSTextView {
+        var onPasteInterceptor: (() -> Bool)?
+
+        override func paste(_ sender: Any?) {
+            if onPasteInterceptor?() == true { return }
+            super.paste(sender)
         }
     }
 
