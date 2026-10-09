@@ -5,6 +5,7 @@ import WebKit
 struct PreviewView: NSViewRepresentable {
     @Binding var html: String
     @Binding var currentSlug: String?
+    var themeCSS: String
     var jump: JumpRequest?
     var generation: Int
     var documentTitle: String
@@ -27,6 +28,7 @@ struct PreviewView: NSViewRepresentable {
         if generation != coordinator.lastGeneration {
             coordinator.lastGeneration = generation
             coordinator.lastHTML = html
+            coordinator.lastThemeCSS = themeCSS
             coordinator.reload()
             return
         }
@@ -35,6 +37,12 @@ struct PreviewView: NSViewRepresentable {
             coordinator.lastHTML = html
             let json = encodeJS(html)
             coordinator.webView.evaluateJavaScript("__wtmdUpdate(\(json))")
+        }
+
+        // 主题热切换：只替换变量层，正文 DOM 与滚动位置不动
+        if themeCSS != coordinator.lastThemeCSS {
+            coordinator.lastThemeCSS = themeCSS
+            coordinator.applyTheme(themeCSS)
         }
 
         if let jump, jump.id != coordinator.lastJumpID {
@@ -60,8 +68,11 @@ struct PreviewView: NSViewRepresentable {
         var parent: PreviewView
         let webView: WKWebView
         var lastHTML = ""
+        var lastThemeCSS = ""
         var lastGeneration = -1
         var lastJumpID = ""
+        /// 文档未加载完时暂存的主题，didFinish 后补发。
+        private var pendingThemeCSS: String?
 
         init(_ parent: PreviewView) {
             self.parent = parent
@@ -69,7 +80,7 @@ struct PreviewView: NSViewRepresentable {
             let config = WKWebViewConfiguration()
             let userContent = config.userContentController
             let script = WKUserScript(
-                source: Theme.script,
+                source: StyleSheet.script,
                 injectionTime: .atDocumentEnd,
                 forMainFrameOnly: true
             )
@@ -85,12 +96,34 @@ struct PreviewView: NSViewRepresentable {
         }
 
         func reload() {
-            let html = Theme.fullDocument(
+            let html = StyleSheet.fullDocument(
                 title: parent.documentTitle,
                 body: parent.html,
+                themeCSS: parent.themeCSS,
                 includeScript: true
             )
             webView.loadHTMLString(html, baseURL: parent.baseURL)
+        }
+
+        /// 应用主题：加载中则入队，否则立即注入。
+        func applyTheme(_ css: String) {
+            guard !webView.isLoading else {
+                pendingThemeCSS = css
+                return
+            }
+            let json = PreviewView.encodeJSStatic(css)
+            webView.evaluateJavaScript("__wtmdSetTheme(\(json))")
+        }
+
+        nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let pending = self.pendingThemeCSS {
+                    self.pendingThemeCSS = nil
+                    let json = PreviewView.encodeJSStatic(pending)
+                    self.webView.evaluateJavaScript("__wtmdSetTheme(\(json))")
+                }
+            }
         }
 
         // MARK: WKScriptMessageHandler
@@ -107,5 +140,12 @@ struct PreviewView: NSViewRepresentable {
                 self?.parent.currentSlug = slug
             }
         }
+    }
+
+    private static func encodeJSStatic(_ s: String) -> String {
+        guard let data = try? JSONEncoder().encode([s]),
+              let json = String(data: data, encoding: .utf8)
+        else { return "\"\"" }
+        return String(json.dropFirst().dropLast())
     }
 }

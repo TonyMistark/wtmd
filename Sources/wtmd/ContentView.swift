@@ -3,6 +3,7 @@ import WTMarkdownKit
 
 struct ContentView: View {
     @EnvironmentObject var store: DocumentStore
+    @EnvironmentObject var themeManager: ThemeManager
 
     var body: some View {
         NavigationSplitView(
@@ -125,6 +126,7 @@ struct ContentView: View {
                             get: { store.currentSlug },
                             set: { store.currentSlug = $0 }
                         ),
+                        themeCSS: themeManager.currentThemeCSS,
                         jump: store.previewJump,
                         generation: store.renderGeneration,
                         documentTitle: store.displayName,
@@ -161,6 +163,27 @@ struct ContentView: View {
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
+            // 主题：成文的外观（源码模式高亮仍走系统语义色，不受主题影响）
+            Menu {
+                ForEach(themeManager.themes) { theme in
+                    Button {
+                        themeManager.select(theme.id)
+                    } label: {
+                        if theme.id == themeManager.currentThemeID {
+                            Label(theme.name, systemImage: "checkmark")
+                        } else {
+                            Text(theme.name)
+                        }
+                    }
+                }
+                Divider()
+                Button("打开主题文件夹…") { themeManager.openThemesFolder() }
+                Button("重新扫描主题") { themeManager.reload() }
+            } label: {
+                Label("主题", systemImage: "paintpalette")
+            }
+            .help("选择成文主题（拖入 .wttheme 文件夹到主题目录即安装）")
+
             Button {
                 store.sidebarVisible.toggle()
             } label: {

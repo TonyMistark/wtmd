@@ -1,38 +1,9 @@
 import Foundation
 
-/// 预览主题与完整 HTML 文档构建。
-enum Theme {
-    static let css = """
-    :root {
-      --bg: #ffffff;
-      --fg: #1f2328;
-      --secondary: #59636e;
-      --border: #d1d9e0;
-      --accent: #0969da;
-      --link: #0969da;
-      --code-bg: #f0f2f5;
-      --pre-bg: #f6f8fa;
-      --pre-border: #e4e8ec;
-      --th-bg: #f6f8fa;
-      --quote-bar: #d1d9e0;
-      --quote-fg: #59636e;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #1e2126;
-        --fg: #e2e6eb;
-        --secondary: #9aa4af;
-        --border: #3d444d;
-        --accent: #6cb2ff;
-        --link: #6cb2ff;
-        --code-bg: #2b2f36;
-        --pre-bg: #25282e;
-        --pre-border: #33373d;
-        --th-bg: #25282e;
-        --quote-bar: #3d444d;
-        --quote-fg: #9aa4af;
-      }
-    }
+/// 排版基础层：字体栈、间距、元素规则——不含任何颜色/主题变量取值。
+/// 颜色与字体由主题变量层（`<style id="wtmd-theme">`）提供。
+enum StyleSheet {
+    static let baseCSS = """
     * { box-sizing: border-box; }
     html { -webkit-text-size-adjust: 100%; }
     body {
@@ -40,7 +11,7 @@ enum Theme {
       padding: 48px 32px 96px;
       background: var(--bg);
       color: var(--fg);
-      font-family: -apple-system, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      font-family: var(--font-body);
       font-size: 16px;
       line-height: 1.75;
       -webkit-font-smoothing: antialiased;
@@ -50,6 +21,7 @@ enum Theme {
       margin: 0 auto;
     }
     h1, h2, h3, h4, h5, h6 {
+      font-family: var(--font-heading, var(--font-body));
       font-weight: 650;
       line-height: 1.3;
       margin: 1.6em 0 0.7em;
@@ -66,7 +38,7 @@ enum Theme {
     a:hover { text-decoration: underline; }
     strong { font-weight: 650; }
     code, pre, kbd, samp {
-      font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+      font-family: var(--font-mono);
     }
     code {
       background: var(--code-bg);
@@ -142,6 +114,10 @@ enum Theme {
     function __wtmdUpdate(bodyHTML) {
       document.getElementById('wtmd-content').innerHTML = bodyHTML;
     }
+    function __wtmdSetTheme(cssText) {
+      var el = document.getElementById('wtmd-theme');
+      if (el) { el.textContent = cssText; }
+    }
     (function () {
       var timer = null;
       window.addEventListener('scroll', function () {
@@ -163,7 +139,34 @@ enum Theme {
     })();
     """
 
-    static func fullDocument(title: String, body: String, includeScript: Bool) -> String {
+    /// 将明/暗两份变量文本拼为合法主题样式表。
+    /// - 两者皆有：浅色进 `:root`，深色进 `prefers-color-scheme: dark`
+    /// - 仅一份：直接进 `:root`（常亮）
+    /// - 皆无：返回 nil（非法主题）
+    static func cssText(light: String?, dark: String?) -> String? {
+        let l = light?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let d = dark?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasL = !(l?.isEmpty ?? true)
+        let hasD = !(d?.isEmpty ?? true)
+        switch (hasL, hasD) {
+        case (false, false):
+            return nil
+        case (true, false):
+            return ":root {\n\(l!)\n}\n"
+        case (false, true):
+            return ":root {\n\(d!)\n}\n"
+        case (true, true):
+            return ":root {\n\(l!)\n}\n@media (prefers-color-scheme: dark) {\n  :root {\n\(d!)\n  }\n}\n"
+        }
+    }
+
+    /// 完整预览文档：排版骨架 + 主题变量层 + 正文（+ 可选交互脚本）。
+    static func fullDocument(
+        title: String,
+        body: String,
+        themeCSS: String,
+        includeScript: Bool
+    ) -> String {
         let scriptTag = includeScript ? "<script>\n\(script)\n</script>\n" : ""
         return """
         <!DOCTYPE html>
@@ -172,7 +175,8 @@ enum Theme {
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>\(title)</title>
-        <style>\(css)</style>
+        <style id="wtmd-base">\(baseCSS)</style>
+        <style id="wtmd-theme">\(themeCSS)</style>
         \(scriptTag)</head>
         <body>
         <div id="wtmd-content">

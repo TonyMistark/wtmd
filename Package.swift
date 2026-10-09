@@ -21,5 +21,10 @@ let package = Package(
             dependencies: ["WTMarkdownKit"],
             path: "Tests/WTMarkdownKitTests"
         ),
+        .testTarget(
+            name: "wtmdTests",
+            dependencies: ["wtmd", "WTMarkdownKit"],
+            path: "Tests/wtmdTests"
+        ),
     ]
 )

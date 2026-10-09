@@ -33,6 +33,7 @@ final class DocumentStore: ObservableObject {
     @Published var renderGeneration = 0
 
     let recentFiles = RecentFiles()
+    let themeManager = ThemeManager()
 
     private var savedSnapshot: String = ""
     private var renderTask: Task<Void, Never>?
@@ -203,30 +204,43 @@ final class DocumentStore: ObservableObject {
 
     // MARK: - 导出
 
+    /// 导出 HTML：独立文件，排版骨架 + 主题变量层全部内联。
     func exportHTML() {
         let result = WTMarkdown.render(text)
-        let html = Theme.fullDocument(
-            title: fileURL?.deletingPathExtension().lastPathComponent ?? "wtmd",
-            body: result.html,
-            includeScript: false
-        )
+
         let panel = NSSavePanel()
         panel.nameFieldStringValue = displayName.replacingOccurrences(of: "\\.md$", with: "", options: .regularExpression) + ".html"
         panel.allowedContentTypes = [.html]
-        if panel.runModal() == .OK, let url = panel.url {
-            do {
-                try html.write(to: url, atomically: true, encoding: .utf8)
-            } catch {
-                NSAlert(error: error).runModal()
-            }
+
+        // 附件选项：使用当前主题（不勾则导出默认主题）
+        let useCurrent = NSButton(checkboxWithTitle: "使用当前主题样式", target: nil, action: nil)
+        useCurrent.state = .on
+        useCurrent.controlSize = .small
+        panel.accessoryView = useCurrent
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let themeCSS = useCurrent.state == .on
+            ? themeManager.currentThemeCSS
+            : StyleSheet.cssText(light: Theme.defaultLight, dark: Theme.defaultDark)!
+        let html = StyleSheet.fullDocument(
+            title: fileURL?.deletingPathExtension().lastPathComponent ?? "wtmd",
+            body: result.html,
+            themeCSS: themeCSS,
+            includeScript: false
+        )
+        do {
+            try html.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            NSAlert(error: error).runModal()
         }
     }
 
     func exportPDF() {
         let result = WTMarkdown.render(text)
-        let html = Theme.fullDocument(
+        let html = StyleSheet.fullDocument(
             title: fileURL?.deletingPathExtension().lastPathComponent ?? "wtmd",
             body: result.html,
+            themeCSS: themeManager.currentThemeCSS,
             includeScript: false
         )
         PrintController.print(html: html, baseURL: fileURL?.deletingLastPathComponent())

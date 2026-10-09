@@ -8,7 +8,12 @@ struct wtmdApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(store)
+                .environmentObject(store.themeManager)
                 .frame(minWidth: 760, minHeight: 500)
+        }
+        Settings {
+            ThemeSettingsView()
+                .environmentObject(store.themeManager)
         }
         .commands {
             CommandGroup(replacing: .newItem) {
