@@ -2,15 +2,16 @@ import Foundation
 
 /// WTMarkdownKit 对外 API：一次渲染，同时产出 HTML 与大纲。
 public enum WTMarkdown: Sendable {
-    /// 渲染 Markdown → HTML 正文 + 大纲。
+    /// 渲染 Markdown → HTML 正文（含脚注区块）+ 大纲。
     public static func render(_ markdown: String) -> RenderResult {
         var headings: [(level: Int, text: String, line: Int)] = []
         let parser = MarkdownParser()
-        let blocks = parser.parse(markdown) { level, text, line in
+        var footnotes: [Footnote]? = []
+        let blocks = parser.parse(markdown, onHeading: { level, text, line in
             headings.append((level, text, line))
-        }
+        }, footnotes: &footnotes)
         let renderer = HTMLRenderer()
-        let html = renderer.render(blocks)
+        let html = renderer.render(blocks, footnotes: footnotes ?? [])
 
         let anchors = renderer.headingAnchors
         var outline: [OutlineItem] = []

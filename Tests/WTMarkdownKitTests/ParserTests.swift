@@ -149,3 +149,67 @@ import Testing
     let r = WTMarkdown.render("## [标题链接](https://a.b) 与 `代码`")
     #expect(r.outline.first?.text == "标题链接 与 代码")
 }
+
+// MARK: - 脚注
+
+@Test func footnoteBasic() {
+    let r = WTMarkdown.render("""
+    正文中有一个引用[^1]，以及另一个[^note]。
+
+    [^1]: 第一个脚注定义
+    [^note]: 第二个脚注定义
+    """)
+    // 正文上标（按出现顺序编号）
+    #expect(r.html.contains("<sup id=\"fnref-1\" class=\"footnote-ref\"><a href=\"#fn-1\""))
+    #expect(r.html.contains("href=\"#fn-2\""))
+    // 文末区块
+    #expect(r.html.contains("<section class=\"footnotes\""))
+    #expect(r.html.contains("<li id=\"fn-1\""))
+    #expect(r.html.contains("<li id=\"fn-2\""))
+    #expect(r.html.contains("第一个脚注定义"))
+    #expect(r.html.contains("第二个脚注定义"))
+    // 定义行不再出现在正文段落
+    #expect(!r.html.contains("<p>[^1]:"))
+}
+
+@Test func footnoteDefinitionBeforeReference() {
+    let r = WTMarkdown.render("""
+    [^pre]: 定义在前
+
+    正文引用[^pre]在后。
+    """)
+    #expect(r.html.contains("href=\"#fn-1\""))
+    #expect(r.html.contains("定义在前"))
+}
+
+@Test func footnoteRepeatedReference() {
+    let r = WTMarkdown.render("同一引用[^x]出现[^x]两次。\n\n[^x]: 定义")
+    // 重复引用复用同一编号
+    #expect(r.html.components(separatedBy: "href=\"#fn-1\"").count - 1 == 2)
+    // 区块只列一条
+    #expect(r.html.components(separatedBy: "<li id=\"fn-").count - 1 == 1)
+}
+
+@Test func footnoteUnreferencedDefinition() {
+    let r = WTMarkdown.render("正文没有引用。\n\n[^orphan]: 孤儿定义")
+    // 无引用 → 不输出脚注区块
+    #expect(!r.html.contains("<section class=\"footnotes\""))
+    // 定义行也被剥离（不出现在正文）
+    #expect(!r.html.contains("孤儿定义"))
+}
+
+@Test func footnoteInlineMarkersInDefinition() {
+    let r = WTMarkdown.render("引用[^rich]。\n\n[^rich]: 定义含 **粗体** 与 `代码`")
+    #expect(r.html.contains("<strong>粗体</strong>"))
+    #expect(r.html.contains("<code>代码</code>"))
+}
+
+@Test func footnoteNotConfusedWithLink() {
+    // [^...] 与普通链接、图片不冲突
+    let r = WTMarkdown.render("[普通链接](https://a.b) 与脚注[^1]。\n\n[^1]: 定义")
+    #expect(r.html.contains("<a href=\"https://a.b\">普通链接</a>"))
+    #expect(r.html.contains("class=\"footnote-ref\""))
+    // 无定义的悬空引用不渲染为脚注区块
+    let dangling = WTMarkdown.html("[^ghost] 引用了不存在的定义")
+    #expect(!dangling.contains("<section class=\"footnotes\""))
+}

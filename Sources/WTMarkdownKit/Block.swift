@@ -21,6 +21,17 @@ public struct ListItem: Equatable, Sendable {
     }
 }
 
+/// 脚注定义：id 与原文（渲染时统一编号）。
+public struct Footnote: Equatable, Sendable {
+    public let id: String
+    public let text: String
+
+    public init(id: String, text: String) {
+        self.id = id
+        self.text = text
+    }
+}
+
 /// 文档块级结构（轻量 AST）。
 public indirect enum Block: Equatable, Sendable {
     case heading(level: Int, text: String)
@@ -49,7 +60,7 @@ public struct OutlineItem: Equatable, Identifiable, Sendable {
     }
 }
 
-/// 渲染结果：HTML 正文 + 大纲。
+/// 渲染结果：HTML 正文（含脚注区块，如有）+ 大纲。
 public struct RenderResult: Sendable {
     public let html: String
     public let outline: [OutlineItem]
