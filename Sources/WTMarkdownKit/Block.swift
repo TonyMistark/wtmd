@@ -41,6 +41,8 @@ public indirect enum Block: Equatable, Sendable {
     case list(ordered: Bool, start: Int, items: [ListItem])
     case table(header: [String], alignments: [TableAlignment], rows: [[String]])
     case divider
+    /// `[TOC]` 目录占位（独占一行的顶层占位行）。渲染时由全文大纲回填。
+    case toc
 }
 
 /// 大纲条目：与渲染后的标题锚点一一对应。
