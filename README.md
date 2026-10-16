@@ -4,11 +4,14 @@
 
 一个开源、本地优先的 macOS Markdown 写作与阅读工具。思绪落下的一刻，成文已然成型。
 
-![Status](https://img.shields.io/badge/status-v0.2.0-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
+![Status](https://img.shields.io/badge/status-v0.3.0-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
 
 ## 特性
 
 - **思绪 ⇄ 成文** — `⌘/` 在源码与预览之间即刻切换；源码是思绪的原貌，预览是思绪的成文，同一窗口、无跳转
+- **文件夹工作区** — 整个文件夹拖进侧栏即为工作区：文件树仅收 Markdown、目录可折叠、随 Finder 变更实时刷新；文件模式编辑自动落盘（防抖保存，切换/新建/退出/关窗前立即冲刷，最后一笔不丢）
+- **打字机 + 专注模式** — 打字机让光标永远停在屏幕中部，视线不必追逐；专注让当前段落之外退成浅灰，心流里只有这一段。两者独立开关、可组合（⌥⌘T / ⌥⌘F）
+- **⌘K 命令面板** — 模糊搜索直达全部命令（切主题、开关模式、导出、打开最近文件），菜单、工具栏、面板共用同一份命令注册表
 - **主题系统** — 内置「默认 / 纸墨 / 终端」三套主题；自定义主题拖入 `.wttheme` 文件夹即装，CSS 变量格式，切换即时生效不丢滚动
 - **图片粘贴即成文** — 截图/拖入图片自动落地 `assets/` 目录并插入相对路径引用，文档目录整体拷贝依然自洽
 - **脚注** — `[^id]` 引用与定义，文末自动编号汇总，双向锚点跳转
@@ -18,9 +21,20 @@
 - **语法高亮源码编辑器** — 标题、强调、代码、链接、引用、列表一目了然
 - **排版级预览** — 阅读级字体版式，浅色/深色主题自动跟随系统
 - **大纲导航** — 侧栏自动生成标题层级，点击跳转，滚动时同步高亮当前章节
-- **文件管理** — 最近文件、未命名草稿自动保存（重启不丢）
+- **文件管理** — 最近文件、未命名草稿自动保存（重启不丢）、⌘⇧O 打开文件夹
 - **导出** — 独立 HTML 文件（内联主题）、打印/存为 PDF
-- **零第三方依赖** — Markdown 解析器完全自研（`WTMarkdownKit`），69 项单元测试覆盖，GitHub Actions 双系统 CI
+- **零第三方依赖** — Markdown 解析器完全自研（`WTMarkdownKit`），130 项单元测试覆盖，GitHub Actions 双系统 CI
+
+## 安装
+
+从 [Releases](https://github.com/TonyMistark/wtmd/releases) 下载最新的 `wtmd-<版本>.dmg`，打开后把 wtmd 拖进「应用程序」。
+
+产物为 ad-hoc 签名、未经公证（本仓库没有 Developer ID 证书），在其他机器上**首次打开会被 Gatekeeper 拦截**（提示「无法验证开发者」或「已损坏」）。注意 macOS 15 起「右键 → 打开」已不再能绕过，任选其一：
+
+- **系统设置** › 隐私与安全性 → 找到「已阻止使用 wtmd」→ 点「仍要打开」；
+- 或在终端执行：`xattr -cr /Applications/wtmd.app`。
+
+之后可正常打开。本地从源码运行则无此问题。
 
 ## 快速开始
 
@@ -41,9 +55,11 @@ swift build -c release
 ## 打包
 
 ```bash
-./make-app.sh     # 生成 dist/wtmd.app（含内嵌前端资源，本地签名）
-./make-dmg.sh     # 生成 dist/wtmd-<版本>.dmg（v0.3 首发对外分发）
+./make-app.sh     # 生成 dist/wtmd.app（含内嵌前端资源）
+./make-dmg.sh     # 生成 dist/wtmd-<版本>.dmg（含背景图布局与安装引导）
 ```
+
+`make-dmg.sh` 默认对 app 与 DMG 做 ad-hoc 签名（对外分发路径）；有 Developer ID 证书时用 `WTMD_SIGN_IDENTITY="Developer ID Application: …" ./make-dmg.sh`，公证后自行 `notarytool submit` + `stapler staple`。
 
 ## 设计哲学
 
@@ -73,8 +89,8 @@ result.outline // [OutlineItem(level: 1, text: "标题", slug: "标题", line: 0
 
 - v0.1 — 已发布：双模式视图、大纲导航、文件管理、HTML/PDF 导出
 - v0.2 — **已发布（v0.2.0）**：主题系统、图片粘贴落地、脚注、实时统计、长文档增量渲染、预览代码高亮、Mermaid 图表（[详见规划](docs/V02_PLAN.md)）
-- v0.3 — 打字机模式、专注模式、命令面板、文件夹工作区、DMG 分发
-- v0.4 — WYSIWYG 编辑模式可行性评估
+- v0.3 — **已发布（v0.3.0）**：文件夹工作区、打字机 + 专注模式、⌘K 命令面板、DMG 分发（[详见规划](docs/V03_PLAN.md)）
+- v0.4 — `[TOC]` 目录、KaTeX 数学公式、WYSIWYG 编辑模式可行性评估
 
 ## 参与贡献
 
