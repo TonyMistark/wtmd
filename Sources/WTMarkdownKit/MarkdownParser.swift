@@ -123,6 +123,14 @@ public struct MarkdownParser: Sendable {
                 continue
             }
 
+            // [TOC] 目录占位：仅顶层独占一行时识别（引用/列表/围栏代码内是普通文本）
+            if topLevel, trimmed == "[TOC]" {
+                flushParagraph()
+                blocks.append(.toc)
+                i += 1
+                continue
+            }
+
             // 分隔线
             if Self.isDivider(trimmed) {
                 flushParagraph()

@@ -82,7 +82,31 @@ public final class HTMLRenderer {
 
         case .divider:
             return "<hr />\n"
+
+        case .toc:
+            // TOC 的内容来自全文标题，单个块无法在流式渲染中产出；
+            // 先输出哨兵，由 WTMarkdown.render 在收集完大纲后统一回填。
+            return Self.tocPlaceholder
         }
+    }
+
+    /// `.toc` 块的哨兵输出。字符来自 Unicode 私有区（对象替换符），
+    /// 正常 Markdown 内容不可能与之撞串。
+    static let tocPlaceholder = "\u{FFFC}wtmd-toc\u{FFFC}"
+
+    /// 渲染目录：按标题层级缩进的锚点列表。空大纲输出空占位（不报错）。
+    func renderTOC(_ outline: [OutlineItem]) -> String {
+        guard !outline.isEmpty else {
+            return "<nav class=\"wtmd-toc\" data-wtmd-toc></nav>\n"
+        }
+        var html = "<nav class=\"wtmd-toc\" data-wtmd-toc>\n<ul class=\"wtmd-toc-list\">\n"
+        for item in outline {
+            let level = min(max(item.level, 1), 6)
+            html += "<li class=\"wtmd-toc-l\(level)\">"
+            html += "<a href=\"#\(escapeAttr(item.slug))\">\(escapeText(item.text))</a></li>\n"
+        }
+        html += "</ul>\n</nav>\n"
+        return html
     }
 
     private func renderItem(_ item: ListItem) -> String {

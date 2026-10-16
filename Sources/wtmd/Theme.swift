@@ -108,6 +108,24 @@ enum StyleSheet {
       font-size: 0.9em;
       color: var(--secondary);
     }
+    /* [TOC] 目录：轻量框内按标题层级缩进 */
+    .wtmd-toc {
+      margin: 1.1em 0;
+      padding: 0.7em 1.1em;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.95em;
+    }
+    .wtmd-toc:empty { display: none; }
+    .wtmd-toc-list { list-style: none; margin: 0; padding: 0; }
+    .wtmd-toc-list li { margin: 0.25em 0; }
+    .wtmd-toc-l2 { padding-left: 1.2em; }
+    .wtmd-toc-l3 { padding-left: 2.4em; }
+    .wtmd-toc-l4 { padding-left: 3.6em; }
+    .wtmd-toc-l5 { padding-left: 4.8em; }
+    .wtmd-toc-l6 { padding-left: 6em; }
+    .wtmd-toc a { color: var(--fg); text-decoration: none; }
+    .wtmd-toc a:hover { color: var(--accent); text-decoration: underline; }
     .footnotes ol { padding-left: 1.6em; }
     sup.footnote-ref a {
       text-decoration: none;
@@ -192,6 +210,19 @@ enum StyleSheet {
       if (typeof __wtmdMermaidRenderAll === 'function') { __wtmdMermaidRenderAll(true); }
     }
     (function () {
+      // 目录/内链锚点：页内滚动，避免 WebView 把 #hash 当作导航。
+      // 事件委托挂在 document 上，不触碰 #wtmd-content 的子节点结构。
+      // 不用 behavior:'smooth'——离屏/无头 WKWebView 上平滑动画不可靠
+      //（macOS 15 实测 scrollY 不动），与侧栏大纲跳转同为确定性滚动。
+      document.addEventListener('click', function (e) {
+        var a = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
+        if (!a) { return; }
+        var id = a.getAttribute('href').slice(1);
+        var target = id ? document.getElementById(id) : null;
+        if (!target) { return; }
+        e.preventDefault();
+        target.scrollIntoView();
+      });
       var timer = null;
       window.addEventListener('scroll', function () {
         if (timer) return;

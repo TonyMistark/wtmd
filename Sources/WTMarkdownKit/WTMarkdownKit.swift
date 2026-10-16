@@ -12,8 +12,7 @@ public enum WTMarkdown: Sendable {
             headings.append((level, text, line))
         }, footnotes: &footnotes)
         let renderer = HTMLRenderer()
-        let blockHTML = renderer.renderBlockArray(blocks, footnotes: footnotes ?? [])
-        let html = blockHTML.joined()
+        var blockHTML = renderer.renderBlockArray(blocks, footnotes: footnotes ?? [])
 
         let anchors = renderer.headingAnchors
         var outline: [OutlineItem] = []
@@ -23,6 +22,17 @@ public enum WTMarkdown: Sendable {
                 OutlineItem(level: h.level, text: HTMLRenderer.plainText(h.text), slug: slug, line: h.line)
             )
         }
+
+        // 回填 TOC：`.toc` 块先渲染成哨兵，大纲收集完毕后换成真目录。
+        // 每个占位都展开为完整目录（多个 [TOC] 各得一份）。
+        // renderBlockArray 对 blocks 逐块 map（脚注区块只追加在尾部），前缀下标一一对应。
+        for (idx, block) in blocks.enumerated() where idx < blockHTML.count {
+            if case .toc = block {
+                blockHTML[idx] = renderer.renderTOC(outline)
+            }
+        }
+
+        let html = blockHTML.joined()
         return RenderResult(html: html, outline: outline, blocks: blockHTML)
     }
 
