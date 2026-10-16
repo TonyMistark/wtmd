@@ -33,7 +33,9 @@ import Testing
     )
     #expect(doc.contains("<style id=\"wtmd-base\">"))
     #expect(doc.contains("<style id=\"wtmd-theme\">:root{}"))
-    #expect(!doc.contains("<script>"))
+    // 静态导出不注入交互脚本（滚动同步/消息回传），但仍内嵌高亮资源
+    #expect(!doc.contains("__wtmdUpdate"))
+    #expect(doc.contains("__wtmdHighlight"))
 }
 
 // MARK: - .wttheme 加载

@@ -14,7 +14,8 @@ let package = Package(
         .executableTarget(
             name: "wtmd",
             dependencies: ["WTMarkdownKit"],
-            path: "Sources/wtmd"
+            path: "Sources/wtmd",
+            resources: [.copy("Resources")]
         ),
         .testTarget(
             name: "WTMarkdownKitTests",
