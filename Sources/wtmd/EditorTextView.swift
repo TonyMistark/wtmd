@@ -208,14 +208,19 @@ struct EditorTextView: NSViewRepresentable {
         /// 全量重铺压暗层：文本变过（属性重建）或开关刚切换时用。
         func applyFocusFull() {
             guard let layoutManager = textView.layoutManager else { return }
-            let content = NSString(string: textView.string)
-            layoutManager.removeTemporaryAttribute(
-                .foregroundColor,
-                forCharacterRange: NSRange(location: 0, length: content.length)
-            )
-            focusedRange = nil
+            // 只有真压暗过才需要全量移除：否则每次按键都要对整篇做一次
+            // O(文档长度) 的空转，而专注模式常常是关着的
+            if focusedRange != nil {
+                let content = NSString(string: textView.string)
+                layoutManager.removeTemporaryAttribute(
+                    .foregroundColor,
+                    forCharacterRange: NSRange(location: 0, length: content.length)
+                )
+                focusedRange = nil
+            }
 
             guard parent.focusMode else { return }
+            let content = NSString(string: textView.string)
             let range = FocusParagraph.range(in: content, caret: textView.selectedRange().location)
             dim(NSRange(location: 0, length: range.location), with: layoutManager)
             let tail = NSRange(
@@ -360,14 +365,22 @@ struct EditorTextView: NSViewRepresentable {
 
     // MARK: - 语法高亮（基于行扫描）
 
+    /// 语法高亮：只改属性，**不替换字符**。
+    ///
+    /// 这里曾经把整串属性构建到一份副本上，再用 `NSTextStorage.setAttributedString`
+    /// 发布。那是「替换整个字符区间」，TextKit 会把落在被替换区间内的光标映射到替换
+    /// 区间的**末尾**——也就是文档末尾。于是在段落中间（尤其是第一行）敲一个键，光标
+    /// 就瞬移到文末；打字机模式再把它居中，整篇文档就滚到底。
+    ///
+    /// 属性编辑不改变字符长度，光标原地不动，顺带省掉一次整串字符替换的布局失效。
     static func highlight(_ textView: NSTextView) {
         let content = NSString(string: textView.string)
         guard content.length < 400_000 else { return }
+        guard let storage = textView.textStorage else { return }
 
         let full = NSRange(location: 0, length: content.length)
-        let attributed = NSMutableAttributedString(attributedString: textView.textStorage!)
-        attributed.beginEditing()
-        attributed.setAttributes(
+        storage.beginEditing()
+        storage.setAttributes(
             [.font: Coordinator.font, .foregroundColor: NSColor.labelColor],
             range: full
         )
@@ -388,8 +401,8 @@ struct EditorTextView: NSViewRepresentable {
             let isFenceLine = trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~")
 
             if isFenceLine {
-                attributed.addAttribute(.foregroundColor, value: NSColor.systemPurple, range: lineRange)
-                attributed.addAttribute(.font, value: Coordinator.font, range: lineRange)
+                storage.addAttribute(.foregroundColor, value: NSColor.systemPurple, range: lineRange)
+                storage.addAttribute(.font, value: Coordinator.font, range: lineRange)
                 inFence.toggle()
                 lineStart = lineEnd
                 if lineStart >= content.length { break }
@@ -397,7 +410,7 @@ struct EditorTextView: NSViewRepresentable {
             }
 
             if inFence {
-                attributed.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: lineRange)
+                storage.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: lineRange)
                 lineStart = lineEnd
                 if lineStart >= content.length { break }
                 continue
@@ -407,43 +420,42 @@ struct EditorTextView: NSViewRepresentable {
             if trimmed.hasPrefix("#"), let level = headingLevel(trimmed) {
                 let size = CGFloat(max(13.5, 13.5 + Double(4 - level) * 1.2))
                 let headingFont = NSFont.monospacedSystemFont(ofSize: size, weight: .bold)
-                attributed.addAttribute(.font, value: headingFont, range: lineRange)
-                attributed.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: lineRange)
+                storage.addAttribute(.font, value: headingFont, range: lineRange)
+                storage.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: lineRange)
             }
             // 引用行
             else if trimmed.hasPrefix(">") {
-                attributed.addAttribute(.foregroundColor, value: NSColor.systemGreen, range: lineRange)
+                storage.addAttribute(.foregroundColor, value: NSColor.systemGreen, range: lineRange)
                 if let markerRange = firstMatch(lineNS, pattern: #"^>\s?"#) {
-                    attributed.addAttribute(.foregroundColor, value: NSColor.systemGreen.withAlphaComponent(0.55), range: markerRange)
+                    storage.addAttribute(.foregroundColor, value: NSColor.systemGreen.withAlphaComponent(0.55), range: markerRange)
                 }
             }
             // 普通行：行内标记
             else {
                 // 列表标记
                 if let m = firstMatch(lineNS, pattern: #"^\s*(?:[-*+]|\d{1,9}[.)])(\s+\[[ xX]\])?\s"#) {
-                    attributed.addAttribute(.foregroundColor, value: NSColor.systemOrange, range: m)
+                    storage.addAttribute(.foregroundColor, value: NSColor.systemOrange, range: m)
                 } else if let m = firstMatch(lineNS, pattern: #"^\s*(?:[-*+]|\d{1,9}[.)])\s?"#) {
-                    attributed.addAttribute(.foregroundColor, value: NSColor.systemOrange, range: m)
+                    storage.addAttribute(.foregroundColor, value: NSColor.systemOrange, range: m)
                 }
 
-                apply(lineNS, to: attributed, base: lineRange.location)
+                apply(lineNS, to: storage, base: lineRange.location)
             }
 
             if lineEnd >= content.length { break }
             lineStart = lineEnd
         }
 
-        attributed.endEditing()
-        textView.textStorage?.setAttributedString(attributed)
+        storage.endEditing()
     }
 
-    private static func apply(_ line: NSString, to attributed: NSMutableAttributedString, base: Int) {
+    private static func apply(_ line: NSString, to storage: NSMutableAttributedString, base: Int) {
         func add(_ pattern: String, _ attrs: [NSAttributedString.Key: Any]) {
             guard let re = try? NSRegularExpression(pattern: pattern) else { return }
             re.enumerateMatches(in: line as String, range: NSRange(location: 0, length: line.length)) { m, _, _ in
                 guard let m else { return }
                 for (k, v) in attrs {
-                    attributed.addAttribute(k, value: v, range: NSRange(location: base + m.range.location, length: m.range.length))
+                    storage.addAttribute(k, value: v, range: NSRange(location: base + m.range.location, length: m.range.length))
                 }
             }
         }
