@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import wtmd
@@ -247,6 +248,48 @@ import Testing
 
     #expect(store.text == "A 改过了")
     #expect(store.renderGeneration == generation)
+}
+
+// MARK: - 收尾落盘（退出 / 关窗）
+
+/// 退出应用时的最后一笔不能丢：⌘Q 会连同防抖任务一起把进程带走。
+///
+/// 摘掉 `observeExitForPendingEdits()`，这条与下一条都会变红。
+@MainActor
+@Test func quittingTheAppFlushesPendingEdit() async throws {
+    let dir = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let file = try write("a.md", in: dir, content: "A 原文")
+
+    // 防抖设得极长：只有「退出时落盘」这一条路径能救回内容。
+    let store = DocumentStore(draftDirectory: dir, autoSaveDelay: 60_000_000_000)
+    store.open(url: file)
+    store.textDidChange("退出前刚写的一句")
+
+    NotificationCenter.default.post(name: NSApplication.willTerminateNotification, object: nil)
+
+    await waitUntil("退出时落盘") {
+        (try? String(contentsOf: file, encoding: .utf8)) == "退出前刚写的一句"
+    }
+    #expect(!store.isDirty)
+}
+
+/// 关掉窗口同理会带走防抖任务（应用可能仍驻留在菜单栏）。
+@MainActor
+@Test func closingAWindowFlushesPendingEdit() async throws {
+    let dir = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let file = try write("a.md", in: dir, content: "A 原文")
+
+    let store = DocumentStore(draftDirectory: dir, autoSaveDelay: 60_000_000_000)
+    store.open(url: file)
+    store.textDidChange("关窗前刚写的一句")
+
+    NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: nil)
+
+    await waitUntil("关窗时落盘") {
+        (try? String(contentsOf: file, encoding: .utf8)) == "关窗前刚写的一句"
+    }
 }
 
 // MARK: - 辅助

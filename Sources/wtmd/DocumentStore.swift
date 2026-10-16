@@ -61,6 +61,8 @@ final class DocumentStore: ObservableObject {
     private var savedSnapshot: String = ""
     private var renderTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
+    /// Keeps the exit observers alive; removed in `deinit`.
+    private var exitObservers: [NSObjectProtocol] = []
 
     static let welcomeMarkdown = """
     # 欢迎使用 wtmd
@@ -119,6 +121,7 @@ final class DocumentStore: ObservableObject {
             Self.writeDraft(text, at: directory)
         }
         recomputeNow()
+        observeExitForPendingEdits()
     }
 
     // MARK: - 状态
@@ -406,13 +409,48 @@ final class DocumentStore: ObservableObject {
     }
 
     /// Persists pending edits immediately, cancelling the debounce. Called
-    /// before switching documents: an edit made less than a debounce interval
-    /// before the switch would otherwise be dropped.
-    private func flushPendingSave() {
+    /// before switching documents, and on the way out of the app: an edit made
+    /// less than one debounce interval before either would otherwise be dropped.
+    func flushPendingSave() {
         saveTask?.cancel()
         saveTask = nil
         guard isDirty else { return }
         persist(text)
+    }
+
+    /// A weak, `Sendable` handle to the store for notification callbacks: the
+    /// observer blocks are `@Sendable`, so they cannot capture the store itself,
+    /// and holding it weakly keeps the observer from retaining it.
+    private final class WeakStore: @unchecked Sendable {
+        weak var store: DocumentStore?
+        init(_ store: DocumentStore) { self.store = store }
+    }
+
+    /// Persist any pending edit when the app quits or a window closes. Without
+    /// this the debounce task simply dies with the process, so the last second
+    /// of typing is lost — exactly the case where "autosave" is expected to
+    /// have covered you.
+    private func observeExitForPendingEdits() {
+        let box = WeakStore(self)
+        let center = NotificationCenter.default
+        let names: [Notification.Name] = [
+            NSApplication.willTerminateNotification,
+            NSWindow.willCloseNotification,
+        ]
+        exitObservers = names.map { name in
+            center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                // Delivered on the main queue, possibly while the process is
+                // already tearing down — so flush inline rather than hopping.
+                MainActor.assumeIsolated { box.store?.flushPendingSave() }
+            }
+        }
+    }
+
+    deinit {
+        let center = NotificationCenter.default
+        for observer in exitObservers {
+            center.removeObserver(observer)
+        }
     }
 }
 
