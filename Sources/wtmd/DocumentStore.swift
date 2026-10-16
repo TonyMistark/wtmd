@@ -39,10 +39,22 @@ final class DocumentStore: ObservableObject {
     @Published var statistics = TextStatistics(characters: 0, words: 0, readingMinutes: 0)
     /// 强制预览整体重载的代数（打开新文件时递增，重置滚动位置）。
     @Published var renderGeneration = 0
+    /// Whether a writing session has been entered in this launch (a document was
+    /// created or opened). A blank document the user just asked for must not fall
+    /// back to the welcome screen, which is what happened when the condition was
+    /// derived from `text.isEmpty` alone.
+    @Published private(set) var hasStartedWriting = false
+
+    /// Single source of truth for the welcome screen. Kept on the store (instead
+    /// of inline in the view body) so the condition is unit-testable.
+    var showsWelcome: Bool {
+        text.isEmpty && fileURL == nil && !hasStartedWriting
+    }
 
     let recentFiles = RecentFiles()
     let themeManager = ThemeManager()
 
+    private let draftDirectory: URL
     private var savedSnapshot: String = ""
     private var renderTask: Task<Void, Never>?
     private var draftTask: Task<Void, Never>?
@@ -93,12 +105,14 @@ final class DocumentStore: ObservableObject {
     MIT 开源协议 · 数据本地存储 · 标准纯文本
     """
 
-    init() {
-        if let draft = Self.readDraft(), !draft.isEmpty {
+    init(draftDirectory: URL? = nil) {
+        let directory = draftDirectory ?? Self.defaultDraftDirectory
+        self.draftDirectory = directory
+        if let draft = Self.readDraft(at: directory), !draft.isEmpty {
             text = draft
         } else {
             text = Self.welcomeMarkdown
-            Self.writeDraft(text)
+            Self.writeDraft(text, at: directory)
         }
         recomputeNow()
     }
@@ -220,10 +234,14 @@ final class DocumentStore: ObservableObject {
         text = ""
         fileURL = nil
         savedSnapshot = ""
+        // The user explicitly asked for a blank document, so the welcome screen
+        // must step aside — otherwise the empty text immediately brings it back
+        // and the button looks dead.
+        hasStartedWriting = true
         renderGeneration += 1
         recomputeNow()
         mode = .edit
-        Self.clearDraft()
+        clearDraft()
     }
 
     func openPanel() {
@@ -242,6 +260,7 @@ final class DocumentStore: ObservableObject {
         fileURL = url
         savedSnapshot = content
         recentFiles.add(url)
+        hasStartedWriting = true
         renderGeneration += 1
         recomputeNow()
     }
@@ -262,7 +281,7 @@ final class DocumentStore: ObservableObject {
             try text.write(to: targetURL, atomically: true, encoding: .utf8)
             savedSnapshot = text
             recentFiles.add(targetURL)
-            Self.clearDraft()
+            clearDraft()
         } catch {
             NSAlert(error: error).runModal()
         }
@@ -314,23 +333,29 @@ final class DocumentStore: ObservableObject {
 
     // MARK: - 草稿
 
-    private static var draftURL: URL {
+    /// Draft storage root. Defaults to Application Support; injectable so tests
+    /// can run against a temp directory instead of the user's real draft.
+    private static var defaultDraftDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = base.appendingPathComponent("wtmd", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("draft.md")
+        return dir
     }
 
-    private static func readDraft() -> String? {
-        try? String(contentsOf: draftURL, encoding: .utf8)
+    private static func draftURL(in directory: URL) -> URL {
+        directory.appendingPathComponent("draft.md")
     }
 
-    private static func writeDraft(_ content: String) {
-        try? content.write(to: draftURL, atomically: true, encoding: .utf8)
+    private static func readDraft(at directory: URL) -> String? {
+        try? String(contentsOf: draftURL(in: directory), encoding: .utf8)
     }
 
-    private static func clearDraft() {
-        try? FileManager.default.removeItem(at: draftURL)
+    private static func writeDraft(_ content: String, at directory: URL) {
+        try? content.write(to: draftURL(in: directory), atomically: true, encoding: .utf8)
+    }
+
+    private func clearDraft() {
+        try? FileManager.default.removeItem(at: Self.draftURL(in: draftDirectory))
     }
 
     private func scheduleDraftSave() {
@@ -339,7 +364,7 @@ final class DocumentStore: ObservableObject {
         draftTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_200_000_000)
             guard !Task.isCancelled, let self, self.fileURL == nil else { return }
-            Self.writeDraft(self.text)
+            Self.writeDraft(self.text, at: self.draftDirectory)
         }
     }
 }
