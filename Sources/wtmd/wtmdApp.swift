@@ -3,11 +3,13 @@ import SwiftUI
 @main
 struct wtmdApp: App {
     @StateObject private var store = DocumentStore()
+    @StateObject private var workspace = WorkspaceStore()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(store)
+                .environmentObject(workspace)
                 .environmentObject(store.themeManager)
                 .frame(minWidth: 760, minHeight: 500)
         }
@@ -23,6 +25,8 @@ struct wtmdApp: App {
             CommandGroup(replacing: .saveItem) {
                 Button("打开…") { store.openPanel() }
                     .keyboardShortcut("o", modifiers: .command)
+                Button("打开文件夹…") { workspace.openPanel() }
+                    .keyboardShortcut("o", modifiers: [.command, .shift])
                 Button("保存") { store.save() }
                     .keyboardShortcut("s", modifiers: .command)
                 Divider()

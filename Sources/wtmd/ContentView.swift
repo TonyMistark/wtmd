@@ -3,6 +3,7 @@ import WTMarkdownKit
 
 struct ContentView: View {
     @EnvironmentObject var store: DocumentStore
+    @EnvironmentObject var workspace: WorkspaceStore
     @EnvironmentObject var themeManager: ThemeManager
 
     var body: some View {
@@ -19,6 +20,11 @@ struct ContentView: View {
         }
         .navigationTitle(store.windowTitle)
         .toolbar { toolbarContent }
+        // 文档从任何入口打开（⌘O、最近文件、标题栏）后，工作区树跟上高亮
+        .onChange(of: store.fileURL) { _, newValue in
+            guard let newValue else { return }
+            workspace.reveal(newValue)
+        }
         .overlay {
             // ⌘/ 切换模式
             Button("") { store.toggleMode() }
@@ -34,6 +40,10 @@ struct ContentView: View {
     @ViewBuilder
     private var sidebar: some View {
         List {
+            if workspace.isOpen {
+                workspaceSection
+            }
+
             Section("大纲") {
                 if store.outline.isEmpty {
                     Text("思绪尚未成章 —— 输入 # 开始第一个标题")
@@ -46,7 +56,8 @@ struct ContentView: View {
                 }
             }
 
-            if !store.recentFiles.urls.isEmpty {
+            // 工作区打开时，文件树已经承担了导航职责，最近文件只会让侧栏变长
+            if !workspace.isOpen, !store.recentFiles.urls.isEmpty {
                 Section("最近文件") {
                     ForEach(store.recentFiles.urls, id: \.absoluteString) { url in
                         Button {
@@ -65,6 +76,82 @@ struct ContentView: View {
             }
         }
         .listStyle(.sidebar)
+    }
+
+    // MARK: - 工作区
+
+    @ViewBuilder
+    private var workspaceSection: some View {
+        Section {
+            let nodes = workspace.tree?.children ?? []
+            if nodes.isEmpty {
+                Text("这个文件夹里还没有 Markdown 文件")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+            } else {
+                ForEach(nodes) { node in
+                    treeRow(node)
+                }
+            }
+        } header: {
+            HStack(spacing: 6) {
+                Text(workspace.rootName)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 4)
+                Button {
+                    workspace.close()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("关闭工作区")
+            }
+        }
+    }
+
+    /// 文件树的一行：文件夹可折叠，文件点击即打开，当前文档高亮。
+    ///
+    /// `AnyView` 是必需的：递归视图的返回类型没法用 `some View` 自引用
+    /// （编译器会报 `OpaqueTypeInference`）。
+    private func treeRow(_ node: WorkspaceNode) -> AnyView {
+        if node.isDirectory {
+            return AnyView(
+                DisclosureGroup(
+                    isExpanded: Binding(
+                        get: { workspace.isExpanded(node.url) },
+                        set: { workspace.setExpanded(node.url, to: $0) }
+                    )
+                ) {
+                    ForEach(node.children) { child in
+                        treeRow(child)
+                    }
+                } label: {
+                    Label(node.name, systemImage: "folder")
+                        .font(.callout)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            )
+        }
+
+        return AnyView(
+            Button {
+                store.open(url: node.url)
+            } label: {
+                Label(node.name, systemImage: "doc.text")
+                    .font(.callout)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(
+                workspace.selection == node.url ? Color.accentColor : Color.primary
+            )
+        )
     }
 
     private func outlineRow(_ item: OutlineItem) -> some View {
@@ -92,7 +179,8 @@ struct ContentView: View {
         if store.showsWelcome {
             WelcomeView(
                 onNew: { store.newDocument() },
-                onOpen: { store.openPanel() }
+                onOpen: { store.openPanel() },
+                onOpenFolder: { workspace.openPanel() }
             )
         } else {
             Group {
@@ -192,6 +280,13 @@ struct ContentView: View {
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                workspace.openPanel()
+            } label: {
+                Label("打开文件夹", systemImage: "folder.badge.plus")
+            }
+            .help("把文件夹作为工作区打开（⌘⇧O）")
+
             // 主题：成文的外观（源码模式高亮仍走系统语义色，不受主题影响）
             Menu {
                 ForEach(themeManager.themes) { theme in
@@ -216,7 +311,7 @@ struct ContentView: View {
             Button {
                 store.sidebarVisible.toggle()
             } label: {
-                Label("大纲", systemImage: "sidebar.left")
+                Label("侧栏", systemImage: "sidebar.left")
             }
 
             Menu {
@@ -242,6 +337,7 @@ struct ContentView: View {
 struct WelcomeView: View {
     var onNew: () -> Void
     var onOpen: () -> Void
+    var onOpenFolder: () -> Void
 
     var body: some View {
         VStack(spacing: 26) {
@@ -277,6 +373,13 @@ struct WelcomeView: View {
                 }
                 .controlSize(.large)
                 .help("打开 Markdown 文件（⌘O）")
+
+                Button(action: onOpenFolder) {
+                    Label("打开文件夹", systemImage: "folder.badge.plus")
+                        .padding(.horizontal, 8)
+                }
+                .controlSize(.large)
+                .help("把文件夹作为工作区打开（⌘⇧O）")
             }
 
             Spacer()
