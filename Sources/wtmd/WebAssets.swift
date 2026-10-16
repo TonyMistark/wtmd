@@ -10,6 +10,11 @@ enum WebAssets {
     /// 许可：BSD-3-Clause，版权声明保留在文件头。
     static let highlightJS: String = load(name: "highlight.min", ext: "js")
 
+    /// mermaid v11.12.0（流程图/时序图等）。
+    /// 许可：MIT，版本与许可声明写在文件头。
+    /// 体积较大（~2.7MB），仅在文档确实含 mermaid 围栏时才注入。
+    static let mermaidJS: String = load(name: "mermaid.min", ext: "js")
+
     /// 读取资源；缺失时返回空串（预览退化为无高亮，不影响正文渲染）。
     private static func load(name: String, ext: String) -> String {
         guard let url = Bundle.module.url(

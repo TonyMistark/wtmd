@@ -135,6 +135,12 @@ enum StyleSheet {
     .hljs-emphasis { font-style: italic; }
     .hljs-strong { font-weight: 650; }
     .hljs-link { text-decoration: underline; }
+    /* Mermaid 图表：源码块默认可见，渲染成功后隐去；失败则保留源码并提示 */
+    .mermaid-wrap { margin: 1.1em 0; text-align: center; }
+    .mermaid-wrap.mermaid-rendered > pre { display: none; }
+    .mermaid-wrap.mermaid-failed > .mermaid { display: none; }
+    .mermaid-wrap svg { max-width: 100%; height: auto; }
+    .mermaid-error { color: var(--accent); font-size: 0.88em; text-align: left; margin: 0.6em 0 0; }
     ::selection { background: color-mix(in srgb, var(--accent) 25%, transparent); }
     @media print {
       body { padding: 0; max-width: none; }
@@ -148,6 +154,7 @@ enum StyleSheet {
     function __wtmdUpdate(bodyHTML) {
       document.getElementById('wtmd-content').innerHTML = bodyHTML;
       if (typeof __wtmdHighlight === 'function') { __wtmdHighlight(); }
+      if (typeof __wtmdMermaidRenderAll === 'function') { __wtmdMermaidRenderAll(false); }
     }
     // 增量更新：替换第 prefix..(total-suffix) 块，保留前后缀节点（图片/图表不重画）
     function __wtmdUpdateRange(diff) {
@@ -175,10 +182,14 @@ enum StyleSheet {
       }
       // 新插入的代码块需要着色（已着色的块由 data-wtmd-hl 标记跳过）
       if (typeof __wtmdHighlight === 'function') { __wtmdHighlight(container); }
+      // 新插入的 mermaid 块需要渲染，未变化块的已渲染 SVG 保持原位
+      if (typeof __wtmdMermaidRenderAll === 'function') { __wtmdMermaidRenderAll(false); }
     }
     function __wtmdSetTheme(cssText) {
       var el = document.getElementById('wtmd-theme');
       if (el) { el.textContent = cssText; }
+      // 图表颜色已烘焙进 SVG，主题变量变化后需按新配色重绘
+      if (typeof __wtmdMermaidRenderAll === 'function') { __wtmdMermaidRenderAll(true); }
     }
     (function () {
       var timer = null;
@@ -226,6 +237,120 @@ enum StyleSheet {
     document.addEventListener('DOMContentLoaded', function () { __wtmdHighlight(); });
     """
 
+    /// Mermaid 初始化：与内嵌的 mermaid 一起注入（仅在文档含 mermaid 围栏时）。
+    /// ```mermaid 块渲染为图；失败降级为原代码块 + 错误提示，不白屏。
+    private static let mermaidInit = """
+    // 主题变量 → 图表配色（深浅色自适应，不新增主题文件）
+    function __wtmdMermaidThemeVariables() {
+      var cs = getComputedStyle(document.documentElement);
+      function pick(name, fallback) {
+        var value = cs.getPropertyValue(name).trim();
+        return value || fallback;
+      }
+      return {
+        background: pick('--bg', '#ffffff'),
+        primaryColor: pick('--pre-bg', '#f5f5f5'),
+        primaryTextColor: pick('--fg', '#222222'),
+        primaryBorderColor: pick('--border', '#dddddd'),
+        secondaryColor: pick('--th-bg', '#eeeeee'),
+        tertiaryColor: pick('--code-bg', '#f5f5f5'),
+        lineColor: pick('--quote-bar', '#888888'),
+        fontFamily: pick('--font-body', 'sans-serif')
+      };
+    }
+
+    function __wtmdMermaidInit() {
+      if (!window.mermaid) { return false; }
+      window.mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'strict',
+        theme: 'base',
+        themeVariables: __wtmdMermaidThemeVariables()
+      });
+      return true;
+    }
+
+    var __wtmdMermaidSeq = 0;
+
+    // 打印/存 PDF 的就绪信号：图表渲染完成后再进打印队列
+    function __wtmdMermaidReady() {
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.wtmd) {
+        window.webkit.messageHandlers.wtmd.postMessage({ event: 'mermaid-ready' });
+      }
+    }
+
+    // 单个图表：成功则替换为 SVG，失败则保留源码块并给出错误提示
+    function __wtmdMermaidDraw(target, source) {
+      __wtmdMermaidSeq += 1;
+      var wrap = target.parentNode;
+      return window.mermaid.render('wtmd-mermaid-' + __wtmdMermaidSeq, source).then(function (result) {
+        target.innerHTML = result.svg;
+        if (wrap && wrap.classList) {
+          wrap.classList.remove('mermaid-failed');
+          wrap.classList.add('mermaid-rendered');
+        }
+        return true;
+      }).catch(function (error) {
+        var message = (error && error.message) ? error.message : '语法无法解析';
+        if (wrap && wrap.classList) {
+          wrap.classList.add('mermaid-failed');
+          var note = wrap.querySelector('.mermaid-error');
+          if (!note) {
+            note = document.createElement('p');
+            note.className = 'mermaid-error';
+            wrap.appendChild(note);
+          }
+          note.textContent = '图表渲染失败：' + message;
+        }
+        return false;
+      });
+    }
+
+    // 扫描并渲染；force=true 时按当前主题重绘已渲染的图
+    function __wtmdMermaidRenderAll(force) {
+      var container = document.getElementById('wtmd-content');
+      if (!container || !__wtmdMermaidInit()) { __wtmdMermaidReady(); return; }
+
+      var jobs = [];
+      var codes = container.querySelectorAll('pre > code.language-mermaid');
+      for (var i = 0; i < codes.length; i++) {
+        var code = codes[i];
+        var pre = code.parentNode;
+        var host = pre.parentNode;
+        var wrapped = host && host.classList && host.classList.contains('mermaid-wrap');
+        if (wrapped) {
+          if (!force) { continue; }
+          var target = host.querySelector('.mermaid');
+          if (!target) { continue; }
+          target.textContent = code.textContent;
+          jobs.push(__wtmdMermaidDraw(target, code.textContent));
+          continue;
+        }
+        // 首次：包一层 .mermaid-wrap —— 顶层块数量保持不变（增量 diff 依赖这一点）
+        var graph = document.createElement('div');
+        graph.className = 'mermaid';
+        graph.textContent = code.textContent;
+        var wrap = document.createElement('div');
+        wrap.className = 'mermaid-wrap';
+        pre.parentNode.insertBefore(wrap, pre);
+        wrap.appendChild(pre);        // 源码块保留，作为渲染失败时的降级内容
+        wrap.appendChild(graph);
+        jobs.push(__wtmdMermaidDraw(graph, code.textContent));
+      }
+      if (jobs.length === 0) { __wtmdMermaidReady(); return; }
+      Promise.all(jobs).then(function () { __wtmdMermaidReady(); });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () { __wtmdMermaidRenderAll(false); });
+    """
+
+    /// 完整 mermaid 脚本：内嵌库 + 初始化。资源缺失时返回空串。
+    static var mermaidScript: String {
+        let library = WebAssets.mermaidJS
+        guard !library.isEmpty else { return "" }
+        return "\(library)\n\(mermaidInit)"
+    }
+
     /// 完整高亮脚本：内嵌库 + 初始化。资源缺失时返回空串（退化为无高亮，正文不受影响）。
     static var highlightScript: String {
         let library = WebAssets.highlightJS
@@ -255,7 +380,8 @@ enum StyleSheet {
     }
 
     /// 完整预览文档：排版骨架 + 主题变量层 + 内嵌前端资源 + 正文（+ 可选交互脚本）。
-    /// 高亮脚本始终内联（预览/HTML 导出/PDF 三端一致）；交互脚本仅预览需要。
+    /// 高亮脚本始终内联（预览/HTML 导出/PDF 三端一致）；mermaid 体积大，
+    /// 仅在文档确实含 mermaid 围栏时注入（懒加载）；交互脚本仅预览需要。
     static func fullDocument(
         title: String,
         body: String,
@@ -265,6 +391,8 @@ enum StyleSheet {
         let scriptTag = includeScript ? "<script>\n\(script)\n</script>\n" : ""
         let highlight = highlightScript
         let highlightTag = highlight.isEmpty ? "" : "<script>\n\(highlight)\n</script>\n"
+        let mermaid = body.contains("language-mermaid") ? mermaidScript : ""
+        let mermaidTag = mermaid.isEmpty ? "" : "<script>\n\(mermaid)\n</script>\n"
         return """
         <!DOCTYPE html>
         <html lang="zh-CN">
@@ -274,7 +402,7 @@ enum StyleSheet {
         <title>\(title)</title>
         <style id="wtmd-base">\(baseCSS)</style>
         <style id="wtmd-theme">\(themeCSS)</style>
-        \(highlightTag)\(scriptTag)</head>
+        \(mermaidTag)\(highlightTag)\(scriptTag)</head>
         <body>
         <div id="wtmd-content">
         \(body)

@@ -367,9 +367,14 @@ final class RecentFiles: ObservableObject {
 // MARK: - 打印 / 存为 PDF
 
 @MainActor
-final class PrintController: NSObject, WKNavigationDelegate {
+final class PrintController: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     private var continuation: CheckedContinuation<Void, Never>?
     private var retained: [Any] = []
+    /// 页面是否已报告「图表渲染完成」。
+    private var diagramsReady = false
+
+    /// 等待图表就绪的上限；超时按兜底处理，不阻塞导出。
+    private static let diagramWaitLimit = 5.0
 
     static func print(html: String, baseURL: URL?) {
         let controller = PrintController()
@@ -377,7 +382,12 @@ final class PrintController: NSObject, WKNavigationDelegate {
     }
 
     private func run(html: String, baseURL: URL?) {
-        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 780, height: 1000))
+        let config = WKWebViewConfiguration()
+        config.userContentController.add(self, name: "wtmd")
+        let webView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 780, height: 1000),
+            configuration: config
+        )
         webView.navigationDelegate = self
         retained = [webView]
         webView.loadHTMLString(html, baseURL: baseURL)
@@ -386,8 +396,13 @@ final class PrintController: NSObject, WKNavigationDelegate {
             await withCheckedContinuation { c in
                 continuation = c
             }
-            // 等待排版稳定
-            try? await Task.sleep(nanoseconds: 400_000_000)
+            // 有图表：等待 mermaid 异步渲染完成的就绪信号（固定等待会丢图）；
+            // 无图表：维持原有的短暂排版稳定等待。
+            if html.contains("language-mermaid") {
+                await waitForDiagrams()
+            } else {
+                try? await Task.sleep(nanoseconds: 400_000_000)
+            }
             let info = NSPrintInfo.shared
             info.topMargin = 36
             info.bottomMargin = 36
@@ -404,10 +419,36 @@ final class PrintController: NSObject, WKNavigationDelegate {
         }
     }
 
+    /// 轮询就绪标记：就绪即返回，超时兜底（避免单张图失败时卡住导出）。
+    private func waitForDiagrams() async {
+        let deadline = Date().addingTimeInterval(Self.diagramWaitLimit)
+        while !diagramsReady, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        // 渲染完成后再留一小段排版稳定时间
+        try? await Task.sleep(nanoseconds: 120_000_000)
+    }
+
     nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Task { @MainActor in
             continuation?.resume()
             continuation = nil
+        }
+    }
+
+    // MARK: WKScriptMessageHandler
+
+    /// 页面脚本回报「图表已渲染完成」（无图表时也会立即回报）。
+    nonisolated func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        Task { @MainActor in
+            guard message.name == "wtmd",
+                  let body = message.body as? [String: Any],
+                  body["event"] as? String == "mermaid-ready"
+            else { return }
+            diagramsReady = true
         }
     }
 }
