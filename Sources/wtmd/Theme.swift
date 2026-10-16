@@ -210,8 +210,10 @@ enum StyleSheet {
       if (typeof __wtmdMermaidRenderAll === 'function') { __wtmdMermaidRenderAll(true); }
     }
     (function () {
-      // 目录/内链锚点：页内平滑滚动，避免 WebView 把 #hash 当作导航。
+      // 目录/内链锚点：页内滚动，避免 WebView 把 #hash 当作导航。
       // 事件委托挂在 document 上，不触碰 #wtmd-content 的子节点结构。
+      // 不用 behavior:'smooth'——离屏/无头 WKWebView 上平滑动画不可靠
+      //（macOS 15 实测 scrollY 不动），与侧栏大纲跳转同为确定性滚动。
       document.addEventListener('click', function (e) {
         var a = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
         if (!a) { return; }
@@ -219,7 +221,7 @@ enum StyleSheet {
         var target = id ? document.getElementById(id) : null;
         if (!target) { return; }
         e.preventDefault();
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        target.scrollIntoView();
       });
       var timer = null;
       window.addEventListener('scroll', function () {
