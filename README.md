@@ -4,7 +4,7 @@
 
 一个开源、本地优先的 macOS Markdown 写作与阅读工具。思绪落下的一刻，成文已然成型。
 
-![Status](https://img.shields.io/badge/status-v0.2%20rc-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
+![Status](https://img.shields.io/badge/status-v0.2.0-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
 
 ## 特性
 
@@ -20,7 +20,7 @@
 - **大纲导航** — 侧栏自动生成标题层级，点击跳转，滚动时同步高亮当前章节
 - **文件管理** — 最近文件、未命名草稿自动保存（重启不丢）
 - **导出** — 独立 HTML 文件（内联主题）、打印/存为 PDF
-- **零第三方依赖** — Markdown 解析器完全自研（`WTMarkdownKit`），61 项单元测试覆盖，GitHub Actions 双系统 CI
+- **零第三方依赖** — Markdown 解析器完全自研（`WTMarkdownKit`），69 项单元测试覆盖，GitHub Actions 双系统 CI
 
 ## 快速开始
 
@@ -72,7 +72,7 @@ result.outline // [OutlineItem(level: 1, text: "标题", slug: "标题", line: 0
 ## 路线图
 
 - v0.1 — 已发布：双模式视图、大纲导航、文件管理、HTML/PDF 导出
-- v0.2 — rc 完成（待打 tag）：主题系统、图片粘贴落地、脚注、实时统计、长文档增量渲染、预览代码高亮、Mermaid 图表（[详见规划](docs/V02_PLAN.md)）
+- v0.2 — **已发布（v0.2.0）**：主题系统、图片粘贴落地、脚注、实时统计、长文档增量渲染、预览代码高亮、Mermaid 图表（[详见规划](docs/V02_PLAN.md)）
 - v0.3 — 打字机模式、专注模式、命令面板、文件夹工作区、DMG 分发
 - v0.4 — WYSIWYG 编辑模式可行性评估
 
