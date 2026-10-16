@@ -55,9 +55,12 @@ final class DocumentStore: ObservableObject {
     let themeManager = ThemeManager()
 
     private let draftDirectory: URL
+    /// Debounce before an edit is persisted. Injectable so tests do not have to
+    /// sit through the production 1.2s interval for every case.
+    private let autoSaveDelay: UInt64
     private var savedSnapshot: String = ""
     private var renderTask: Task<Void, Never>?
-    private var draftTask: Task<Void, Never>?
+    private var saveTask: Task<Void, Never>?
 
     static let welcomeMarkdown = """
     # 欢迎使用 wtmd
@@ -105,9 +108,10 @@ final class DocumentStore: ObservableObject {
     MIT 开源协议 · 数据本地存储 · 标准纯文本
     """
 
-    init(draftDirectory: URL? = nil) {
+    init(draftDirectory: URL? = nil, autoSaveDelay: UInt64 = 1_200_000_000) {
         let directory = draftDirectory ?? Self.defaultDraftDirectory
         self.draftDirectory = directory
+        self.autoSaveDelay = autoSaveDelay
         if let draft = Self.readDraft(at: directory), !draft.isEmpty {
             text = draft
         } else {
@@ -126,7 +130,7 @@ final class DocumentStore: ObservableObject {
     func textDidChange(_ new: String) {
         text = new
         scheduleRender()
-        scheduleDraftSave()
+        scheduleSave()
     }
 
     func setMode(_ newMode: ViewMode) {
@@ -231,6 +235,7 @@ final class DocumentStore: ObservableObject {
     // MARK: - 文件
 
     func newDocument() {
+        flushPendingSave()
         text = ""
         fileURL = nil
         savedSnapshot = ""
@@ -255,7 +260,13 @@ final class DocumentStore: ObservableObject {
     }
 
     func open(url: URL) {
+        // Clicking the file that is already open (in the workspace tree, say)
+        // must not reload the preview and throw away the scroll position.
+        guard url != fileURL else { return }
         guard let content = try? String(contentsOf: url, encoding: .utf8) else { return }
+        // Flush only after the read succeeded: a failed open must not discard
+        // unsaved work.
+        flushPendingSave()
         text = content
         fileURL = url
         savedSnapshot = content
@@ -266,6 +277,8 @@ final class DocumentStore: ObservableObject {
     }
 
     func save() {
+        saveTask?.cancel()
+        saveTask = nil
         let targetURL: URL
         if let existing = fileURL {
             targetURL = existing
@@ -358,14 +371,48 @@ final class DocumentStore: ObservableObject {
         try? FileManager.default.removeItem(at: Self.draftURL(in: draftDirectory))
     }
 
-    private func scheduleDraftSave() {
-        guard fileURL == nil else { return }
-        draftTask?.cancel()
-        draftTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_200_000_000)
-            guard !Task.isCancelled, let self, self.fileURL == nil else { return }
-            Self.writeDraft(self.text, at: self.draftDirectory)
+    /// Persist an edit after a short pause. An untitled document goes to the
+    /// draft file; a document with a path is written straight back to disk —
+    /// inside a folder workspace the user clicks between files constantly, so
+    /// waiting for a manual ⌘S would drop edits.
+    private func scheduleSave() {
+        saveTask?.cancel()
+        let snapshot = text
+        let delay = autoSaveDelay
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled, let self, self.text == snapshot else { return }
+            self.persist(snapshot)
         }
+    }
+
+    /// Writes content to wherever this document belongs: its file on disk, or
+    /// the draft file while it has no path.
+    private func persist(_ content: String) {
+        if let fileURL {
+            writeFile(content, to: fileURL)
+        } else {
+            Self.writeDraft(content, at: draftDirectory)
+        }
+    }
+
+    @discardableResult
+    private func writeFile(_ content: String, to url: URL) -> Bool {
+        guard (try? content.write(to: url, atomically: true, encoding: .utf8)) != nil else {
+            return false
+        }
+        savedSnapshot = content
+        return true
+    }
+
+    /// Persists pending edits immediately, cancelling the debounce. Called
+    /// before switching documents: an edit made less than a debounce interval
+    /// before the switch would otherwise be dropped.
+    private func flushPendingSave() {
+        saveTask?.cancel()
+        saveTask = nil
+        guard isDirty else { return }
+        persist(text)
     }
 }
 
