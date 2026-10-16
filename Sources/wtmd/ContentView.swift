@@ -89,7 +89,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var detail: some View {
-        if store.text.isEmpty && store.fileURL == nil {
+        if store.showsWelcome {
             WelcomeView(
                 onNew: { store.newDocument() },
                 onOpen: { store.openPanel() }
