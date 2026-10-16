@@ -64,4 +64,7 @@ public struct OutlineItem: Equatable, Identifiable, Sendable {
 public struct RenderResult: Sendable {
     public let html: String
     public let outline: [OutlineItem]
+    /// 顶层块 HTML 数组（`html` = `blocks.joined()`）。
+    /// 增量渲染以此为 diff 基准，避免为同一份文本重复解析。
+    public let blocks: [String]
 }

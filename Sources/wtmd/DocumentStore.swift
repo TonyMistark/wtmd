@@ -24,6 +24,10 @@ final class DocumentStore: ObservableObject {
     @Published var mode: ViewMode = .edit
     @Published var outline: [OutlineItem] = []
     @Published var previewHTML: String = ""
+    /// 增量渲染：上次已渲染的块数组（diff 基准）。
+    private var renderedBlocks: [String] = []
+    /// 挂起的增量更新（预览视图消费后清空）。
+    @Published var pendingDiff: BlockDiff?
     @Published var currentSlug: String?
     @Published var cursorLine: Int = 0
     @Published var sidebarVisible = true
@@ -151,19 +155,62 @@ final class DocumentStore: ObservableObject {
 
     // MARK: - 渲染
 
+    /// 一次编辑所需的全部渲染产物（跨线程传递，全部 Sendable）。
+    private struct RenderOutput: Sendable {
+        let html: String
+        let blocks: [String]
+        let outline: [OutlineItem]
+        let statistics: TextStatistics
+    }
+
+    /// 解析 + 渲染 + 统计：纯函数，不触碰任何状态，可在后台线程执行。
+    nonisolated private static func build(_ markdown: String) -> RenderOutput {
+        let result = WTMarkdown.render(markdown)
+        return RenderOutput(
+            html: result.html,
+            blocks: result.blocks,
+            outline: result.outline,
+            statistics: TextStatistics.count(markdown)
+        )
+    }
+
+    /// 全量重渲染：打开文件 / 切换模式 / 新建等低频场景（同步，保证首帧即有内容）。
     private func recomputeNow() {
-        let result = WTMarkdown.render(text)
-        outline = result.outline
-        previewHTML = result.html
-        statistics = TextStatistics.count(text)
+        let output = Self.build(text)
+        outline = output.outline
+        previewHTML = output.html
+        statistics = output.statistics
+        // DOM 基准与即将注入的全文一致，后续编辑可直接走增量
+        renderedBlocks = output.blocks
+        pendingDiff = nil
+    }
+
+    /// 增量应用：块级 diff 在主线程完成（O(块数) 比较，与文档长度基本无关），
+    /// 未变化块的 DOM 节点保持原位（图片已解码结果不重画）。
+    private func applyIncremental(_ output: RenderOutput) {
+        outline = output.outline
+        statistics = output.statistics
+        previewHTML = output.html
+
+        let diff = BlockDiff.compute(old: renderedBlocks, new: output.blocks)
+        renderedBlocks = output.blocks
+        // 块数组完全一致时没有可发的增量，显式清空避免上一轮的 diff 被重复套用
+        pendingDiff = diff.isEmpty ? nil : diff
     }
 
     private func scheduleRender() {
         renderTask?.cancel()
+        let snapshot = text
         renderTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled, let self else { return }
-            self.recomputeNow()
+            guard !Task.isCancelled else { return }
+            // 重活（解析/渲染/统计）放后台线程，主线程只负责 diff 与状态赋值
+            let output = await Task.detached(priority: .userInitiated) {
+                Self.build(snapshot)
+            }.value
+            // 期间又发生编辑或本任务已被取消 → 丢弃，交给下一次防抖
+            guard !Task.isCancelled, let self, self.text == snapshot else { return }
+            self.applyIncremental(output)
         }
     }
 
