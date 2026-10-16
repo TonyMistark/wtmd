@@ -115,6 +115,26 @@ enum StyleSheet {
       padding: 0 0.15em;
     }
     .footnote-backref { text-decoration: none; }
+    /* 代码高亮取色：默认由主题的强调色/前景色派生，主题可用 --hl-* 覆盖，无需新增主题文件 */
+    :root {
+      --hl-keyword: var(--accent);
+      --hl-string: color-mix(in srgb, var(--accent) 55%, var(--fg));
+      --hl-number: color-mix(in srgb, var(--accent) 70%, var(--fg));
+      --hl-comment: var(--secondary);
+      --hl-type: color-mix(in srgb, var(--accent) 40%, var(--fg));
+      --hl-meta: color-mix(in srgb, var(--secondary) 60%, var(--accent));
+    }
+    .hljs-comment, .hljs-quote { color: var(--hl-comment); font-style: italic; }
+    .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-doctag, .hljs-deletion { color: var(--hl-keyword); }
+    .hljs-string, .hljs-regexp, .hljs-symbol, .hljs-bullet, .hljs-addition { color: var(--hl-string); }
+    .hljs-number, .hljs-variable, .hljs-template-variable, .hljs-attr, .hljs-attribute { color: var(--hl-number); }
+    .hljs-type, .hljs-built_in, .hljs-class .hljs-title, .hljs-title.class_ { color: var(--hl-type); }
+    .hljs-title, .hljs-title.function_, .hljs-section, .hljs-name,
+    .hljs-selector-id, .hljs-selector-class { color: var(--hl-type); font-weight: 600; }
+    .hljs-meta, .hljs-tag { color: var(--hl-meta); }
+    .hljs-emphasis { font-style: italic; }
+    .hljs-strong { font-weight: 650; }
+    .hljs-link { text-decoration: underline; }
     ::selection { background: color-mix(in srgb, var(--accent) 25%, transparent); }
     @media print {
       body { padding: 0; max-width: none; }
@@ -127,6 +147,7 @@ enum StyleSheet {
     static let script = """
     function __wtmdUpdate(bodyHTML) {
       document.getElementById('wtmd-content').innerHTML = bodyHTML;
+      if (typeof __wtmdHighlight === 'function') { __wtmdHighlight(); }
     }
     // 增量更新：替换第 prefix..(total-suffix) 块，保留前后缀节点（图片/图表不重画）
     function __wtmdUpdateRange(diff) {
@@ -152,6 +173,8 @@ enum StyleSheet {
           container.insertBefore(template.content.firstChild, refNode);
         }
       }
+      // 新插入的代码块需要着色（已着色的块由 data-wtmd-hl 标记跳过）
+      if (typeof __wtmdHighlight === 'function') { __wtmdHighlight(container); }
     }
     function __wtmdSetTheme(cssText) {
       var el = document.getElementById('wtmd-theme');
@@ -178,6 +201,38 @@ enum StyleSheet {
     })();
     """
 
+    /// 高亮初始化：与内嵌的 highlight.js 一起注入。
+    /// 预览与静态导出共用同一份——导出的 HTML 也自带着色，离线打开即所见。
+    private static let highlightInit = """
+    // 只处理 ```lang 围栏块；未注册语言/渲染失败一律保持为普通代码块
+    function __wtmdHighlight(root) {
+      if (!window.hljs) { return; }
+      var scope = root || document.getElementById('wtmd-content') || document;
+      var nodes = scope.querySelectorAll('pre code[class*="language-"]');
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i];
+        if (el.getAttribute('data-wtmd-hl')) { continue; }
+        var found = /language-([^\\s]+)/.exec(el.className);
+        var lang = found ? found[1] : '';
+        if (!lang || !window.hljs.getLanguage(lang)) { continue; }
+        try {
+          el.innerHTML = window.hljs.highlight(el.textContent, {
+            language: lang, ignoreIllegals: true
+          }).value;
+          el.setAttribute('data-wtmd-hl', '1');
+        } catch (e) { /* 降级：保持原代码块 */ }
+      }
+    }
+    document.addEventListener('DOMContentLoaded', function () { __wtmdHighlight(); });
+    """
+
+    /// 完整高亮脚本：内嵌库 + 初始化。资源缺失时返回空串（退化为无高亮，正文不受影响）。
+    static var highlightScript: String {
+        let library = WebAssets.highlightJS
+        guard !library.isEmpty else { return "" }
+        return "\(library)\n\(highlightInit)"
+    }
+
     /// 将明/暗两份变量文本拼为合法主题样式表。
     /// - 两者皆有：浅色进 `:root`，深色进 `prefers-color-scheme: dark`
     /// - 仅一份：直接进 `:root`（常亮）
@@ -199,7 +254,8 @@ enum StyleSheet {
         }
     }
 
-    /// 完整预览文档：排版骨架 + 主题变量层 + 正文（+ 可选交互脚本）。
+    /// 完整预览文档：排版骨架 + 主题变量层 + 内嵌前端资源 + 正文（+ 可选交互脚本）。
+    /// 高亮脚本始终内联（预览/HTML 导出/PDF 三端一致）；交互脚本仅预览需要。
     static func fullDocument(
         title: String,
         body: String,
@@ -207,6 +263,8 @@ enum StyleSheet {
         includeScript: Bool
     ) -> String {
         let scriptTag = includeScript ? "<script>\n\(script)\n</script>\n" : ""
+        let highlight = highlightScript
+        let highlightTag = highlight.isEmpty ? "" : "<script>\n\(highlight)\n</script>\n"
         return """
         <!DOCTYPE html>
         <html lang="zh-CN">
@@ -216,7 +274,7 @@ enum StyleSheet {
         <title>\(title)</title>
         <style id="wtmd-base">\(baseCSS)</style>
         <style id="wtmd-theme">\(themeCSS)</style>
-        \(scriptTag)</head>
+        \(highlightTag)\(scriptTag)</head>
         <body>
         <div id="wtmd-content">
         \(body)
