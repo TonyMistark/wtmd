@@ -279,19 +279,37 @@ enum StyleSheet {
       }
     }
 
+    // 清理 mermaid 自己在 DOM 上留下的临时节点：解析失败时它会往 document.body 追加
+    // <div id="d{id}">（内含 "Syntax error in text" 的错误 SVG），落在 #wtmd-content 之外
+    // 就成了文末一个可见脏块，而且每次重绘再积一份。只删正文容器之外的，避免误删已渲染的图。
+    function __wtmdMermaidPurge(id) {
+      var content = document.getElementById('wtmd-content');
+      function drop(node) {
+        if (node && node.parentNode && (!content || !content.contains(node))) {
+          node.parentNode.removeChild(node);
+        }
+      }
+      drop(document.getElementById('d' + id));
+      drop(document.getElementById(id));
+    }
+
     // 单个图表：成功则替换为 SVG，失败则保留源码块并给出错误提示
     function __wtmdMermaidDraw(target, source) {
       __wtmdMermaidSeq += 1;
+      var id = 'wtmd-mermaid-' + __wtmdMermaidSeq;
       var wrap = target.parentNode;
-      return window.mermaid.render('wtmd-mermaid-' + __wtmdMermaidSeq, source).then(function (result) {
+      if (wrap && wrap.setAttribute) { wrap.setAttribute('data-wtmd-src', source); }
+      return window.mermaid.render(id, source).then(function (result) {
         target.innerHTML = result.svg;
+        __wtmdMermaidPurge(id);
         if (wrap && wrap.classList) {
           wrap.classList.remove('mermaid-failed');
           wrap.classList.add('mermaid-rendered');
         }
         return true;
       }).catch(function (error) {
-        var message = (error && error.message) ? error.message : '语法无法解析';
+        __wtmdMermaidPurge(id);
+        var full = (error && error.message) ? String(error.message) : '语法无法解析';
         if (wrap && wrap.classList) {
           wrap.classList.add('mermaid-failed');
           var note = wrap.querySelector('.mermaid-error');
@@ -300,7 +318,12 @@ enum StyleSheet {
             note.className = 'mermaid-error';
             wrap.appendChild(note);
           }
-          note.textContent = '图表渲染失败：' + message;
+          // mermaid 的解析诊断是多行的（含脱字符指向出错位置），行内压成单行并限长，
+          // 完整诊断放到 title 上——悬停可见，不撑坏正文版式
+          var inline = full.replace(/\\s+/g, ' ').trim();
+          if (inline.length > 200) { inline = inline.slice(0, 200) + '…'; }
+          note.textContent = '图表渲染失败：' + inline;
+          note.title = full;
         }
         return false;
       });
@@ -322,6 +345,10 @@ enum StyleSheet {
           if (!force) { continue; }
           var target = host.querySelector('.mermaid');
           if (!target) { continue; }
+          // 上次就因语法失败、且源码没变的块：重试还是同样的错误，跳过。
+          // 否则每次切主题都会再失败一次（并在 body 上再留一份错误 SVG）
+          if (host.classList.contains('mermaid-failed') &&
+              host.getAttribute('data-wtmd-src') === code.textContent) { continue; }
           target.textContent = code.textContent;
           jobs.push(__wtmdMermaidDraw(target, code.textContent));
           continue;
