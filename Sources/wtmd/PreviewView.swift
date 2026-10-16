@@ -1,11 +1,13 @@
 import SwiftUI
 import WebKit
+import WTMarkdownKit
 
 /// 预览视图：WKWebView 封装，支持增量更新（不重载页面，滚动位置天然保持）。
 struct PreviewView: NSViewRepresentable {
     @Binding var html: String
     @Binding var currentSlug: String?
     var themeCSS: String
+    var diff: BlockDiff?
     var jump: JumpRequest?
     var generation: Int
     var documentTitle: String
@@ -35,8 +37,14 @@ struct PreviewView: NSViewRepresentable {
 
         if html != coordinator.lastHTML {
             coordinator.lastHTML = html
-            let json = encodeJS(html)
-            coordinator.webView.evaluateJavaScript("__wtmdUpdate(\(json))")
+            if let diff, !diff.isEmpty {
+                // 增量：只替换变化段，未变块（图片/图表）保持原位
+                let payload = diffPayload(diff)
+                coordinator.webView.evaluateJavaScript("__wtmdUpdateRange(\(payload))")
+            } else {
+                let json = encodeJS(html)
+                coordinator.webView.evaluateJavaScript("__wtmdUpdate(\(json))")
+            }
         }
 
         // 主题热切换：只替换变量层，正文 DOM 与滚动位置不动
@@ -60,6 +68,12 @@ struct PreviewView: NSViewRepresentable {
         else { return "\"\"" }
         // JSON 数组 ["..."] → 取出元素即合法 JS 字符串字面量
         return String(json.dropFirst().dropLast())
+    }
+
+    /// BlockDiff → JS 对象字面量 {prefix, suffix, replacement: [...]}。
+    private func diffPayload(_ diff: BlockDiff) -> String {
+        let parts = diff.replacement.map { encodeJS($0) }
+        return "{prefix: \(diff.commonPrefix), suffix: \(diff.commonSuffix), replacement: [\(parts.joined(separator: ","))]}"
     }
 
     // MARK: - Coordinator
@@ -102,6 +116,11 @@ struct PreviewView: NSViewRepresentable {
                 themeCSS: parent.themeCSS,
                 includeScript: true
             )
+            // 重载后的 DOM 就是当前 html/主题这一代，先对齐基准：
+            // 否则首帧会把上一轮的 diff 套用到刚装载的 DOM 上（模式切换回来时会错位）
+            lastHTML = parent.html
+            lastThemeCSS = parent.themeCSS
+            lastGeneration = parent.generation
             webView.loadHTMLString(html, baseURL: parent.baseURL)
         }
 

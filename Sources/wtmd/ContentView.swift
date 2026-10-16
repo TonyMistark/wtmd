@@ -132,6 +132,7 @@ struct ContentView: View {
                             set: { store.currentSlug = $0 }
                         ),
                         themeCSS: themeManager.currentThemeCSS,
+                        diff: store.pendingDiff,
                         jump: store.previewJump,
                         generation: store.renderGeneration,
                         documentTitle: store.displayName,

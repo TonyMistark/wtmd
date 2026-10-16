@@ -128,6 +128,31 @@ enum StyleSheet {
     function __wtmdUpdate(bodyHTML) {
       document.getElementById('wtmd-content').innerHTML = bodyHTML;
     }
+    // 增量更新：替换第 prefix..(total-suffix) 块，保留前后缀节点（图片/图表不重画）
+    function __wtmdUpdateRange(diff) {
+      var container = document.getElementById('wtmd-content');
+      if (!container) { return; }
+      var children = container.children;
+      var oldCount = children.length;
+      var start = diff.prefix;
+      var oldEnd = oldCount - diff.suffix;
+      if (start < 0 || oldEnd < start) { return; }
+
+      // 删除旧变化段
+      for (var i = oldEnd - 1; i >= start; i--) {
+        if (children[i]) { container.removeChild(children[i]); }
+      }
+      // 插入新变化段（模板一次性解析，性能优于逐节点）
+      if (diff.replacement.length > 0) {
+        var html = diff.replacement.join('');
+        var template = document.createElement('template');
+        template.innerHTML = html;
+        var refNode = container.children[start] || null;
+        while (template.content.firstChild) {
+          container.insertBefore(template.content.firstChild, refNode);
+        }
+      }
+    }
     function __wtmdSetTheme(cssText) {
       var el = document.getElementById('wtmd-theme');
       if (el) { el.textContent = cssText; }
