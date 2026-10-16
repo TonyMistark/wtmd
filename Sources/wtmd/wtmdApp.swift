@@ -5,10 +5,11 @@ struct wtmdApp: App {
     @StateObject private var store = DocumentStore()
     @StateObject private var workspace = WorkspaceStore()
     @StateObject private var writing = WritingSettings()
+    @State private var paletteVisible = false
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(paletteVisible: $paletteVisible)
                 .environmentObject(store)
                 .environmentObject(workspace)
                 .environmentObject(writing)
@@ -22,28 +23,41 @@ struct wtmdApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("新建文档") { store.newDocument() }
-                    .keyboardShortcut("n", modifiers: .command)
+                menuItem(.newDocument)
             }
             CommandGroup(replacing: .saveItem) {
-                Button("打开…") { store.openPanel() }
-                    .keyboardShortcut("o", modifiers: .command)
-                Button("打开文件夹…") { workspace.openPanel() }
-                    .keyboardShortcut("o", modifiers: [.command, .shift])
-                Button("保存") { store.save() }
-                    .keyboardShortcut("s", modifiers: .command)
+                menuItem(.openDocument)
+                menuItem(.openFolder)
+                menuItem(.save)
                 Divider()
-                Button("导出 HTML…") { store.exportHTML() }
-                    .keyboardShortcut("e", modifiers: [.command, .shift])
-                Button("打印 / 存为 PDF…") { store.exportPDF() }
-                    .keyboardShortcut("p", modifiers: .command)
+                menuItem(.exportHTML)
+                menuItem(.exportPDF)
             }
             CommandGroup(after: .sidebar) {
                 Divider()
-                Toggle("打字机模式", isOn: $writing.typewriter)
-                    .keyboardShortcut("t", modifiers: [.command, .option])
-                Toggle("专注模式", isOn: $writing.focusMode)
-                    .keyboardShortcut("f", modifiers: [.command, .option])
+                menuItem(.toggleTypewriter)
+                menuItem(.toggleFocus)
+                Divider()
+                Button("命令面板…") { paletteVisible = true }
+                    .keyboardShortcut("k", modifiers: .command)
+            }
+        }
+    }
+
+    /// Menu items take their title, shortcut, availability and action from
+    /// `CommandCatalog` — the same definitions the palette uses, so the two can
+    /// never drift apart. The menus only declare structure: slots and dividers.
+    @ViewBuilder
+    private func menuItem(_ kind: CommandKind) -> some View {
+        if let command = CommandCatalog.command(for: kind, themes: store.themeManager.themes) {
+            let runtime = CommandRuntime(store: store, workspace: workspace, writing: writing)
+            if let isOn = runtime.isOn(command) {
+                Toggle(command.title, isOn: Binding(get: { isOn }, set: { _ in runtime.run(command) }))
+                    .keyboardShortcut(command.shortcut)
+            } else {
+                Button(command.title) { runtime.run(command) }
+                    .keyboardShortcut(command.shortcut)
+                    .disabled(!runtime.isEnabled(command))
             }
         }
     }

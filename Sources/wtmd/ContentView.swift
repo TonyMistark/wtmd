@@ -6,6 +6,8 @@ struct ContentView: View {
     @EnvironmentObject var workspace: WorkspaceStore
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var writing: WritingSettings
+    /// Owned by the app so the menu bar can open the palette too.
+    @Binding var paletteVisible: Bool
 
     var body: some View {
         NavigationSplitView(
@@ -27,13 +29,50 @@ struct ContentView: View {
             workspace.reveal(newValue)
         }
         .overlay {
-            // ⌘/ 切换模式
-            Button("") { store.toggleMode() }
-                .keyboardShortcut("/", modifiers: .command)
-                .opacity(0)
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
+            ZStack {
+                // ⌘/ 切换模式
+                Button("") { store.toggleMode() }
+                    .keyboardShortcut("/", modifiers: .command)
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+
+                // ⌘K 命令面板
+                Button("") { paletteVisible.toggle() }
+                    .keyboardShortcut("k", modifiers: .command)
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+
+                if paletteVisible {
+                    CommandPalette(
+                        commands: CommandCatalog.commands(
+                            themes: themeManager.themes,
+                            recentFiles: store.recentFiles.urls
+                        ),
+                        runtime: commandRuntime,
+                        isPresented: $paletteVisible
+                    )
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: paletteVisible)
         }
+    }
+
+    // MARK: - 命令
+
+    /// The single runtime behind the toolbar, the menus and the palette, so a
+    /// command behaves identically wherever it is invoked from.
+    private var commandRuntime: CommandRuntime {
+        CommandRuntime(store: store, workspace: workspace, writing: writing)
+    }
+
+    private func isEnabled(_ kind: CommandKind) -> Bool {
+        guard let command = CommandCatalog.command(for: kind, themes: themeManager.themes) else {
+            return true
+        }
+        return commandRuntime.isEnabled(command)
     }
 
     // MARK: - 侧栏
@@ -363,7 +402,7 @@ struct ContentView: View {
             } label: {
                 Label("保存", systemImage: "square.and.arrow.down")
             }
-            .disabled(!store.isDirty && store.fileURL != nil)
+            .disabled(!isEnabled(.save))
         }
     }
 }
