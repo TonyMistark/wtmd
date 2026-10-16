@@ -59,7 +59,7 @@ v0.3 的特性全部指向同一个转变：**单文档工具 → 常驻写作�
   - ~~Developer ID 签名 + notarytool 公证~~ **实际路线（2026-10-16 确认）：无证书路线**——本机只有 Apple Development 证书、没有 Developer ID，公证不可行。对外产物固定 ad-hoc 签名（`codesign --sign -`）：Apple Development 签名对陌生机器同样过不了 Gatekeeper，还携带 `get-task-allow` 调试 entitlement，对外分发是更差的产物。`WTMD_SIGN_IDENTITY` 可显式覆盖（make-app.sh 本机自用仍自动取可用证书）
   - Gatekeeper 引导：**macOS 15 起「右键 → 打开」已不再能绕过**未公证应用的首次拦截，引导只保留两条有效路径——「系统设置 › 隐私与安全性 › 仍要打开」与 `xattr -cr`。文案三处落地：DMG 背景图底部、README「安装」一节、打包完成后的分发提示
   - DMG 背景图（拖拽到 Applications 的箭头提示）✅：`Assets/gen_dmg_background.swift`（Swift + CoreGraphics，零第三方依赖，`tiffutil -cathidpicheck` 合成 HiDPI tiff），延续图标「断续虚线 → 连续实线」意象，底部直接印上首启引导。图标位置等布局常量与 `make-dmg.sh` 两侧同步
-  - Finder 布局（窗口尺寸/图标位置/背景图）经 `osascript` 写入 `.DS_Store`；**AppleScript 控制 Finder 需要自动化授权**（TCC），无授权环境自动降级为默认视图并给出操作提示（在自己的终端重跑即可，首次会弹授权框），发布不因此中断
+  - Finder 布局（窗口尺寸/图标位置/背景图）**直接写入卷内 `.DS_Store`**（`Assets/write_dmg_layout.py`，bwsp/icvp/icvl/Iloc，配方与 dmgbuild 同源）——最初用 osascript 控制 Finder，但 Apple Events 需要 TCC 授权且在受限/无头环境拿不到（实测 -1743），遂改为直接写文件：零自动化依赖，CI 也能产出带布局的 DMG；Python 依赖（ds_store/mac_alias）缺失时降级为默认视图
 - Release 产物：`.dmg` 附到 GitHub Release
 - 工作量：S（有证书）/ M（无证书走引导文案路线）
 
@@ -140,5 +140,6 @@ v0.3 的特性全部指向同一个转变：**单文档工具 → 常驻写作�
   `WTMD_SIGN_IDENTITY` 可覆盖、make-app.sh 本机自用不受影响。DMG 背景图
   `Assets/gen_dmg_background.swift`（Swift + CoreGraphics 零依赖，HiDPI tiff），延续
   「虚线 → 实线」意象并把**首启引导直接印在背景上**（macOS 15 起「右键打开」已失效，只保留
-  「系统设置 › 仍要打开」与 `xattr -cr` 两条有效路径）；Finder 布局经 osascript 写入，
-  **TCC 拒绝时自动降级**（布局只是观感，产物可用）并提示在自己的终端重跑。
+  「系统设置 › 仍要打开」与 `xattr -cr` 两条有效路径）；Finder 布局**直接写 `.DS_Store`**
+  （dmgbuild 同源配方，不依赖 Apple Events / TCC），发布链路在任意环境全自动。
+- 2026-10-17 发布执行：tag `v0.3.0` 已打（指向含发布文档的 main 合并提交），GitHub Release 附 `.dmg`。

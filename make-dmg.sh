@@ -1,6 +1,8 @@
 #!/bin/zsh
 # 打包对外分发的 DMG：wtmd.app + /Applications 快捷方式 + 背景图与窗口布局。
 # 用法：./make-dmg.sh
+# 可选依赖：窗口布局需要 Python 的 ds_store + mac_alias（pip install dmgbuild）；
+# 缺失时布局降级为默认视图，产物照常生成。可用 WTMD_LAYOUT_PY 指定解释器。
 #
 # 签名策略（对外分发）：默认 ad-hoc（codesign --sign -）。
 # 本仓库没有 Developer ID Application 证书，无法公证；Apple Development 签名
@@ -57,37 +59,27 @@ MOUNT_DIR=$(hdiutil attach -readwrite -nobrowse -noautoopen "$RW_DMG" 2>/dev/nul
     | awk -F'\t' '/\/Volumes\//{gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3}')
 [[ -n "$MOUNT_DIR" ]] || { echo "   ✗ 挂载失败"; exit 1; }
 
-echo "── 4/6 设置 DMG 窗口布局…"
-# Finder 把背景图画在窗口内容区，坐标以内容区左上角为原点；position 是图标
-# 左上角，因此居中位置要减去半个图标。布局失败（如无 GUI / 自动化权限被拒）
-# 只影响观感，不应让发布中断。
-LAYOUT_ERR=$(mktemp)
-if osascript -e "
-tell application \"Finder\"
-    tell disk \"wtmd\"
-        open
-        set current view of container window to icon view
-        set toolbar visible of container window to false
-        set statusbar visible of container window to false
-        set bounds of container window to {200, 200, $((200 + DMG_W)), $((200 + DMG_H + DMG_TITLEBAR_H))}
-        set theViewOptions to the icon view options of container window
-        set arrangement of theViewOptions to not arranged
-        set icon size of theViewOptions to $DMG_ICON_SIZE
-        set background picture of theViewOptions to file \".background:dmg-background.tiff\"
-        set position of item \"wtmd.app\" of container window to {$((DMG_APP_CENTER_X - DMG_ICON_SIZE / 2)), $((DMG_ICON_ROW_Y - DMG_ICON_SIZE / 2))}
-        set position of item \"Applications\" of container window to {$((DMG_APPS_CENTER_X - DMG_ICON_SIZE / 2)), $((DMG_ICON_ROW_Y - DMG_ICON_SIZE / 2))}
-        update without registering applications
-        delay 1
-        close
-    end tell
-end tell" 2>"$LAYOUT_ERR"; then
-    echo "   布局已写入（窗口 ${DMG_W}x$((DMG_H + DMG_TITLEBAR_H))，图标 $DMG_ICON_SIZE）"
-else
-    echo "   ⚠ 无法配置 Finder 布局（$(head -1 "$LAYOUT_ERR")），DMG 将使用默认视图。"
-    echo "     布局只是观感问题，产物可用；需要布局时在自己的终端重跑本脚本——"
-    echo "     首次会弹出「<终端> 想要控制 Finder」的授权框，点允许即可。"
+echo "── 4/6 写入 DMG 窗口布局…"
+# 布局直接写进卷内的 .DS_Store（bwsp 窗口 bounds / icvp 图标视图选项与背景图
+# alias / icvl / 每项 Iloc），配方与 dmgbuild 同源。坐标是图标左上角，与
+# Assets/gen_dmg_background.swift 和 Assets/write_dmg_layout.py 顶部常量同步。
+# 这一步不依赖 Finder 自动化（osascript 的 Apple Events 需要 TCC 授权，在
+# 无头/受限环境拿不到），找不到依赖时降级为默认视图，发布不因此中断。
+LAYOUT_PY="${WTMD_LAYOUT_PY:-}"
+if [[ -z "$LAYOUT_PY" ]]; then
+    for py in python3 python /usr/bin/python3; do
+        command -v "$py" >/dev/null 2>&1 || continue
+        "$py" -c "import ds_store, mac_alias" >/dev/null 2>&1 && { LAYOUT_PY="$py"; break; }
+    done
 fi
-rm -f "$LAYOUT_ERR"
+if [[ -n "$LAYOUT_PY" ]]; then
+    "$LAYOUT_PY" Assets/write_dmg_layout.py "$MOUNT_DIR" \
+        && echo "   布局已写入（窗口 ${DMG_W}x$((DMG_H + DMG_TITLEBAR_H))，图标 $DMG_ICON_SIZE）" \
+        || echo "   ⚠ 布局写入失败，DMG 将使用默认视图（只是观感，产物可用）"
+else
+    echo "   ⚠ 未找到带 ds_store/mac_alias 的 Python，跳过窗口布局（只是观感，产物可用）。"
+    echo "     需要布局时：pip install dmgbuild，或用 WTMD_LAYOUT_PY=<python> 指定解释器。"
+fi
 
 sync
 sleep 1

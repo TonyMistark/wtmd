@@ -59,7 +59,7 @@ swift build -c release
 ./make-dmg.sh     # 生成 dist/wtmd-<版本>.dmg（含背景图布局与安装引导）
 ```
 
-`make-dmg.sh` 默认对 app 与 DMG 做 ad-hoc 签名（对外分发路径）；有 Developer ID 证书时用 `WTMD_SIGN_IDENTITY="Developer ID Application: …" ./make-dmg.sh`，公证后自行 `notarytool submit` + `stapler staple`。
+`make-dmg.sh` 默认对 app 与 DMG 做 ad-hoc 签名（对外分发路径）；有 Developer ID 证书时用 `WTMD_SIGN_IDENTITY="Developer ID Application: …" ./make-dmg.sh`，公证后自行 `notarytool submit` + `stapler staple`。DMG 窗口布局（背景图 + 图标位置）直接写入 `.DS_Store`，不依赖 Finder 自动化；可选依赖 `pip install dmgbuild`（缺省降级为默认视图）。
 
 ## 设计哲学
 
