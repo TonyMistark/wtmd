@@ -4,18 +4,21 @@ import SwiftUI
 struct wtmdApp: App {
     @StateObject private var store = DocumentStore()
     @StateObject private var workspace = WorkspaceStore()
+    @StateObject private var writing = WritingSettings()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(store)
                 .environmentObject(workspace)
+                .environmentObject(writing)
                 .environmentObject(store.themeManager)
                 .frame(minWidth: 760, minHeight: 500)
         }
         Settings {
             ThemeSettingsView()
                 .environmentObject(store.themeManager)
+                .environmentObject(writing)
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -34,6 +37,13 @@ struct wtmdApp: App {
                     .keyboardShortcut("e", modifiers: [.command, .shift])
                 Button("打印 / 存为 PDF…") { store.exportPDF() }
                     .keyboardShortcut("p", modifiers: .command)
+            }
+            CommandGroup(after: .sidebar) {
+                Divider()
+                Toggle("打字机模式", isOn: $writing.typewriter)
+                    .keyboardShortcut("t", modifiers: [.command, .option])
+                Toggle("专注模式", isOn: $writing.focusMode)
+                    .keyboardShortcut("f", modifiers: [.command, .option])
             }
         }
     }

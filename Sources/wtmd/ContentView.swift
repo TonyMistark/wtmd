@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject var store: DocumentStore
     @EnvironmentObject var workspace: WorkspaceStore
     @EnvironmentObject var themeManager: ThemeManager
+    @EnvironmentObject var writing: WritingSettings
 
     var body: some View {
         NavigationSplitView(
@@ -200,7 +201,9 @@ struct ContentView: View {
                             set: { store.pendingImageInsert = $0 }
                         ),
                         jump: store.editorJump,
-                        onImagePaste: { store.handleImagePaste($0) }
+                        onImagePaste: { store.handleImagePaste($0) },
+                        typewriterMode: writing.typewriter,
+                        focusMode: writing.focusMode
                     )
                     .overlay(alignment: .topLeading) {
                         if store.text.isEmpty {
@@ -246,6 +249,7 @@ struct ContentView: View {
                 Text("约 \(store.statistics.readingMinutes) 分钟读完")
             }
             Spacer()
+            writingModeToggles
             Text(store.fileURL?.lastPathComponent ?? "草稿")
                 .foregroundStyle(.tertiary)
         }
@@ -257,6 +261,39 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             Divider()
         }
+    }
+
+    /// 两个写作模式的开关：界面越安静，越容易待在里面。
+    private var writingModeToggles: some View {
+        HStack(spacing: 10) {
+            modeToggle(
+                symbol: "align.vertical.center",
+                isOn: writing.typewriter,
+                help: "打字机模式：光标行停在屏幕中部（⌥⌘T）"
+            ) { writing.typewriter.toggle() }
+
+            modeToggle(
+                symbol: "scope",
+                isOn: writing.focusMode,
+                help: "专注模式：当前段落之外退成浅灰（⌥⌘F）"
+            ) { writing.focusMode.toggle() }
+        }
+    }
+
+    private func modeToggle(
+        symbol: String,
+        isOn: Bool,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
     }
 
     // MARK: - 工具栏

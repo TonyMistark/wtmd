@@ -245,6 +245,7 @@ final class ThemeManager: ObservableObject {
 
 struct ThemeSettingsView: View {
     @EnvironmentObject var themeManager: ThemeManager
+    @EnvironmentObject var writing: WritingSettings
 
     var body: some View {
         Form {
@@ -265,9 +266,17 @@ struct ThemeSettingsView: View {
                 Spacer()
                 Button("重新扫描") { themeManager.reload() }
             }
+
+            Section("写作") {
+                Toggle("打字机模式", isOn: $writing.typewriter)
+                Toggle("专注模式", isOn: $writing.focusMode)
+                Text("打字机让光标行停在屏幕中部；专注把当前段落之外的内容退成浅灰。两者可同时开启。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 440, height: 240)
+        .frame(width: 440, height: 340)
     }
 
     private var themeSelection: Binding<String> {
