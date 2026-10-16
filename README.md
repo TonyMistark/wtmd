@@ -4,7 +4,7 @@
 
 一个开源、本地优先的 macOS Markdown 写作与阅读工具。思绪落下的一刻，成文已然成型。
 
-![Status](https://img.shields.io/badge/status-v0.1%20MVP-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
+![Status](https://img.shields.io/badge/status-v0.2%20rc-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
 
 ## 特性
 
@@ -38,6 +38,13 @@ swift build -c release
 
 要求：macOS 14+，Xcode 15+（含 Swift 工具链）。
 
+## 打包
+
+```bash
+./make-app.sh     # 生成 dist/wtmd.app（含内嵌前端资源，本地签名）
+./make-dmg.sh     # 生成 dist/wtmd-<版本>.dmg（v0.3 首发对外分发）
+```
+
 ## 设计哲学
 
 1. **写作即排版** — 源码与预览是同一份文本的两种视图
@@ -64,8 +71,9 @@ result.outline // [OutlineItem(level: 1, text: "标题", slug: "标题", line: 0
 
 ## 路线图
 
-- v0.2 — 脚注、Mermaid 图表、图片粘贴落地、增量渲染（[详见规划](docs/V02_PLAN.md)）
-- v0.3 — 打字机模式、专注模式、命令面板
+- v0.1 — 已发布：双模式视图、大纲导航、文件管理、HTML/PDF 导出
+- v0.2 — rc 完成（待打 tag）：主题系统、图片粘贴落地、脚注、实时统计、长文档增量渲染、预览代码高亮、Mermaid 图表（[详见规划](docs/V02_PLAN.md)）
+- v0.3 — 打字机模式、专注模式、命令面板、文件夹工作区、DMG 分发
 - v0.4 — WYSIWYG 编辑模式可行性评估
 
 ## 参与贡献
