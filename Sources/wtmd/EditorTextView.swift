@@ -10,6 +10,10 @@ struct EditorTextView: NSViewRepresentable {
     var jump: JumpRequest?
     /// 图片粘贴落地回调：返回 true 表示已处理。
     var onImagePaste: ((Data) -> Bool)?
+    /// 光标行保持垂直居中。
+    var typewriterMode: Bool = false
+    /// 当前段落之外的内容退成浅灰。
+    var focusMode: Bool = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -43,6 +47,22 @@ struct EditorTextView: NSViewRepresentable {
             }
             coordinator.insertAtCursor("![\(insert)](\(insert))")
         }
+
+        if coordinator.appliedFocusMode != focusMode {
+            coordinator.appliedFocusMode = focusMode
+            coordinator.applyFocusFull()
+        }
+
+        if coordinator.appliedTypewriterMode != typewriterMode {
+            coordinator.appliedTypewriterMode = typewriterMode
+            coordinator.clipView.centersCaret = typewriterMode
+            if typewriterMode {
+                coordinator.recenter(animated: false)
+            } else {
+                // 收起那半屏留白：否则关掉开关后文档末尾会浮在半空
+                coordinator.settleIntoScrollRange()
+            }
+        }
     }
 
     // MARK: - Coordinator
@@ -50,10 +70,16 @@ struct EditorTextView: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: EditorTextView
         let scrollView: NSScrollView
+        let clipView: TypewriterClipView
         let textView: NSTextView
         var isEditing = false
         var lastJumpID = ""
         var lastInsertedImage = ""
+        /// 已经生效的开关状态，用来只在真正变化时重刷。
+        var appliedFocusMode = false
+        var appliedTypewriterMode = false
+        /// 当前未被压暗的区间（专注模式）。
+        private var focusedRange: NSRange?
         private var lineStarts: [Int] = []
 
         init(_ parent: EditorTextView) {
@@ -88,12 +114,18 @@ struct EditorTextView: NSViewRepresentable {
             self.textView = textView
 
             let scrollView = NSScrollView()
+            // 自绘 clip view：打字机模式要能滚过内容末尾半屏，好让最后一行也能居中
+            let clipView = TypewriterClipView()
+            clipView.frame = scrollView.contentView.frame
+            clipView.drawsBackground = false
+            scrollView.contentView = clipView
             scrollView.documentView = textView
             scrollView.hasVerticalScroller = true
             scrollView.hasHorizontalScroller = false
             scrollView.autohidesScrollers = true
             scrollView.borderType = .noBorder
             scrollView.drawsBackground = false
+            self.clipView = clipView
             self.scrollView = scrollView
 
             super.init()
@@ -115,6 +147,9 @@ struct EditorTextView: NSViewRepresentable {
             parent.text = textView.string
             EditorTextView.highlight(textView)
             rebuildLineStarts()
+            // 高亮重建了整串属性，压暗层要重新铺一遍
+            applyFocusFull()
+            recenter()
             isEditing = false
         }
 
@@ -132,6 +167,8 @@ struct EditorTextView: NSViewRepresentable {
             parent.text = textView.string
             EditorTextView.highlight(textView)
             rebuildLineStarts()
+            applyFocusFull()
+            recenter()
             isEditing = false
         }
 
@@ -153,6 +190,114 @@ struct EditorTextView: NSViewRepresentable {
                 if start <= location { line = idx } else { break }
             }
             parent.cursorLine = line
+            // 光标一动，聚焦段落与居中位置都可能变
+            applyFocusIncremental()
+            recenter()
+        }
+
+        /// 让滚动位置回到当前模式下允许的范围里。
+        func settleIntoScrollRange() {
+            let clamped = clipView.constrainBoundsRect(clipView.bounds)
+            guard clamped.origin != clipView.bounds.origin else { return }
+            clipView.scroll(to: clamped.origin)
+            scrollView.reflectScrolledClipView(clipView)
+        }
+
+        // MARK: 专注模式
+
+        /// 全量重铺压暗层：文本变过（属性重建）或开关刚切换时用。
+        func applyFocusFull() {
+            guard let layoutManager = textView.layoutManager else { return }
+            let content = NSString(string: textView.string)
+            layoutManager.removeTemporaryAttribute(
+                .foregroundColor,
+                forCharacterRange: NSRange(location: 0, length: content.length)
+            )
+            focusedRange = nil
+
+            guard parent.focusMode else { return }
+            let range = FocusParagraph.range(in: content, caret: textView.selectedRange().location)
+            dim(NSRange(location: 0, length: range.location), with: layoutManager)
+            let tail = NSRange(
+                location: range.location + range.length,
+                length: max(0, content.length - range.location - range.length)
+            )
+            dim(tail, with: layoutManager)
+            focusedRange = range
+        }
+
+        /// 光标在同一篇文本里移动：只需把新段落点亮、把旧段落压暗。
+        ///
+        /// 全量重铺是 O(文档长度) 的属性操作，按键之间做不起。
+        func applyFocusIncremental() {
+            guard parent.focusMode else { return }
+            guard let layoutManager = textView.layoutManager else { return }
+            guard let previous = focusedRange else {
+                applyFocusFull()
+                return
+            }
+            let content = NSString(string: textView.string)
+            let range = FocusParagraph.range(in: content, caret: textView.selectedRange().location)
+            guard range != previous else { return }
+
+            layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: range)
+            dim(previous, with: layoutManager)
+            focusedRange = range
+        }
+
+        /// 压暗：只在 layout manager 上盖一层临时属性，**不碰 textStorage**。
+        /// 文本内容与语法高亮都不受影响，下一次高亮重建也不会把它带进来。
+        private func dim(_ range: NSRange, with layoutManager: NSLayoutManager) {
+            guard range.length > 0 else { return }
+            layoutManager.addTemporaryAttribute(
+                .foregroundColor,
+                value: NSColor.tertiaryLabelColor,
+                forCharacterRange: range
+            )
+        }
+
+        // MARK: 打字机模式
+
+        /// 让光标所在行停在视口正中。
+        ///
+        /// 只对光标那一行做布局（`ensureLayout(forCharacterRange:)`）——整篇
+        /// `ensureLayout` 在长文档上每次按键都做不起。
+        func recenter(animated: Bool = true) {
+            guard parent.typewriterMode else { return }
+            guard let layoutManager = textView.layoutManager,
+                  let container = textView.textContainer
+            else { return }
+
+            let content = NSString(string: textView.string)
+            let caret = min(max(0, textView.selectedRange().location), content.length)
+            let lineRange = content.lineRange(for: NSRange(location: caret, length: 0))
+            layoutManager.ensureLayout(forCharacterRange: lineRange)
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: lineRange, actualCharacterRange: nil)
+            var rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
+            rect.origin.x += textView.textContainerInset.width
+            rect.origin.y += textView.textContainerInset.height
+
+            let viewport = clipView.bounds.height
+            let target = TypewriterGeometry.centeredOffset(
+                caretMidY: rect.midY,
+                viewportHeight: viewport,
+                // 内容高度加上 clip view 让出来的那半屏，末尾几行才居得中
+                contentHeight: textView.frame.height + viewport / 2
+            )
+            guard abs(clipView.bounds.origin.y - target) > 0.5 else { return }
+
+            if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.08
+                    context.allowsImplicitAnimation = true
+                    clipView.animator().setBoundsOrigin(
+                        NSPoint(x: clipView.bounds.origin.x, y: target)
+                    )
+                }
+            } else {
+                clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: target))
+            }
+            scrollView.reflectScrolledClipView(clipView)
         }
 
         // MARK: 跳转
@@ -162,6 +307,7 @@ struct EditorTextView: NSViewRepresentable {
             let location = lineStarts[line]
             textView.selectedRange = NSRange(location: location, length: 0)
             textView.scrollRangeToVisible(NSRange(location: location, length: 0))
+            recenter()
             textView.window?.makeFirstResponder(textView)
         }
 
@@ -178,6 +324,25 @@ struct EditorTextView: NSViewRepresentable {
                 idx = i + 1
             }
             lineStarts = starts
+        }
+    }
+
+    // MARK: - 打字机模式的滚动边界
+
+    /// 打字机模式允许滚过内容末尾半屏。
+    ///
+    /// 不这么做，文档最后一行永远只能停在屏幕底部——而那正是写作者待得最久的地方。
+    /// 注意夹取要用 `proposedBounds`：`super` 的结果已经被夹到内容末尾，拿它再夹一次
+    /// 等于什么也没放开。
+    final class TypewriterClipView: NSClipView {
+        var centersCaret = false
+
+        override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+            var rect = super.constrainBoundsRect(proposedBounds)
+            guard centersCaret, let documentView else { return rect }
+            let furthest = max(0, documentView.frame.height + rect.height / 2 - rect.height)
+            rect.origin.y = min(max(0, proposedBounds.origin.y), furthest)
+            return rect
         }
     }
 
