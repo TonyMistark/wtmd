@@ -22,6 +22,19 @@ import Testing
     #expect(script.contains("图表渲染失败"))
 }
 
+@Test func mermaidFailurePathCleansUpStrayNodes() {
+    let script = StyleSheet.mermaidScript
+    // mermaid 解析失败会往 document.body 追加 <div id="d{id}"> 的错误 SVG，
+    // 落在 #wtmd-content 之外就是文末一个可见脏块 —— 成功/失败两条路径都要清理
+    #expect(script.contains("function __wtmdMermaidPurge(id)"))
+    #expect(script.components(separatedBy: "__wtmdMermaidPurge(id);").count - 1 == 2)
+    // 失败且源码未变的块不再重试（否则每次切主题都会再失败一次、再漏一份）
+    #expect(script.contains("data-wtmd-src"))
+    #expect(script.contains("mermaid-failed') &&"))
+    // 多行的解析诊断压成单行，完整内容挂 title
+    #expect(script.contains("note.title = full"))
+}
+
 // MARK: - 装配：按需注入
 
 @Test func mermaidInjectedOnlyWhenDocumentHasGraphs() {
