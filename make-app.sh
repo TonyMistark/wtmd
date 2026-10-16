@@ -62,14 +62,19 @@ if [[ -f "$ICON" ]]; then
 fi
 
 echo "── 4/5 签名…"
-IDENTITY=$(security find-identity -v -p codesigning | grep -oE '"[^"]+"' | head -1 | tr -d '"') || true
-if [[ -n "${IDENTITY:-}" ]]; then
+# 优先级：WTMD_SIGN_IDENTITY 显式指定（make-dmg.sh 传 "-" 强制 ad-hoc，用于
+# 对外分发）> 机器上第一枚可用证书（本机自用）> ad-hoc 兜底。
+IDENTITY="${WTMD_SIGN_IDENTITY:-}"
+if [[ -z "$IDENTITY" ]]; then
+    IDENTITY=$(security find-identity -v -p codesigning | grep -oE '"[^"]+"' | head -1 | tr -d '"') || true
+fi
+if [[ -n "$IDENTITY" && "$IDENTITY" != "-" ]]; then
     codesign --force --options runtime --entitlements - --sign "$IDENTITY" "$APP" <<< '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><false/></dict></plist>' >/dev/null 2>&1 \
         || codesign --force --sign "$IDENTITY" "$APP"
     echo "   已用 $IDENTITY 签名"
 else
     codesign --force --sign - "$APP"
-    echo "   无证书，ad-hoc 签名"
+    echo "   ad-hoc 签名"
 fi
 
 echo "── 5/5 校验…"
