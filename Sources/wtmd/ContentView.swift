@@ -227,62 +227,96 @@ struct ContentView: View {
                 onOpenFolder: { workspace.openPanel() }
             )
         } else {
-            Group {
-                switch store.mode {
-                case .edit:
-                    EditorTextView(
-                        text: Binding(
-                            get: { store.text },
-                            set: { store.textDidChange($0) }
-                        ),
-                        cursorLine: Binding(
-                            get: { store.cursorLine },
-                            set: { store.cursorLine = $0 }
-                        ),
-                        pendingImageInsert: Binding(
-                            get: { store.pendingImageInsert },
-                            set: { store.pendingImageInsert = $0 }
-                        ),
-                        jump: store.editorJump,
-                        onImagePaste: { store.handleImagePaste($0) },
-                        typewriterMode: writing.typewriter,
-                        focusMode: writing.focusMode,
-                        positionMemory: store.positionMemory,
-                        generation: store.renderGeneration
-                    )
-                    .overlay(alignment: .topLeading) {
-                        if store.text.isEmpty {
-                            Text("落笔即成文 —— 输入第一行思绪，⌘/ 见证它成为文档")
-                                .font(.callout)
-                                .foregroundStyle(.tertiary)
-                                .padding(.top, 16)
-                                .padding(.leading, 18)
-                                .allowsHitTesting(false)
-                        }
-                    }
-                case .preview:
-                    PreviewView(
-                        html: Binding(get: { store.previewHTML }, set: { _ in }),
-                        currentSlug: Binding(
-                            get: { store.currentSlug },
-                            set: { store.currentSlug = $0 }
-                        ),
-                        themeCSS: themeManager.currentThemeCSS,
-                        diff: store.pendingDiff,
-                        jump: store.previewJump,
-                        generation: store.renderGeneration,
-                        documentTitle: store.displayName,
-                        baseURL: store.fileURL?.deletingLastPathComponent(),
-                        positionMemory: store.positionMemory
-                    )
-                }
+            panes
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: .textBackgroundColor))
+                // 相遇的瞬间：思绪与成文切换时的轻柔过渡
+                .animation(.easeInOut(duration: 0.18), value: store.mode)
+                .transition(.opacity)
+                .safeAreaInset(edge: .bottom) { statusBar }
+        }
+    }
+
+    @ViewBuilder
+    private var panes: some View {
+        switch store.mode {
+        case .edit:
+            editorPane
+        case .preview:
+            previewPane
+        case .split:
+            splitPane
+        }
+    }
+
+    /// 思绪：源码编辑器 + 空文档提示。
+    private var editorPane: some View {
+        EditorTextView(
+            text: Binding(
+                get: { store.text },
+                set: { store.textDidChange($0) }
+            ),
+            cursorLine: Binding(
+                get: { store.cursorLine },
+                set: { store.cursorLine = $0 }
+            ),
+            pendingImageInsert: Binding(
+                get: { store.pendingImageInsert },
+                set: { store.pendingImageInsert = $0 }
+            ),
+            jump: store.editorJump,
+            onImagePaste: { store.handleImagePaste($0) },
+            typewriterMode: writing.typewriter,
+            focusMode: writing.focusMode,
+            positionMemory: store.positionMemory,
+            generation: store.renderGeneration
+        )
+        .overlay(alignment: .topLeading) {
+            if store.text.isEmpty {
+                Text("落笔即成文 —— 输入第一行思绪，⌘/ 见证它成为文档")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, 16)
+                    .padding(.leading, 18)
+                    .allowsHitTesting(false)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(nsColor: .textBackgroundColor))
-            // 相遇的瞬间：思绪与成文切换时的轻柔过渡
-            .animation(.easeInOut(duration: 0.18), value: store.mode)
-            .transition(.opacity)
-            .safeAreaInset(edge: .bottom) { statusBar }
+        }
+    }
+
+    /// 成文：渲染后的预览。
+    private var previewPane: some View {
+        PreviewView(
+            html: Binding(get: { store.previewHTML }, set: { _ in }),
+            currentSlug: Binding(
+                get: { store.currentSlug },
+                set: { store.currentSlug = $0 }
+            ),
+            themeCSS: themeManager.currentThemeCSS,
+            diff: store.pendingDiff,
+            jump: store.previewJump,
+            generation: store.renderGeneration,
+            documentTitle: store.displayName,
+            baseURL: store.fileURL?.deletingLastPathComponent(),
+            positionMemory: store.positionMemory
+        )
+    }
+
+    /// 对照：左思绪、右成文，中间可拖动。
+    ///
+    /// 窄窗口退回源码单栏——这是写作工具，先保住能写字的那一边；
+    /// 想看结果按 `⌘/` 一次就到。窗口拉宽后自动回到分栏。
+    private var splitPane: some View {
+        GeometryReader { proxy in
+            if SplitLayout.showsTwoPanes(contentWidth: proxy.size.width) {
+                HSplitView {
+                    editorPane
+                        .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+                    previewPane
+                        .frame(minWidth: 280, maxWidth: .infinity, maxHeight: .infinity)
+                }
+            } else {
+                editorPane
+            }
         }
     }
 
@@ -388,10 +422,11 @@ struct ContentView: View {
             ) {
                 Label("思绪", systemImage: "character.cursor.ibeam").tag(ViewMode.edit)
                 Label("成文", systemImage: "doc.richtext").tag(ViewMode.preview)
+                Label("对照", systemImage: "rectangle.split.2x1").tag(ViewMode.split)
             }
             .pickerStyle(.segmented)
-            .frame(width: 170)
-            .help("思绪 ⇄ 成文（⌘/）")
+            .frame(width: 240)
+            .help("思绪 / 成文 / 对照（⌘/ 切思绪⇄成文，⌘⇧\\ 切对照）")
         }
 
         ToolbarItemGroup(placement: .primaryAction) {

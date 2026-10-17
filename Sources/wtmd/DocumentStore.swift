@@ -5,10 +5,20 @@ import WebKit
 import WTMarkdownKit
 
 enum ViewMode: String, CaseIterable, Identifiable {
-    case edit, preview
+    case edit
+    case preview
+    /// 源码与成文并排。只在窗口够宽时出现，见 `SplitLayout`。
+    case split
+
     var id: String { rawValue }
     /// 中心思想的界面落点：源码是思绪的原貌，预览是思绪的成文。
-    var label: String { self == .edit ? "思绪" : "成文" }
+    var label: String {
+        switch self {
+        case .edit: return "思绪"
+        case .preview: return "成文"
+        case .split: return "对照"
+        }
+    }
 }
 
 struct JumpRequest: Equatable {
@@ -141,14 +151,22 @@ final class DocumentStore: ObservableObject {
     func setMode(_ newMode: ViewMode) {
         guard newMode != mode else { return }
         mode = newMode
-        if newMode == .preview { recomputeNow() }
+        // 预览与对照都要现成的 HTML；切回源码不必重算
+        if newMode != .edit { recomputeNow() }
     }
 
+    /// `⌘/`：思绪 ⇄ 成文。从对照按下去回到思绪——单视图里最想回到的是能打字的那一边。
     func toggleMode() {
         setMode(mode == .edit ? .preview : .edit)
     }
 
-    /// 编辑模式下当前光标所在章节 slug（用于大纲高亮）。
+    /// `⌘⇧\`：进入 / 离开对照。
+    func toggleSplit() {
+        setMode(mode == .split ? .edit : .split)
+    }
+
+    /// 编辑模式下当前光标所在章节 slug（用于大纲高亮）。对照模式下光标在源码里，
+    /// 跟着光标走比跟着预览滚动走更贴近「我在哪一段」。
     var currentOutlineSlug: String? {
         if mode == .preview { return currentSlug }
         return outline.last(where: { $0.line <= cursorLine })?.slug
@@ -156,9 +174,14 @@ final class DocumentStore: ObservableObject {
 
     func jump(to item: OutlineItem) {
         let request = JumpRequest(id: UUID().uuidString, line: item.line, slug: item.slug)
-        if mode == .edit {
+        switch mode {
+        case .edit:
             editorJump = request
-        } else {
+        case .preview:
+            previewJump = request
+        case .split:
+            // 两侧一起走：左边落到那一行，右边滚到那个标题
+            editorJump = request
             previewJump = request
         }
         currentSlug = item.slug

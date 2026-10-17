@@ -41,6 +41,8 @@ struct wtmdApp: App {
             }
             CommandGroup(after: .sidebar) {
                 Divider()
+                menuItem(.toggleSplit)
+                Divider()
                 menuItem(.toggleTypewriter)
                 menuItem(.toggleFocus)
                 Divider()

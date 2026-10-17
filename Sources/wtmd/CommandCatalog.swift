@@ -47,6 +47,8 @@ enum CommandKind: Hashable {
     case exportPDF
     /// Flip between source and preview.
     case toggleMode
+    /// Source and preview side by side.
+    case toggleSplit
     /// Show or hide the sidebar.
     case toggleSidebar
     /// Close the current workspace, back to single-document mode.
@@ -77,6 +79,7 @@ enum CommandKind: Hashable {
         case .exportHTML: return "file.exportHTML"
         case .exportPDF: return "file.exportPDF"
         case .toggleMode: return "view.toggleMode"
+        case .toggleSplit: return "view.toggleSplit"
         case .toggleSidebar: return "view.toggleSidebar"
         case .closeWorkspace: return "workspace.close"
         case .toggleTypewriter: return "writing.typewriter"
@@ -152,6 +155,12 @@ enum CommandCatalog {
             kind: .toggleMode, title: "思绪 ⇄ 成文", section: .view,
             symbol: "arrow.left.arrow.right", shortcut: KeyboardShortcut("/", modifiers: .command),
             keywords: ["mode", "preview", "source", "edit", "toggle"], subtitle: nil
+        ),
+        AppCommand(
+            kind: .toggleSplit, title: "对照（源码 ｜ 成文）", section: .view,
+            symbol: "rectangle.split.2x1",
+            shortcut: KeyboardShortcut("\\", modifiers: [.command, .shift]),
+            keywords: ["split", "compare", "side", "columns", "对照", "分栏"], subtitle: nil
         ),
         AppCommand(
             kind: .toggleSidebar, title: "侧栏", section: .view,
@@ -265,6 +274,7 @@ struct CommandRuntime {
         case .toggleTypewriter: return writing.typewriter
         case .toggleFocus: return writing.focusMode
         case .toggleSidebar: return store.sidebarVisible
+        case .toggleSplit: return store.mode == .split
         case .selectTheme(let id): return themeManager.currentThemeID == id
         default: return nil
         }
@@ -299,6 +309,7 @@ struct CommandRuntime {
         case .exportHTML: store.exportHTML()
         case .exportPDF: store.exportPDF()
         case .toggleMode: store.toggleMode()
+        case .toggleSplit: store.toggleSplit()
         case .toggleSidebar: store.sidebarVisible.toggle()
         case .closeWorkspace: workspace.close()
         case .toggleTypewriter: writing.typewriter.toggle()
