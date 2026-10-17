@@ -26,14 +26,8 @@ struct EditorTextView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         let coordinator = context.coordinator
         coordinator.parent = self
-        let textView = coordinator.textView
 
-        if textView.string != text, !coordinator.isEditing {
-            textView.string = text
-            Self.highlight(textView)
-            coordinator.rebuildLineStarts()
-            textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
-        }
+        coordinator.syncText(text)
 
         if let jump, jump.id != coordinator.lastJumpID {
             coordinator.lastJumpID = jump.id
@@ -142,6 +136,40 @@ struct EditorTextView: NSViewRepresentable {
 
         // MARK: NSTextViewDelegate
 
+        /// 把外部（绑定值）的文本同步进编辑器。
+        ///
+        /// **输入法组合期间绝不能做这件事**：拼音的 marked text 在 setMarkedText 时
+        /// 就写进了 textStorage，但它**不触发** `textDidChange`（只有提交才触发），
+        /// 所以绑定值此时必然落后于编辑器内容。一旦这个函数拿落后的绑定值覆盖整串
+        /// 字符，输入法的 marked range 就地失效——候选窗失去锚点（贴到屏幕角落）、
+        /// 确认时 commit 找不到替换区间被丢弃，表现为「中文打不进去」，而英文直键
+        /// 输入走 insertText 会先触发 textDidChange，永远碰不到这条路径。
+        func syncText(_ text: String) {
+            guard !isEditing else { return }
+            if textView.hasMarkedText() {
+                // 忽略组合段后仍与绑定值一致 → 绑定值只是落后（组合不触发
+                // textDidChange），必须放过这次更新，否则组合被打断。
+                if matchesIgnoringMarkedText(text) { return }
+                // 否则是外部真换了文档（切文件/新建）：先结束组合再同步。
+                textView.unmarkText()
+            }
+            guard textView.string != text else { return }
+            textView.string = text
+            EditorTextView.highlight(textView)
+            rebuildLineStarts()
+            textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+        }
+
+        /// 去掉 marked text 之后，编辑器内容是否就等于给定文本。
+        private func matchesIgnoringMarkedText(_ text: String) -> Bool {
+            let marked = textView.markedRange()
+            guard marked.location != NSNotFound else { return textView.string == text }
+            let content = NSMutableString(string: textView.string)
+            guard marked.upperBound <= content.length else { return false }
+            content.deleteCharacters(in: marked)
+            return (content as String) == text
+        }
+
         func textDidChange(_ notification: Notification) {
             isEditing = true
             parent.text = textView.string
@@ -161,6 +189,8 @@ struct EditorTextView: NSViewRepresentable {
 
         /// 光标处插入文本（用于图片引用）。
         func insertAtCursor(_ snippet: String) {
+            // 组合中插入会替换 marked range：先结束组合，让拼音先落定
+            if textView.hasMarkedText() { textView.unmarkText() }
             let range = textView.selectedRange()
             textView.insertText(snippet, replacementRange: range)
             isEditing = true
