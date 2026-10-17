@@ -4,7 +4,7 @@
 
 一个开源、本地优先的 macOS Markdown 写作与阅读工具。思绪落下的一刻，成文已然成型。
 
-![Status](https://img.shields.io/badge/status-v0.4.0-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
+![Status](https://img.shields.io/badge/status-v0.5.0-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
 
 ## 特性
 
@@ -94,6 +94,7 @@ result.outline // [OutlineItem(level: 1, text: "标题", slug: "标题", line: 0
 - v0.3 — **已发布（v0.3.0）**：文件夹工作区、打字机 + 专注模式、⌘K 命令面板、DMG 分发（[详见规划](docs/V03_PLAN.md)）
 - v0.4 — **已发布（v0.4.0）**：`[TOC]` 目录语法、KaTeX 数学公式、更新检查、WYSIWYG 评估（[详见规划](docs/V04_PLAN.md)）
 - v0.5 — **已发布（v0.5.0）**：双视图无损切换、分栏对照、导出 Word、会话恢复与外部修改冲突提示（[详见规划](docs/V05_PLAN.md)）
+- v0.6 — **规划中**：文档内查找替换（`⌘F`）、工作区全文搜索（`⌘⇧F`）、冲突时保全本地版本（[详见规划](docs/V06_PLAN.md)）
 
 ## 参与贡献
 
