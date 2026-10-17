@@ -8,6 +8,7 @@ struct ContentView: View {
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var writing: WritingSettings
     @EnvironmentObject var updates: UpdateChecker
+    @EnvironmentObject var overrides: ShortcutOverrides
     /// Owned by the app so the menu bar can open the palette too.
     @Binding var paletteVisible: Bool
 
@@ -50,9 +51,12 @@ struct ContentView: View {
         }
         .overlay {
             ZStack {
-                // ⌘/ 切换模式
+                // ⌘/ 切换模式（快捷键可以被改派，跟着生效值走）
                 Button("") { store.toggleMode() }
-                    .keyboardShortcut("/", modifiers: .command)
+                    .keyboardShortcut(
+                        overrides.effectiveShortcut(for: .toggleMode)
+                            ?? KeyboardShortcut("/", modifiers: .command)
+                    )
                     .opacity(0)
                     .frame(width: 0, height: 0)
                     .accessibilityHidden(true)
@@ -80,7 +84,8 @@ struct ContentView: View {
                     CommandPalette(
                         commands: CommandCatalog.commands(
                             themes: themeManager.themes,
-                            recentFiles: store.recentFiles.urls
+                            recentFiles: store.recentFiles.urls,
+                            overrides: overrides.overrides
                         ),
                         runtime: commandRuntime,
                         isPresented: $paletteVisible

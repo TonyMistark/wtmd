@@ -6,6 +6,7 @@ struct wtmdApp: App {
     @StateObject private var workspace: WorkspaceStore
     @StateObject private var writing = WritingSettings()
     @StateObject private var updates = UpdateChecker()
+    @StateObject private var overrides = ShortcutOverrides()
     @State private var paletteVisible = false
 
     /// One session record shared by the document and the folder around it: both
@@ -24,13 +25,20 @@ struct wtmdApp: App {
                 .environmentObject(workspace)
                 .environmentObject(writing)
                 .environmentObject(updates)
+                .environmentObject(overrides)
                 .environmentObject(store.themeManager)
                 .frame(minWidth: 760, minHeight: 500)
         }
         Settings {
-            ThemeSettingsView()
-                .environmentObject(store.themeManager)
-                .environmentObject(writing)
+            TabView {
+                ThemeSettingsView()
+                    .tabItem { Label("主题", systemImage: "paintpalette") }
+                ShortcutSettingsView()
+                    .tabItem { Label("快捷键", systemImage: "keyboard") }
+            }
+            .environmentObject(store.themeManager)
+            .environmentObject(writing)
+            .environmentObject(overrides)
         }
         .commands {
             CommandGroup(after: .appInfo) {
@@ -73,7 +81,9 @@ struct wtmdApp: App {
     /// never drift apart. The menus only declare structure: slots and dividers.
     @ViewBuilder
     private func menuItem(_ kind: CommandKind) -> some View {
-        if let command = CommandCatalog.command(for: kind, themes: store.themeManager.themes) {
+        if let command = CommandCatalog.command(
+            for: kind, themes: store.themeManager.themes, overrides: overrides.overrides
+        ) {
             let runtime = CommandRuntime(
                 store: store, workspace: workspace, writing: writing, updates: updates
             )
