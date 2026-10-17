@@ -51,6 +51,8 @@ struct wtmdApp: App {
             CommandGroup(after: .pasteboard) {
                 menuItem(.find)
                 menuItem(.findReplace)
+                Divider()
+                menuItem(.searchWorkspace)
             }
             CommandGroup(after: .sidebar) {
                 Divider()

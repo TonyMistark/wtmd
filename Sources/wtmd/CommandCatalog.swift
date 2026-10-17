@@ -53,6 +53,8 @@ enum CommandKind: Hashable {
     case find
     /// Find and replace inside the current document.
     case findReplace
+    /// Full-text search across the whole folder workspace.
+    case searchWorkspace
     /// Flip between source and preview.
     case toggleMode
     /// Source and preview side by side.
@@ -89,6 +91,7 @@ enum CommandKind: Hashable {
         case .exportPDF: return "file.exportPDF"
         case .find: return "edit.find"
         case .findReplace: return "edit.replace"
+        case .searchWorkspace: return "edit.searchWorkspace"
         case .toggleMode: return "view.toggleMode"
         case .toggleSplit: return "view.toggleSplit"
         case .toggleSidebar: return "view.toggleSidebar"
@@ -178,6 +181,13 @@ enum CommandCatalog {
             symbol: "arrow.2.squarepath",
             shortcut: KeyboardShortcut("r", modifiers: [.command, .option]),
             keywords: ["replace", "find", "search", "替换"], subtitle: nil
+        ),
+        AppCommand(
+            kind: .searchWorkspace, title: "在工作区中搜索…", section: .edit,
+            symbol: "text.magnifyingglass",
+            shortcut: KeyboardShortcut("f", modifiers: [.command, .shift]),
+            keywords: ["search", "workspace", "folder", "grep", "全局搜索", "搜索文件夹"],
+            subtitle: nil
         ),
         AppCommand(
             kind: .toggleMode, title: "思绪 ⇄ 成文", section: .view,
@@ -342,6 +352,7 @@ struct CommandRuntime {
         case .exportPDF: store.exportPDF()
         case .find: store.showFind(replacing: false)
         case .findReplace: store.showFind(replacing: true)
+        case .searchWorkspace: store.workspaceSearch.present(root: workspace.root)
         case .toggleMode: store.toggleMode()
         case .toggleSplit: store.toggleSplit()
         case .toggleSidebar: store.sidebarVisible.toggle()

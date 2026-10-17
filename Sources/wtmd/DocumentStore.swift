@@ -25,6 +25,11 @@ enum ViewMode: String, CaseIterable, Identifiable {
 struct JumpRequest: Equatable {
     let id: String
     let line: Int
+    /// UTF-16 offset of the target inside `line`. Zero means "start of line",
+    /// which is all an outline heading asks for.
+    var column: Int = 0
+    /// How much text to select at the target; zero just places the caret.
+    var length: Int = 0
     let slug: String
 }
 
@@ -93,6 +98,8 @@ final class DocumentStore: ObservableObject {
     let positionMemory = PositionMemory()
     /// 文档内查找。状态跟着窗口走，不落盘——关掉应用再打开，没人期待搜索框还在。
     let find = FindController()
+    /// 工作区全文搜索（⌘⇧F）。同样不落盘。
+    let workspaceSearch = WorkspaceSearchController()
     /// 待执行的替换（编辑器消费后保留 id，避免重复执行）。
     @Published var replaceRequest: ReplaceRequest?
 
@@ -202,6 +209,12 @@ final class DocumentStore: ObservableObject {
         find.attach(text)
         findObservation = find.objectWillChange.sink { [weak self] in
             self?.objectWillChange.send()
+        }
+        // 正在编辑的这一篇以内存内容参与工作区搜索：磁盘副本可能还停在
+        // 上一次自动保存，读者刚敲下的词必须搜得到。
+        workspaceSearch.liveDocument = { [weak self] in
+            guard let self, let url = self.fileURL else { return nil }
+            return (url, self.text)
         }
     }
 
@@ -421,10 +434,37 @@ final class DocumentStore: ObservableObject {
         }
     }
 
-    func open(url: URL) {
+    func open(url: URL) { open(url: url, jumpingTo: nil) }
+
+    /// 工作区搜索的一条命中：打开那篇，并把光标放到命中词上。
+    func openSearchHit(_ hit: WorkspaceHit) {
+        open(
+            url: hit.fileURL,
+            jumpingTo: JumpRequest(
+                id: UUID().uuidString,
+                line: hit.line,
+                column: hit.column,
+                length: hit.length,
+                slug: ""
+            )
+        )
+    }
+
+    /// Opens a document, optionally landing on a specific character range.
+    ///
+    /// With a target, the remembered position is **not** restored: the reader
+    /// just said which sentence they are looking for, and putting them back
+    /// where they last stopped would quietly undo that.
+    func open(url: URL, jumpingTo request: JumpRequest?) {
         // Clicking the file that is already open (in the workspace tree, say)
         // must not reload the preview and throw away the scroll position.
-        guard url != fileURL else { return }
+        if url == fileURL {
+            guard let request else { return }
+            // 同一篇：不重载，只把光标送到命中处
+            if mode == .preview { mode = .edit }
+            editorJump = request
+            return
+        }
         guard let document = Self.readDocument(at: url) else { return }
         // Flush only after the read succeeded: a failed open must not discard
         // unsaved work.
@@ -440,8 +480,12 @@ final class DocumentStore: ObservableObject {
         recentFiles.add(url)
         hasStartedWriting = true
         renderGeneration += 1
-        // 这一篇之前被读过（本次运行或上次启动）就回到当时的位置
-        if let recorded = session?.position(for: url) {
+        if let request {
+            // 行列只存在于源码里：预览没有行号可落
+            if mode == .preview { mode = .edit }
+            editorJump = request
+        } else if let recorded = session?.position(for: url) {
+            // 这一篇之前被读过（本次运行或上次启动）就回到当时的位置
             seedPosition(from: recorded, for: url, generation: renderGeneration)
         }
         session?.setOpenFile(url)
