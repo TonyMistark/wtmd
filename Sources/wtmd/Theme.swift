@@ -225,6 +225,29 @@ enum StyleSheet {
       // 图表颜色已烘焙进 SVG，主题变量变化后需按新配色重绘
       if (typeof __wtmdMermaidRenderAll === 'function') { __wtmdMermaidRenderAll(true); }
     }
+    // 位置记忆：⌘/ 切到源码再切回来，整个页面是 reload 出来的，scrollY 归零。
+    // 所以记的不是像素，而是「视口顶部落在哪个顶层块、块内偏了多少」——
+    // #wtmd-content 的顶层子元素数 == 顶层块数，这条不变式让下标有意义。
+    function __wtmdCurrentAnchor() {
+      var root = document.getElementById('wtmd-content');
+      if (!root || root.children.length === 0) { return { index: -1, offset: 0 }; }
+      var kids = root.children;
+      for (var i = 0; i < kids.length; i++) {
+        var rect = kids[i].getBoundingClientRect();
+        // 第一个「还没完全滚出视口」的块就是锚点
+        if (rect.bottom > 1) { return { index: i, offset: -rect.top }; }
+      }
+      // 已经滚过最后一个块的底边：钉在最后一块
+      return { index: kids.length - 1, offset: 0 };
+    }
+    function __wtmdRestoreAnchor(index, offset) {
+      var root = document.getElementById('wtmd-content');
+      if (!root || index < 0 || index >= root.children.length) { return false; }
+      var rect = root.children[index].getBoundingClientRect();
+      var y = (window.scrollY || document.documentElement.scrollTop || 0) + rect.top + offset;
+      window.scrollTo(0, Math.max(0, y));
+      return true;
+    }
     (function () {
       // 目录/内链锚点：页内滚动，避免 WebView 把 #hash 当作导航。
       // 事件委托挂在 document 上，不触碰 #wtmd-content 的子节点结构。
@@ -239,6 +262,18 @@ enum StyleSheet {
         e.preventDefault();
         target.scrollIntoView();
       });
+      // 锚点回报：与大纲同步分开——大纲要扫一遍标题（120ms 防抖），锚点是每帧
+      // 都该新鲜的（读者可能滚动完立刻按 ⌘/）。用 rAF 合并同一帧内的多次滚动。
+      var anchorFrame = 0;
+      window.addEventListener('scroll', function () {
+        if (anchorFrame) { return; }
+        anchorFrame = requestAnimationFrame(function () {
+          anchorFrame = 0;
+          if (!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.wtmd)) { return; }
+          var a = __wtmdCurrentAnchor();
+          window.webkit.messageHandlers.wtmd.postMessage({ anchor: a.index, offset: a.offset });
+        });
+      }, { passive: true });
       var timer = null;
       window.addEventListener('scroll', function () {
         if (timer) return;

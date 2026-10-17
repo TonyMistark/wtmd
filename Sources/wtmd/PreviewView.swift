@@ -12,6 +12,8 @@ struct PreviewView: NSViewRepresentable {
     var generation: Int
     var documentTitle: String
     var baseURL: URL?
+    /// Where the reader was, shared with the editor across view rebuilds.
+    var positionMemory: PositionMemory?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -87,6 +89,8 @@ struct PreviewView: NSViewRepresentable {
         var lastJumpID = ""
         /// 文档未加载完时暂存的主题，didFinish 后补发。
         private var pendingThemeCSS: String?
+        /// 重建前记住的锚点，页面加载完成后回填一次。
+        private var pendingAnchor: PositionMemory.PreviewAnchor?
 
         init(_ parent: PreviewView) {
             self.parent = parent
@@ -121,6 +125,10 @@ struct PreviewView: NSViewRepresentable {
             lastHTML = parent.html
             lastThemeCSS = parent.themeCSS
             lastGeneration = parent.generation
+            // 换文档时 startSession 会作废旧锚点，所以这里读到的要么是本篇的
+            // 位置，要么是 nil（新文档，从头看起）。
+            parent.positionMemory?.startSession(generation: parent.generation)
+            pendingAnchor = parent.positionMemory?.previewAnchor
             webView.loadHTMLString(html, baseURL: parent.baseURL)
         }
 
@@ -142,6 +150,14 @@ struct PreviewView: NSViewRepresentable {
                     let json = PreviewView.encodeJSStatic(pending)
                     self.webView.evaluateJavaScript("__wtmdSetTheme(\(json))")
                 }
+                // 回到原来的位置：DOM 就绪才有元素可量。放在主题补发之后，
+                // 是因为主题只改 CSS 变量、不改块高度（量早量晚差不了几像素）。
+                if let anchor = self.pendingAnchor {
+                    self.pendingAnchor = nil
+                    self.webView.evaluateJavaScript(
+                        "__wtmdRestoreAnchor(\(anchor.blockIndex), \(anchor.offset))"
+                    )
+                }
             }
         }
 
@@ -151,12 +167,21 @@ struct PreviewView: NSViewRepresentable {
             _ userContentController: WKUserContentController,
             didReceive message: WKScriptMessage
         ) {
-            guard message.name == "wtmd",
-                  let body = message.body as? [String: Any],
-                  let slug = body["slug"] as? String
-            else { return }
-            DispatchQueue.main.async { [weak self] in
-                self?.parent.currentSlug = slug
+            guard message.name == "wtmd", let body = message.body as? [String: Any] else { return }
+            if let index = (body["anchor"] as? NSNumber)?.intValue,
+               let offset = (body["offset"] as? NSNumber)?.doubleValue {
+                let anchor = PositionMemory.PreviewAnchor(
+                    blockIndex: index,
+                    offset: CGFloat(offset)
+                )
+                DispatchQueue.main.async { [weak self] in
+                    self?.parent.positionMemory?.recordPreviewAnchor(anchor)
+                }
+            }
+            if let slug = body["slug"] as? String {
+                DispatchQueue.main.async { [weak self] in
+                    self?.parent.currentSlug = slug
+                }
             }
         }
     }

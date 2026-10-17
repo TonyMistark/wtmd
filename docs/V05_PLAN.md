@@ -88,7 +88,7 @@ v0.3 起遗留的缺口，与 P0-1 的「位置记忆」同源——同一个 `V
 
 | 阶段 | 内容 | 预估 | 状态 |
 |---|---|---|---|
-| v0.5.0-alpha | 双视图无损切换 | 1 个工作日 | 待开工 |
+| v0.5.0-alpha | 双视图无损切换 | 1 个工作日 | ✅ 完成（2026-10-17，#55 / PR #56） |
 | v0.5.0-beta | 分栏对照（含性能实测） | 1–1.5 个工作日 | 待开工 |
 | v0.5.0-rc | P2 选定项（用户挑） | 半个工作日 | 待开工 |
 | P1 | 会话恢复（有则做） | 0.5–1 个工作日 | 待开工 |
@@ -107,3 +107,19 @@ v0.3 起遗留的缺口，与 P0-1 的「位置记忆」同源——同一个 `V
 
 - 2026-10-17 启动：本文档创建。v0.4.0 已于同日发布（[TOC] + KaTeX + 更新检查 + WYSIWYG 评估）；
   本版 P0 直接取自 [WYSIWYG_EVAL.md](WYSIWYG_EVAL.md) 第 5 节的建议（先修「位置丢失」，再谈 WYSIWYG）
+- 2026-10-17 **v0.5.0-alpha 完成**（#55 / PR #56）：双视图无损切换——
+  - 新增 `PositionMemory`（`Sources/wtmd/PositionMemory.swift`）：视图之外的记账本，
+    `generation` 换代即清空。**故意不加 `@MainActor`**——两个 coordinator 本来就在主线程，
+    加隔离只会把 AppKit 的 delegate 回调逼成 async 跳转
+  - **预览记「顶层块下标 + 块内偏移」，不记 `scrollY`**：reload 后布局可能位移，
+    像素值没有意义；块下标依托「`#wtmd-content` 子元素数 == 顶层块数」这条既有不变式
+  - 锚点回报与大纲同步**分成两条通道**：大纲要扫全部标题（120ms 防抖），锚点用 rAF 每帧新鲜
+    （读者可能刚滚完就按 ⌘/）；原生侧按 body 里的 `anchor` / `slug` 键分派
+  - 编辑器记「选区 + clip view 原点」，靠覆写 `TypewriterClipView.setBoundsOrigin` / `scroll(to:)` 回报；
+    回填排到下一次 runloop（`updateNSView` 时视图还没布局，零高度会把滚动夹成 0）
+  - **两个坑**：① 回填期间必须关掉居中动画（`isRestoring`）——建视图那一拍窗口不稳，
+    动画代理会踩空；② 只有 `window.isVisible` 才允许动画，离屏窗口上跑 `animator()` 会在
+    窗口先销毁时留下悬空图层引用，让 AppKit 在后续帧里 SIGSEGV（测试进程实测踩到）
+  - 测试 189 → **200**（PositionMemory 4 + 预览锚点 E2E 4 + 编辑器回填 3）；
+    反向验证三组：停用 `__wtmdRestoreAnchor` → 锚点用例 2 处红；停用 `applyStoredPosition` →
+    2 条红；`startSession` 不清位置 → 2 条红
