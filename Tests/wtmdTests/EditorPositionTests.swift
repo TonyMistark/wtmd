@@ -114,6 +114,56 @@ private func drainMainQueue() async {
     #expect(probe.coordinator.textView.selectedRange().location == 0)
 }
 
+/// 会话恢复的落点：位置不是「重建时顺手记着」的，而是从上一轮（甚至上一次启动）
+/// 预置进来的。种子必须在 `startSession` 的清空之前被认领，否则读者一打开应用
+/// 就落在文首——恢复了个寂寞。
+@Test @MainActor func aSeededPositionIsRestoredForThatGeneration() async throws {
+    let memory = PositionMemory()
+    memory.seed(
+        editorPosition: PositionMemory.EditorPosition(
+            selection: NSRange(location: 700, length: 0),
+            scrollOrigin: CGPoint(x: 0, y: 240)
+        ),
+        previewAnchor: nil,
+        for: 2
+    )
+
+    let probe = EditorPositionProbe(text: longDocument, memory: memory, generation: 2)
+    probe.coordinator.restorePositionIfNeeded()
+    await drainMainQueue()
+
+    #expect(probe.selection.location == 700)
+    #expect(abs(probe.scrollY - 240) <= 2)
+}
+
+/// 同一个视图里换文档（代数变了）：要按新一代的种子回填，而不是「这一辈子只回填过一次」。
+@Test @MainActor func changingGenerationRestoresThatDocumentsPosition() async throws {
+    let memory = PositionMemory()
+    let probe = EditorPositionProbe(text: longDocument, memory: memory, generation: 1)
+    probe.coordinator.restorePositionIfNeeded()
+    await drainMainQueue()
+
+    probe.coordinator.textView.setSelectedRange(NSRange(location: 30, length: 0))
+    probe.scroll(toY: 60)
+    await drainMainQueue()
+
+    memory.seed(
+        editorPosition: PositionMemory.EditorPosition(
+            selection: NSRange(location: 900, length: 0),
+            scrollOrigin: CGPoint(x: 0, y: 420)
+        ),
+        previewAnchor: nil,
+        for: 2
+    )
+    probe.coordinator.parent.generation = 2
+    probe.coordinator.syncText(longDocument)
+    probe.coordinator.restorePositionIfNeeded()
+    await drainMainQueue()
+
+    #expect(probe.selection.location == 900)
+    #expect(abs(probe.scrollY - 420) <= 2)
+}
+
 /// 打字机模式：滚动交给 recenter 决定（光标行居中），不能把旧的像素偏移
 /// 硬塞回去——那会让光标偏离中线，直到下一次按键才被纠正。
 @Test @MainActor func typewriterModeRecentersInsteadOfReplayingTheOffset() async throws {

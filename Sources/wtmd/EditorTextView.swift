@@ -82,9 +82,11 @@ struct EditorTextView: NSViewRepresentable {
         /// 当前未被压暗的区间（专注模式）。
         private var focusedRange: NSRange?
         private var lineStarts: [Int] = []
-        /// 回填是否已排期 / 已完成。排期之前记下的一切都是「刚建出来的零点」，
+        /// 上次回填过的文档代数。换文档（代数变）要重新回填一次——否则从树里
+        /// 点开另一篇，永远落在文首，而那一篇上次停在哪里是有记录的。
+        private var restoredGeneration = -1
+        /// 本次代数的回填是否已完成。排期之前记下的一切都是「刚建出来的零点」，
         /// 写进账本就等于把刚存的位置立刻抹掉。
-        private var restoreScheduled = false
         private var positionRestored = false
         /// 回填期间不播放居中动画：建视图的这一拍窗口还没稳定，动画代理会踩空。
         private var isRestoring = false
@@ -248,17 +250,25 @@ struct EditorTextView: NSViewRepresentable {
 
         // MARK: 位置记忆
 
-        /// 重建后把读者原来的选区与滚动位置还回来（只做一次）。
+        /// 重建 / 换文档后把读者原来的选区与滚动位置还回来（每代一次）。
         ///
         /// 排到下一次 runloop：`updateNSView` 触发时滚动视图还没参与布局，
         /// 这时 `clipView.bounds` 是零高度，直接 `scroll(to:)` 会被夹成 0。
+        ///
+        /// 换文档时 `syncText` 先把光标放到文首，那一拍触发的选区回调会把「文首」
+        /// 写进账本，把这一篇记录的位置冲掉——所以回填完成前 `recordPosition`
+        /// 一直是哑的，等回填把 `positionRestored` 打开再开始记账。
         func restorePositionIfNeeded() {
-            guard !restoreScheduled else { return }
-            restoreScheduled = true
+            guard restoredGeneration != parent.generation else { return }
+            restoredGeneration = parent.generation
+            positionRestored = false
             parent.positionMemory?.startSession(generation: parent.generation)
             let snapshot = parent.positionMemory?.editorPosition
+            // 只让最新一代的回填落地：连续切两篇时，前一次排下的异步块还在队列里
+            let generation = parent.generation
             DispatchQueue.main.async { [weak self] in
-                self?.applyStoredPosition(snapshot)
+                guard let self, self.restoredGeneration == generation else { return }
+                self.applyStoredPosition(snapshot)
             }
         }
 
