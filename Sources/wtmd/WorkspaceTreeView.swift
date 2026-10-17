@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - 文件树
 
@@ -18,6 +19,11 @@ struct WorkspaceTreeView: View {
     @State private var renameError: String?
     @FocusState private var renameFocused: Bool
 
+    /// 拖拽正悬在哪一行上（文件夹行或工作区根），用来染那一层强调色。
+    @State private var dropTarget: URL?
+    /// 移不动的原因：就地一行红字，几秒后自消，不弹模态。
+    @State private var dropError: String?
+
     /// 「新建」刚刚落地的那一行：界面收到后立刻把它变成输入框。
     var body: some View {
         workspaceSection
@@ -33,6 +39,12 @@ struct WorkspaceTreeView: View {
     @ViewBuilder
     private var workspaceSection: some View {
         Section {
+            if let dropError {
+                Text(dropError)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
             let nodes = workspace.tree?.children ?? []
             if nodes.isEmpty {
                 Text("这个文件夹是空的 —— ⌘N 新建一篇，或右键新建文件夹")
@@ -48,6 +60,13 @@ struct WorkspaceTreeView: View {
                 Text(workspace.rootName)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .dropHighlight(dropTarget == workspace.root)
+                    .onDrop(
+                        of: [WorkspaceDrag.type],
+                        isTargeted: dropBinding(for: workspace.root)
+                    ) { providers in
+                        acceptDrop(providers, into: workspace.root)
+                    }
                 Spacer(minLength: 4)
                 Button {
                     workspace.close()
@@ -95,6 +114,14 @@ struct WorkspaceTreeView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .contentShape(Rectangle())
+                            .dropHighlight(dropTarget == node.url)
+                            .onDrag { WorkspaceDrag.provider(for: node.url) }
+                            .onDrop(
+                                of: [WorkspaceDrag.type],
+                                isTargeted: dropBinding(for: node.url)
+                            ) { providers in
+                                acceptDrop(providers, into: node.url)
+                            }
                     }
                 }
                 .contextMenu { contextMenu(for: node) }
@@ -106,20 +133,20 @@ struct WorkspaceTreeView: View {
                 if renaming == node.url {
                     renameField(for: node)
                 } else {
-                    Button {
-                        store.open(url: node.url)
-                    } label: {
-                        Label(node.name, systemImage: "doc.text")
-                            .font(.callout)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(
-                        workspace.selection == node.url ? Color.accentColor : Color.primary
-                    )
+                    // 不用 Button：macOS 上按钮会吃掉拖拽手势，那样这一行就永远
+                    // 抓不起来。点击改用 tap，拖拽才拿得到鼠标。
+                    Label(node.name, systemImage: "doc.text")
+                        .font(.callout)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .foregroundStyle(
+                            workspace.selection == node.url ? Color.accentColor : Color.primary
+                        )
+                        .onTapGesture { store.open(url: node.url) }
+                        .accessibilityAddTraits(.isButton)
+                        .onDrag { WorkspaceDrag.provider(for: node.url) }
                 }
             }
             .contextMenu { contextMenu(for: node) }
@@ -203,6 +230,65 @@ struct WorkspaceTreeView: View {
         workspace.createFolder(in: directory)
     }
 
+    // MARK: - 拖拽移动
+
+    /// 一行的悬停状态。`isTargeted` 每次进出都会回调，只有当前悬停写在状态里，
+    /// 免得两行同时亮着。
+    private func dropBinding(for url: URL?) -> Binding<Bool> {
+        Binding(
+            get: { url != nil && dropTarget == url },
+            set: { targeted in
+                if targeted {
+                    dropTarget = url
+                } else if dropTarget == url {
+                    dropTarget = nil
+                }
+            }
+        )
+    }
+
+    /// 只接树里抓起来的那一行：载荷是我们自己的 UTI，访达拖进来的文件不认。
+    private func acceptDrop(_ providers: [NSItemProvider], into directory: URL?) -> Bool {
+        guard let directory,
+              let provider = providers.first(where: {
+                  $0.hasItemConformingToTypeIdentifier(WorkspaceDrag.type.identifier)
+              })
+        else { return false }
+
+        provider.loadItem(
+            forTypeIdentifier: WorkspaceDrag.type.identifier,
+            options: nil
+        ) { item, _ in
+            guard let data = Self.payload(from: item),
+                  let source = WorkspaceDrag.url(fromPayload: data)
+            else { return }
+            DispatchQueue.main.async {
+                performMove(source, into: directory)
+            }
+        }
+        return true
+    }
+
+    /// `loadItem` 回来的可能是 `Data` 也可能是 `NSData`，两种都认。
+    private static func payload(from item: NSSecureCoding?) -> Data? {
+        if let data = item as? Data { return data }
+        if let data = item as? NSData { return data as Data }
+        return nil
+    }
+
+    private func performMove(_ source: URL, into directory: URL) {
+        dropTarget = nil
+        guard let error = workspace.move(source, into: directory) else { return }
+        showDropError(error.errorDescription ?? "移不动「\(source.lastPathComponent)」")
+    }
+
+    private func showDropError(_ message: String) {
+        dropError = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            if dropError == message { dropError = nil }
+        }
+    }
+
     private func copyPath(_ url: URL) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url.path, forType: .string)
@@ -216,3 +302,22 @@ struct WorkspaceTreeView: View {
         alert.alertStyle = .warning
         alert.runModal()
     }}
+
+/// 拖拽悬停时的底色：改变的是这一行读起来的样子，而不是它的排布——
+/// 加边框会让整棵树在拖拽时抖一下。
+private struct DropHighlight: ViewModifier {
+    let isActive: Bool
+
+    func body(content: Content) -> some View {
+        content.background(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color.accentColor.opacity(isActive ? 0.18 : 0))
+        )
+    }
+}
+
+private extension View {
+    func dropHighlight(_ isActive: Bool) -> some View {
+        modifier(DropHighlight(isActive: isActive))
+    }
+}

@@ -335,19 +335,21 @@ final class WorkspaceStore: ObservableObject {
         let target = url.resolvingSymlinksInPath()
         guard let root, Self.isDescendant(target, of: root) else { return }
         for directory in ancestors(of: target, upTo: root) {
-            expandedPaths.insert(directory.path)
+            expandedPaths.insert(Self.canonicalPath(directory))
         }
         selection = target
         session?.setExpandedPaths(expandedPaths)
     }
 
-    func isExpanded(_ url: URL) -> Bool { expandedPaths.contains(url.path) }
+    /// 展开状态一律按归一后的路径记：树里给的是 `/private/var/…`，别处来的可能
+    /// 是 `/var/…`，两种拼法在 Set 里是两把不同的钥匙。
+    func isExpanded(_ url: URL) -> Bool { expandedPaths.contains(Self.canonicalPath(url)) }
 
     func setExpanded(_ url: URL, to expanded: Bool) {
         if expanded {
-            expandedPaths.insert(url.path)
+            expandedPaths.insert(Self.canonicalPath(url))
         } else {
-            expandedPaths.remove(url.path)
+            expandedPaths.remove(Self.canonicalPath(url))
         }
         session?.setExpandedPaths(expandedPaths)
     }
@@ -396,6 +398,25 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
+    /// 把一个文件或文件夹挪进 `directory`，并让本地记着的路径一起搬过去。
+    /// 返回 nil 表示成功（或什么都没发生）。
+    @discardableResult
+    func move(_ url: URL, into directory: URL) -> FileOperationError? {
+        do {
+            let newURL = try WorkspaceFiles.move(url, into: directory)
+            guard Self.canonicalPath(newURL) != Self.canonicalPath(url) else { return nil }
+            remapPaths(from: url, to: newURL)
+            // 目标是折叠着的话，东西「移进去了但看不见」和丢了没区别
+            expand(directory)
+            reload()
+            return nil
+        } catch let error as FileOperationError {
+            return error
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
     /// 移到废纸篓。返回 nil 表示成功。
     @discardableResult
     func trash(_ url: URL) -> FileOperationError? {
@@ -415,13 +436,17 @@ final class WorkspaceStore: ObservableObject {
     /// 新建出来的东西可能在折叠着的目录里：一路展开到它，别让「新建了但看不见」。
     private func expand(_ directory: URL) {
         guard let root else { return }
-        if directory != root {
-            expandedPaths.insert(directory.standardizedFileURL.path)
+        if !Self.isSameDirectory(directory, root) {
+            expandedPaths.insert(Self.canonicalPath(directory))
         }
         for ancestor in ancestors(of: directory, upTo: root) {
-            expandedPaths.insert(ancestor.standardizedFileURL.path)
+            expandedPaths.insert(Self.canonicalPath(ancestor))
         }
         session?.setExpandedPaths(expandedPaths)
+    }
+
+    private static func isSameDirectory(_ a: URL, _ b: URL) -> Bool {
+        canonicalPath(a) == canonicalPath(b)
     }
 
     /// 改名/移动之后，本地以旧路径为前缀的东西全部改挂到新路径上。
@@ -463,30 +488,28 @@ final class WorkspaceStore: ObservableObject {
     /// Folders between `url` and `root`, nearest first. Empty when `url` sits
     /// directly in the root.
     private func ancestors(of url: URL, upTo root: URL) -> [URL] {
-        let rootPath = root.standardizedFileURL.path
         var result: [URL] = []
         var current = url.deletingLastPathComponent()
-        while current.standardizedFileURL.path != rootPath,
-              current.pathComponents.count > 1 {
+        // 一路上走到工作区根为止：多走一步就会把根**外面**的目录也塞进展开状态，
+        // 下次启动带着一串跟自己无关的路径。
+        while PathKey.isDescendant(current, of: root) {
             result.append(current)
             current = current.deletingLastPathComponent()
         }
         return result
     }
 
-    /// 同一份文件可以被拼成 `/var/…` 与 `/private/var/…`（macOS 的临时目录、
-    /// 部分外接卷都会）。URL 相等是字面比较，两种拼法会被当成两件不同的东西，
-    /// 所以「是不是同一个」一律先归一再说。
-    static func canonicalPath(_ url: URL) -> String {
-        url.resolvingSymlinksInPath().standardizedFileURL.path
-    }
+    /// 「是不是同一个文件」的判据在 `PathKey` 里——纯函数，不依赖主线程，
+    /// 文件操作那一层（`WorkspaceFiles`）也要用同一套。这里留着这个入口，
+    /// 是因为调用点已经习惯了从工作区问。
+    static func canonicalPath(_ url: URL) -> String { PathKey.canonical(url) }
 
     static func isDescendant(_ url: URL, of root: URL) -> Bool {
-        canonicalPath(url).hasPrefix(canonicalPath(root) + "/")
+        PathKey.isDescendant(url, of: root)
     }
 
     static func isDescendantOrSelf(_ url: URL, of root: URL) -> Bool {
-        canonicalPath(url) == canonicalPath(root) || isDescendant(url, of: root)
+        PathKey.isDescendantOrSelf(url, of: root)
     }
 
     static func contains(_ url: URL, in node: WorkspaceNode?) -> Bool {
