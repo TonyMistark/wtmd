@@ -12,7 +12,8 @@ struct wtmdApp: App {
     /// write to the same blob, and a restore has to bring them back together.
     init() {
         let session = Session()
-        _store = StateObject(wrappedValue: DocumentStore(session: session))
+        // 冲突副本落在 Application Support/wtmd/conflicts：切文档时救下来的本地版本
+        _store = StateObject(wrappedValue: DocumentStore(session: session, conflicts: ConflictArchive()))
         _workspace = StateObject(wrappedValue: WorkspaceStore(session: session))
     }
 

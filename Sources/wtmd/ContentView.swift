@@ -11,6 +11,9 @@ struct ContentView: View {
     /// Owned by the app so the menu bar can open the palette too.
     @Binding var paletteVisible: Bool
 
+    /// 冲突副本清单是否展开。
+    @State private var conflictListVisible = false
+
     var body: some View {
         NavigationSplitView(
             columnVisibility: Binding(
@@ -25,6 +28,19 @@ struct ContentView: View {
         }
         .navigationTitle(store.windowTitle)
         .toolbar { toolbarContent }
+        .sheet(isPresented: $conflictListVisible) {
+            ConflictArchiveView(
+                entries: store.archivedConflicts,
+                folder: store.conflictFolder,
+                recover: { entry in
+                    store.recoverArchivedConflict(entry)
+                    conflictListVisible = false
+                },
+                discard: { store.discardArchivedConflict($0) },
+                reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0.fileURL]) },
+                close: { conflictListVisible = false }
+            )
+        }
         // 每天最多查一次新版本；失败静默，绝不打断写作
         .task { await updates.checkIfDue() }
         // 文档从任何入口打开（⌘O、最近文件、标题栏）后，工作区树跟上高亮
@@ -364,6 +380,25 @@ struct ContentView: View {
                 Text("约 \(store.statistics.readingMinutes) 分钟读完")
             }
             Spacer()
+            if let notice = store.archiveNotice {
+                Text(notice)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+            if !store.archivedConflicts.isEmpty {
+                Button {
+                    conflictListVisible = true
+                } label: {
+                    Label(
+                        "\(store.archivedConflicts.count) 份未合并的本地版本",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(.orange)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("冲突未解决时切走留下的本地版本，点开可取回或丢弃")
+            }
             updateBadge
             writingModeToggles
             Text(store.fileURL?.lastPathComponent ?? "草稿")
