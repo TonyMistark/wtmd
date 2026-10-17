@@ -123,6 +123,14 @@ struct AppCommand: Identifiable {
     let subtitle: String?
 
     var id: String { kind.id }
+
+    /// 换一条快捷键、其余原样（用户改派时的包装）。
+    func withShortcut(_ newShortcut: KeyboardShortcut?) -> AppCommand {
+        AppCommand(
+            kind: kind, title: title, section: section, symbol: symbol,
+            shortcut: newShortcut, keywords: keywords, subtitle: subtitle
+        )
+    }
 }
 
 // MARK: - Catalog
@@ -266,8 +274,16 @@ enum CommandCatalog {
 
     /// Everything the palette can run. Sections appear in the order they are
     /// concatenated here — which is also the empty-query display order.
-    static func commands(themes: [Theme], recentFiles: [URL]) -> [AppCommand] {
-        staticCommands + themeCommands(for: themes) + recentCommands(for: recentFiles)
+    ///
+    /// `overrides` carries the user's re-assignments (`ShortcutOverrides`);
+    /// an entry for a command's id replaces the factory shortcut.
+    static func commands(
+        themes: [Theme],
+        recentFiles: [URL],
+        overrides: [String: RecordedShortcut] = [:]
+    ) -> [AppCommand] {
+        (staticCommands + themeCommands(for: themes) + recentCommands(for: recentFiles))
+            .map { $0.applying(overrides: overrides) }
     }
 
     /// Look a command up by kind. The menus declare their *structure* (slots,
@@ -279,13 +295,32 @@ enum CommandCatalog {
     /// Looks in `staticCommands` first so the common case allocates nothing:
     /// this runs from the app's `body`, which is re-evaluated on every
     /// keystroke.
-    static func command(for kind: CommandKind, themes: [Theme] = []) -> AppCommand? {
-        if let found = staticCommands.first(where: { $0.kind == kind }) { return found }
-        return themeCommands(for: themes).first { $0.kind == kind }
+    static func command(
+        for kind: CommandKind,
+        themes: [Theme] = [],
+        overrides: [String: RecordedShortcut] = [:]
+    ) -> AppCommand? {
+        let found: AppCommand?
+        if let hit = staticCommands.first(where: { $0.kind == kind }) {
+            found = hit
+        } else {
+            found = themeCommands(for: themes).first { $0.kind == kind }
+        }
+        return found?.applying(overrides: overrides)
     }
 
     private static func abbreviatedFolder(of url: URL) -> String {
         (url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
+    }
+}
+
+private extension AppCommand {
+    /// 把用户的改派套到一条出厂命令上。
+    func applying(overrides: [String: RecordedShortcut]) -> AppCommand {
+        guard let recorded = overrides[kind.id], let shortcut = recorded.keyboardShortcut,
+              shortcut != self.shortcut
+        else { return self }
+        return withShortcut(shortcut)
     }
 }
 
