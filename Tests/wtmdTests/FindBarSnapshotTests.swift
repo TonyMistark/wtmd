@@ -7,8 +7,11 @@ import Testing
 
 /// 查找条是给人看的东西：断言「有这几个按钮」证明不了它读起来像一条工具条。
 /// 这里真的渲染成位图，检查高度与配色层次，图留在 `/tmp` 供人眼复核。
+///
+/// 返回点尺寸：CI 机器是 1x，本机是 2x，**像素断言会被显示倍率绊倒**，
+/// 一律换算回点数再比。
 @MainActor
-private func render(replacing: Bool) throws -> NSBitmapImageRep {
+private func render(replacing: Bool) throws -> (bitmap: NSBitmapImageRep, points: CGSize) {
     let find = FindController()
     find.attach("alpha beta alpha gamma alpha")
     find.present(focusingReplacement: replacing)
@@ -44,7 +47,7 @@ private func render(replacing: Bool) throws -> NSBitmapImageRep {
     hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
     try bitmap.representation(using: .png, properties: [:])?
         .write(to: URL(fileURLWithPath: "/tmp/wtmd-find-bar-\(replacing ? "replace" : "find").png"))
-    return bitmap
+    return (bitmap, fitted)
 }
 
 /// 数一数画面里有多少种颜色：只有一种说明什么都没画出来（比如文字尺寸塌成 0）。
@@ -64,10 +67,11 @@ private func distinctColors(_ bitmap: NSBitmapImageRep) -> Int {
 }
 
 @Test @MainActor func theFindBarIsOneSlimRow() throws {
-    let bitmap = try render(replacing: false)
-    #expect(bitmap.pixelsWide == 1520)      // 760pt @2x
-    #expect(bitmap.pixelsHigh > 40)         // 34pt 的行 + 分隔线
-    #expect(bitmap.pixelsHigh < 110)
+    let (bitmap, points) = try render(replacing: false)
+    #expect(points.width == 760)
+    // 一行查找（34pt）+ 分隔线：矮了是没画出来，高了是面板而不是条
+    #expect(points.height > 20)
+    #expect(points.height < 55)
     #expect(distinctColors(bitmap) > 4)     // 底色、输入框、计数、三个选项、按钮
 }
 
@@ -75,7 +79,8 @@ private func distinctColors(_ bitmap: NSBitmapImageRep) -> Int {
 @Test @MainActor func theReplaceRowAddsExactlyOneLine() throws {
     let findOnly = try render(replacing: false)
     let withReplace = try render(replacing: true)
-    #expect(withReplace.pixelsHigh > findOnly.pixelsHigh)
-    #expect(withReplace.pixelsHigh - findOnly.pixelsHigh < 110)
-    #expect(distinctColors(withReplace) > 4)
+    let extra = withReplace.points.height - findOnly.points.height
+    #expect(extra > 15)
+    #expect(extra < 50)
+    #expect(distinctColors(withReplace.bitmap) > 4)
 }
