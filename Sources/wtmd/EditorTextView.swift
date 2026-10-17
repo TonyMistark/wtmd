@@ -18,6 +18,19 @@ struct EditorTextView: NSViewRepresentable {
     var positionMemory: PositionMemory?
     /// 位置账本归属的文档代数；换代即作废旧位置。
     var generation: Int = 0
+    /// 查找的全部命中（源码区间）。只用来铺高亮，不参与文本。
+    var findMatches: [NSRange] = []
+    /// 当前那一条命中。
+    var findCurrent: NSRange?
+    /// 变了就表示「跳到当前命中」——查询词变化或按了下一个/上一个。
+    var findSeekToken: Int = 0
+    /// 待执行的替换。范围与替换文本由查找侧算好，撤销栈在这里。
+    var replaceRequest: ReplaceRequest?
+    /// 替换已落地：让 store 把请求清掉。
+    ///
+    /// 不清的话，下一次视图重建（`⌘/`、窄窗降级）会拿到同一个请求**再执行一遍**——
+    /// 那时文本已经变了，区间指向的是别的字。
+    var onReplaceApplied: (() -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -64,6 +77,24 @@ struct EditorTextView: NSViewRepresentable {
                 coordinator.settleIntoScrollRange()
             }
         }
+
+        // 替换先于高亮：替换会改文本，命中区间要按改动后的内容重新铺
+        if let replaceRequest, replaceRequest.id != coordinator.appliedReplaceID {
+            coordinator.appliedReplaceID = replaceRequest.id
+            coordinator.applyReplace(replaceRequest)
+        }
+
+        if coordinator.appliedFindMatches != findMatches
+            || coordinator.appliedFindCurrent != findCurrent {
+            coordinator.appliedFindMatches = findMatches
+            coordinator.appliedFindCurrent = findCurrent
+            coordinator.applyFindHighlights()
+        }
+
+        if coordinator.appliedFindSeek != findSeekToken {
+            coordinator.appliedFindSeek = findSeekToken
+            coordinator.seekToCurrentMatch()
+        }
     }
 
     // MARK: - Coordinator
@@ -90,6 +121,11 @@ struct EditorTextView: NSViewRepresentable {
         private var positionRestored = false
         /// 回填期间不播放居中动画：建视图的这一拍窗口还没稳定，动画代理会踩空。
         private var isRestoring = false
+        /// 已经铺过的查找状态，用来只在真正变化时重铺。
+        var appliedFindMatches: [NSRange] = []
+        var appliedFindCurrent: NSRange?
+        var appliedFindSeek = 0
+        var appliedReplaceID = ""
 
         init(_ parent: EditorTextView) {
             self.parent = parent
@@ -97,7 +133,9 @@ struct EditorTextView: NSViewRepresentable {
             let textView = EditorTextPasteView()
             textView.isRichText = false
             textView.allowsUndo = true
-            textView.usesFindBar = true
+            // 自绘查找条（⌘F）是唯一的查找入口：系统 find bar 会与它抢同一个
+            // 快捷键，还各自维护一套高亮，两套 UI 迟早打架。
+            textView.usesFindBar = false
             textView.isIncrementalSearchingEnabled = true
             textView.isAutomaticQuoteSubstitutionEnabled = false
             textView.isAutomaticDashSubstitutionEnabled = false
@@ -377,6 +415,76 @@ struct EditorTextView: NSViewRepresentable {
                 value: NSColor.tertiaryLabelColor,
                 forCharacterRange: range
             )
+        }
+
+        // MARK: 查找
+
+        static let matchColor = NSColor.systemYellow.withAlphaComponent(0.30)
+        static let currentMatchColor = NSColor.systemOrange.withAlphaComponent(0.55)
+
+        /// 铺全部命中，并让当前那一条更显眼。
+        ///
+        /// 同样只写 layout manager 的临时属性——`highlight()` 每次按键都重建整串
+        /// textStorage 属性，写进去的底色活不过一次编辑。专注模式压的是
+        /// `.foregroundColor`，这里用 `.backgroundColor`，两个开关可以同时开。
+        func applyFindHighlights() {
+            guard let layoutManager = textView.layoutManager else { return }
+            let length = (textView.string as NSString).length
+            layoutManager.removeTemporaryAttribute(
+                .backgroundColor,
+                forCharacterRange: NSRange(location: 0, length: length)
+            )
+            for range in parent.findMatches where range.length > 0 && NSMaxRange(range) <= length {
+                layoutManager.addTemporaryAttribute(
+                    .backgroundColor,
+                    value: Self.matchColor,
+                    forCharacterRange: range
+                )
+            }
+            if let current = parent.findCurrent, current.length > 0, NSMaxRange(current) <= length {
+                layoutManager.addTemporaryAttribute(
+                    .backgroundColor,
+                    value: Self.currentMatchColor,
+                    forCharacterRange: current
+                )
+            }
+        }
+
+        /// 把选区放到当前命中上。查询词一变、或按了下一个/上一个都会走这里。
+        func seekToCurrentMatch() {
+            guard let target = parent.findCurrent else { return }
+            let length = (textView.string as NSString).length
+            guard NSMaxRange(target) <= length else { return }
+            // 组合中不抢选区：候选窗会失去锚点，中文输入被打断
+            guard !textView.hasMarkedText() else { return }
+            textView.setSelectedRange(target)
+            textView.scrollRangeToVisible(target)
+        }
+
+        /// 执行一次替换。**撤销栈在 `NSTextView` 上**，所以替换必须从这里走，
+        /// 不能在 store 里改字符串——那样 ⌘Z 退不回去。
+        ///
+        /// `shouldChangeText` 与 `didChangeText` 必须成对：一次配对记一步撤销，
+        /// 全部替换因此也是「一步」而不是几百步。
+        func applyReplace(_ request: ReplaceRequest) {
+            let length = (textView.string as NSString).length
+            guard NSMaxRange(request.range) <= length else { return }
+            if textView.hasMarkedText() { textView.unmarkText() }
+            guard textView.shouldChangeText(in: request.range, replacementString: request.replacement) else {
+                return
+            }
+            textView.textStorage?.replaceCharacters(in: request.range, with: request.replacement)
+            textView.didChangeText()
+
+            let newLength = (textView.string as NSString).length
+            let caret = min(max(0, request.selectionAfter.location), newLength)
+            textView.setSelectedRange(NSRange(location: caret, length: 0))
+            textView.scrollRangeToVisible(NSRange(location: caret, length: 0))
+
+            // 排到下一拍再清：正在 `updateNSView` 里改 store 会触发
+            // "Publishing changes from within view updates" 警告。
+            let consumed = parent.onReplaceApplied
+            DispatchQueue.main.async { consumed?() }
         }
 
         // MARK: 打字机模式

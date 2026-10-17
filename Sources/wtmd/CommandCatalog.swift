@@ -7,6 +7,7 @@ import SwiftUI
 /// the same value to decide which submenu a command belongs to.
 enum CommandSection: String, CaseIterable, Identifiable {
     case file
+    case edit
     case view
     case writing
     case theme
@@ -18,6 +19,7 @@ enum CommandSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .file: return "文件"
+        case .edit: return "编辑"
         case .view: return "视图"
         case .writing: return "写作"
         case .theme: return "主题"
@@ -47,6 +49,10 @@ enum CommandKind: Hashable {
     case exportWord
     /// Print / save as PDF.
     case exportPDF
+    /// Find inside the current document.
+    case find
+    /// Find and replace inside the current document.
+    case findReplace
     /// Flip between source and preview.
     case toggleMode
     /// Source and preview side by side.
@@ -81,6 +87,8 @@ enum CommandKind: Hashable {
         case .exportHTML: return "file.exportHTML"
         case .exportWord: return "file.exportWord"
         case .exportPDF: return "file.exportPDF"
+        case .find: return "edit.find"
+        case .findReplace: return "edit.replace"
         case .toggleMode: return "view.toggleMode"
         case .toggleSplit: return "view.toggleSplit"
         case .toggleSidebar: return "view.toggleSidebar"
@@ -158,6 +166,18 @@ enum CommandCatalog {
             kind: .exportPDF, title: "打印 / 存为 PDF…", section: .file,
             symbol: "printer", shortcut: KeyboardShortcut("p", modifiers: .command),
             keywords: ["print", "pdf", "export"], subtitle: nil
+        ),
+        AppCommand(
+            kind: .find, title: "查找…", section: .edit,
+            symbol: "magnifyingglass", shortcut: KeyboardShortcut("f", modifiers: .command),
+            keywords: ["find", "search", "lookup", "查找", "搜索"], subtitle: nil
+        ),
+        AppCommand(
+            // ⌥⌘F 是专注模式，别抢；R 记「Replace」。
+            kind: .findReplace, title: "查找与替换…", section: .edit,
+            symbol: "arrow.2.squarepath",
+            shortcut: KeyboardShortcut("r", modifiers: [.command, .option]),
+            keywords: ["replace", "find", "search", "替换"], subtitle: nil
         ),
         AppCommand(
             kind: .toggleMode, title: "思绪 ⇄ 成文", section: .view,
@@ -299,6 +319,9 @@ struct CommandRuntime {
             return workspace.isOpen
         case .checkForUpdates:
             return !updates.isChecking
+        case .find, .findReplace:
+            // 欢迎页没有文本可找
+            return !store.showsWelcome
         case .openRecent(let url):
             // A recent file may have been moved away. Greying it out beats
             // doing nothing when clicked.
@@ -317,6 +340,8 @@ struct CommandRuntime {
         case .exportHTML: store.exportHTML()
         case .exportWord: store.exportWord()
         case .exportPDF: store.exportPDF()
+        case .find: store.showFind(replacing: false)
+        case .findReplace: store.showFind(replacing: true)
         case .toggleMode: store.toggleMode()
         case .toggleSplit: store.toggleSplit()
         case .toggleSidebar: store.sidebarVisible.toggle()

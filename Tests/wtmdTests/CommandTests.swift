@@ -125,6 +125,23 @@ import Testing
     #expect(shortcutLabel(.toggleMode) == "⌘/")
     #expect(shortcutLabel(.toggleTypewriter) == "⌥⌘T")
     #expect(shortcutLabel(.toggleFocus) == "⌥⌘F")
+    #expect(shortcutLabel(.find) == "⌘F")
+    // ⌥⌘F 已经归专注模式，替换只能另找一格：R 记 Replace
+    #expect(shortcutLabel(.findReplace) == "⌥⌘R")
+}
+
+/// 查找与替换在同一个分组里：读者找东西时会想「顺便换掉」，
+/// 分成两处反而要多想一次。
+@Test func findCommandsLiveInTheEditSection() {
+    #expect(CommandCatalog.command(for: .find)?.section == .edit)
+    #expect(CommandCatalog.command(for: .findReplace)?.section == .edit)
+}
+
+/// 快捷键撞车是静默的：菜单里一条永远打不开，而且没人会发现。
+@Test func noTwoCommandsShareAShortcut() {
+    let commands = CommandCatalog.commands(themes: Theme.builtIns, recentFiles: [])
+    let labels = commands.compactMap { $0.shortcut.map(ShortcutFormatter.label) }
+    #expect(Set(labels).count == labels.count, "快捷键重复：\(labels)")
 }
 
 /// 图标打错字只会静默变成空白，所以逐个验存在性。

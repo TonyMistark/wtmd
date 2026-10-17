@@ -48,6 +48,10 @@ struct wtmdApp: App {
                 menuItem(.exportWord)
                 menuItem(.exportPDF)
             }
+            CommandGroup(after: .pasteboard) {
+                menuItem(.find)
+                menuItem(.findReplace)
+            }
             CommandGroup(after: .sidebar) {
                 Divider()
                 menuItem(.toggleSplit)
