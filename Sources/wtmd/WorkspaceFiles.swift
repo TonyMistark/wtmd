@@ -9,6 +9,8 @@ enum FileOperationError: LocalizedError, Equatable {
     case hiddenName
     case alreadyExists(String)
     case notFound(String)
+    case notADirectory(String)
+    case moveIntoItself(String)
     case failed(String)
 
     var errorDescription: String? {
@@ -23,6 +25,10 @@ enum FileOperationError: LocalizedError, Equatable {
             return "「\(name)」已经存在"
         case .notFound(let name):
             return "「\(name)」已经不在了"
+        case .notADirectory(let name):
+            return "「\(name)」不是一个文件夹"
+        case .moveIntoItself(let name):
+            return "不能把「\(name)」移到它自己里面"
         case .failed(let reason):
             return reason
         }
@@ -110,6 +116,44 @@ enum WorkspaceFiles {
         }
         do {
             try manager.moveItem(at: url, to: target)
+        } catch {
+            throw FileOperationError.failed(error.localizedDescription)
+        }
+        return target
+    }
+
+    /// Moves `source` into `directory` under its current name.
+    ///
+    /// 移动不改名：名字是读者给这份稿子起的，换个抽屉不该顺手改掉。同名冲突
+    /// **报错不覆盖**——拖拽是容易手滑的手势，而手滑不该有删除的后果。
+    ///
+    /// 落点就是原来的父目录时原样返回：什么都没发生，调用方据此跳过状态迁移。
+    static func move(
+        _ source: URL,
+        into directory: URL,
+        manager: FileManager = .default
+    ) throws -> URL {
+        guard manager.fileExists(atPath: source.path) else {
+            throw FileOperationError.notFound(source.lastPathComponent)
+        }
+        guard WorkspaceScanner.isDirectory(directory) else {
+            throw FileOperationError.notADirectory(directory.lastPathComponent)
+        }
+        let isDirectory = WorkspaceScanner.isDirectory(source)
+        let target = directory.appendingPathComponent(source.lastPathComponent, isDirectory: isDirectory)
+
+        if PathKey.isSame(target, source) {
+            return source
+        }
+        // 把文件夹拖进它自己（或自己的子孙）会把整棵子树从树上摘下来：先拒。
+        if PathKey.isDescendantOrSelf(directory, of: source) {
+            throw FileOperationError.moveIntoItself(source.lastPathComponent)
+        }
+        if manager.fileExists(atPath: target.path) {
+            throw FileOperationError.alreadyExists(target.lastPathComponent)
+        }
+        do {
+            try manager.moveItem(at: source, to: target)
         } catch {
             throw FileOperationError.failed(error.localizedDescription)
         }

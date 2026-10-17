@@ -1001,8 +1001,7 @@ final class RecentFiles: ObservableObject {
 
     /// `/var/…` 与 `/private/var/…` 是同一份文件，比较前先归一。
     private static func isSameFile(_ a: URL, _ b: URL) -> Bool {
-        a.resolvingSymlinksInPath().standardizedFileURL.path
-            == b.resolvingSymlinksInPath().standardizedFileURL.path
+        PathKey.isSame(a, b)
     }
 }
 
