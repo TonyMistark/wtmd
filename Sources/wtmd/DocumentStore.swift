@@ -361,6 +361,29 @@ final class DocumentStore: ObservableObject {
         }
     }
 
+    /// 导出 Word：自研 OOXML 打包（`DocxExporter`），零依赖。
+    ///
+    /// 版式取文档自身的结构，不套主题——Word 的样式体系与预览的 CSS 变量是两套语言，
+    /// 硬映射只会做出四不像；要「和预览一模一样」应该导出 PDF。
+    func exportWord() {
+        let baseName = displayName.replacingOccurrences(of: "\\.md$", with: "", options: .regularExpression)
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = baseName + ".docx"
+        panel.allowedContentTypes = [UTType(filenameExtension: "docx") ?? .data]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let data = DocxExporter.document(
+            markdown: text,
+            title: baseName,
+            baseURL: fileURL?.deletingLastPathComponent()
+        )
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+
     func exportPDF() {
         let result = WTMarkdown.render(text)
         let html = StyleSheet.fullDocument(

@@ -37,6 +37,7 @@ struct wtmdApp: App {
                 menuItem(.save)
                 Divider()
                 menuItem(.exportHTML)
+                menuItem(.exportWord)
                 menuItem(.exportPDF)
             }
             CommandGroup(after: .sidebar) {
