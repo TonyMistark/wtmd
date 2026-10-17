@@ -159,6 +159,19 @@ enum StyleSheet {
     .mermaid-wrap.mermaid-failed > .mermaid { display: none; }
     .mermaid-wrap svg { max-width: 100%; height: auto; }
     .mermaid-error { color: var(--accent); font-size: 0.88em; text-align: left; margin: 0.6em 0 0; }
+    /* 数学公式：源码占位默认隐藏，KaTeX 渲染成功或失败后才显示，避免原始 LaTeX 闪现 */
+    .wtmd-math { display: none; }
+    .wtmd-math[data-rendered="1"] { display: inline; }
+    .wtmd-math[data-rendered="1"][data-display="1"] {
+      display: block; margin: 1.1em 0; text-align: center;
+    }
+    .wtmd-math.wtmd-math-failed {
+      display: inline; color: var(--accent);
+      font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.92em;
+    }
+    .wtmd-math.wtmd-math-failed[data-display="1"] { display: block; text-align: left; }
+    .katex { font-size: 1.06em; }
+    .katex-display { margin: 0; }
     ::selection { background: color-mix(in srgb, var(--accent) 25%, transparent); }
     @media print {
       body { padding: 0; max-width: none; }
@@ -173,6 +186,7 @@ enum StyleSheet {
       document.getElementById('wtmd-content').innerHTML = bodyHTML;
       if (typeof __wtmdHighlight === 'function') { __wtmdHighlight(); }
       if (typeof __wtmdMermaidRenderAll === 'function') { __wtmdMermaidRenderAll(false); }
+      if (typeof __wtmdKatexRenderAll === 'function') { __wtmdKatexRenderAll(); }
     }
     // 增量更新：替换第 prefix..(total-suffix) 块，保留前后缀节点（图片/图表不重画）
     function __wtmdUpdateRange(diff) {
@@ -202,6 +216,8 @@ enum StyleSheet {
       if (typeof __wtmdHighlight === 'function') { __wtmdHighlight(container); }
       // 新插入的 mermaid 块需要渲染，未变化块的已渲染 SVG 保持原位
       if (typeof __wtmdMermaidRenderAll === 'function') { __wtmdMermaidRenderAll(false); }
+      // 新插入的数学占位需要渲染（已渲染的由 data-rendered 标记跳过）
+      if (typeof __wtmdKatexRenderAll === 'function') { __wtmdKatexRenderAll(); }
     }
     function __wtmdSetTheme(cssText) {
       var el = document.getElementById('wtmd-theme');
@@ -409,6 +425,48 @@ enum StyleSheet {
         return "\(library)\n\(mermaidInit)"
     }
 
+    /// KaTeX 初始化：渲染所有数学占位。katex.render 是同步的，无需就绪信号
+    ///（PDF 导出的固定等待已覆盖）；失败降级为原文本 + 错误提示，不白屏。
+    private static let katexInit = """
+    function __wtmdKatexRenderAll() {
+      if (!window.katex) { return; }
+      var container = document.getElementById('wtmd-content');
+      if (!container) { return; }
+      var nodes = container.querySelectorAll('.wtmd-math');
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i];
+        if (el.getAttribute('data-rendered')) { continue; }
+        var source = el.textContent;
+        var display = el.getAttribute('data-display') === '1';
+        try {
+          window.katex.render(source, el, {
+            displayMode: display,
+            throwOnError: true,
+            strict: false,
+            output: 'htmlAndMathml'
+          });
+          el.setAttribute('data-rendered', '1');
+        } catch (error) {
+          // 降级：保留原文本（元素显示为高亮提示）；完整诊断放 title 悬停可见。
+          // katex.render 失败时可能已往 el 里写了部分内容，先清回纯源码。
+          el.textContent = source;
+          el.classList.add('wtmd-math-failed');
+          el.setAttribute('data-rendered', '0');
+          var full = (error && error.message) ? String(error.message) : '公式无法解析';
+          el.title = full;
+        }
+      }
+    }
+    document.addEventListener('DOMContentLoaded', function () { __wtmdKatexRenderAll(); });
+    """
+
+    /// 完整 KaTeX 脚本：内嵌库 + 初始化。资源缺失时返回空串。
+    static var katexScript: String {
+        let library = WebAssets.katexJS
+        guard !library.isEmpty else { return "" }
+        return "\(library)\n\(katexInit)"
+    }
+
     /// 完整高亮脚本：内嵌库 + 初始化。资源缺失时返回空串（退化为无高亮，正文不受影响）。
     static var highlightScript: String {
         let library = WebAssets.highlightJS
@@ -438,8 +496,8 @@ enum StyleSheet {
     }
 
     /// 完整预览文档：排版骨架 + 主题变量层 + 内嵌前端资源 + 正文（+ 可选交互脚本）。
-    /// 高亮脚本始终内联（预览/HTML 导出/PDF 三端一致）；mermaid 体积大，
-    /// 仅在文档确实含 mermaid 围栏时注入（懒加载）；交互脚本仅预览需要。
+    /// 高亮脚本始终内联（预览/HTML 导出/PDF 三端一致）；mermaid 与 KaTeX 体积大，
+    /// 仅在文档确实含对应语法时注入（懒加载）；交互脚本仅预览需要。
     static func fullDocument(
         title: String,
         body: String,
@@ -451,6 +509,12 @@ enum StyleSheet {
         let highlightTag = highlight.isEmpty ? "" : "<script>\n\(highlight)\n</script>\n"
         let mermaid = body.contains("language-mermaid") ? mermaidScript : ""
         let mermaidTag = mermaid.isEmpty ? "" : "<script>\n\(mermaid)\n</script>\n"
+        // KaTeX：CSS（字体 base64 内嵌）+ JS + 初始化，仅文档含数学时注入；
+        // 与 mermaid 同策略——导出 HTML 也携带，静态打开即可渲染公式。
+        let katexStyle = body.contains("wtmd-math") ? WebAssets.katexCSS : ""
+        let katexStyleTag = katexStyle.isEmpty ? "" : "<style>\n\(katexStyle)\n</style>\n"
+        let katex = body.contains("wtmd-math") ? katexScript : ""
+        let katexTag = katex.isEmpty ? "" : "<script>\n\(katex)\n</script>\n"
         return """
         <!DOCTYPE html>
         <html lang="zh-CN">
@@ -460,7 +524,7 @@ enum StyleSheet {
         <title>\(title)</title>
         <style id="wtmd-base">\(baseCSS)</style>
         <style id="wtmd-theme">\(themeCSS)</style>
-        \(mermaidTag)\(highlightTag)\(scriptTag)</head>
+        \(katexStyleTag)\(mermaidTag)\(highlightTag)\(katexTag)\(scriptTag)</head>
         <body>
         <div id="wtmd-content">
         \(body)
