@@ -137,6 +137,7 @@ wtmd/
 - **v0.3（已发布 v0.3.0，详见 [V03_PLAN.md](V03_PLAN.md)）**：文件夹工作区、打字机模式、专注模式、命令面板、DMG 分发
 - **v0.4（已发布 v0.4.0，详见 [V04_PLAN.md](V04_PLAN.md)）**：`[TOC]` 目录语法、KaTeX 数学公式、更新检查、WYSIWYG 评估（结论：不做完整 WYSIWYG，见 [WYSIWYG_EVAL.md](WYSIWYG_EVAL.md)）
 - **v0.5（已发布（v0.5.0），详见 [V05_PLAN.md](V05_PLAN.md)）**：双视图无损切换、分栏对照、导出 Word、会话恢复与外部修改冲突提示
+- **v0.6（规划中，详见 [V06_PLAN.md](V06_PLAN.md)）**：文档内查找替换、工作区全文搜索、冲突时保全本地版本
 
 ## 8. 开源信息
 
