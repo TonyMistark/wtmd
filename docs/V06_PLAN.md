@@ -16,14 +16,17 @@
 
 ## 现状取证（代码事实，v0.5.0）
 
-- `CommandCatalog` 共 22 条命令，`grep -i find` 一条也没有：**`⌘F` 按下没有反应**，`NSTextView.usesFindBar` 也没打开
+- `CommandCatalog` 共 22 条命令，`grep -i find` 一条也没有：**`⌘F` 按下没有反应**。
+  系统 find bar 其实是开着的（`usesFindBar = true`，v0.1 起就有），但它只做字面量查找、
+  没有正则与替换、没有命中计数，也接不进我们自己的高亮体系——alpha 把它关掉，自绘一条
 - `EditorTextView.highlight`（`EditorTextView.swift:513`）在每次编辑后**重建全部属性** → 查找高亮**不能**写 textStorage，否则下一次按键就被冲掉
 - 专注模式已经给出了正确范式：`layoutManager.addTemporaryAttribute`（`EditorTextView.swift:373`，注释写明「不碰 textStorage」）→ 查找高亮走 `.backgroundColor` 临时属性，与专注的 `.foregroundColor` 互不干扰，两者可同时开
 - 预览是 WKWebView + 块级增量 DOM：`.mark` 只能包在块**内部**，**不得增删 `#wtmd-content` 顶层子节点**，也不得往 `document.body` 挂任何东西
 - `DocumentStore.jump(to:)`（`DocumentStore.swift:232`）只接受 `OutlineItem`（标题）→ 搜索命中需要「行 + 列」的落点，得把它泛化一层
 - `WorkspaceScanner` 已能递归扫出 `.md`，`DirectoryWatcher` 已在监听变更 → 全文搜索**不需要**新建索引基础设施
+- **快捷键占用**：`⌥⌘F` 已是专注模式（v0.3 起的肌肉记忆，不动），替换用 `⌥⌘R`（R 记 Replace）
 
-## P0-1 — 文档内查找替换（`⌘F` / `⌘⌥F`）
+## P0-1 — 文档内查找替换（`⌘F` / `⌥⌘R`）✅ alpha 已完成
 
 **用户故事**：我在第 200 段想确认前面某个词怎么用的，按 `⌘F` 输入，命中处高亮、回车跳到下一处、
 `esc` 回到原光标位置。
@@ -84,7 +87,7 @@ issue #63 里记着这个洞：冲突状态下直接切走，本地那份只存�
 
 | 阶段 | 内容 | 预估 | 状态 |
 |---|---|---|---|
-| v0.6.0-alpha | 文档内查找替换（含预览侧高亮） | 1–1.5 个工作日 | 待开工 |
+| v0.6.0-alpha | 文档内查找替换（含预览侧高亮） | 1–1.5 个工作日 | ✅ 完成（2026-10-17，#69 / PR #70；预览侧高亮挪去 beta） |
 | v0.6.0-beta | 工作区全文搜索 + jump 泛化到行列 | 1–1.5 个工作日 | 待开工 |
 | v0.6.0-rc | 冲突切文档保全 + P2 选定项 | 半个工作日 | 待开工 |
 | v0.6.0 | 发布（tag + DMG + GitHub Release） | 半个工作日 | 待开工 |
@@ -99,3 +102,28 @@ issue #63 里记着这个洞：冲突状态下直接切走，本地那份只存�
 - [ ] 冲突未解决时切走再切回，本地版本仍可取回
 - [ ] 既有不变式不破：预览顶层子节点数、IME 组合、增量 diff、四套端到端用例（Mermaid / 数学 / TOC / 锚点）全绿
 - [ ] 测试全绿并将新增用例计入（基线 254 项）
+
+## 进度日志
+
+- 2026-10-17 **v0.6.0-alpha 完成**（#69 / PR #70）：文档内查找替换
+  - 新文件：`FindEngine`（纯匹配，无 UI）、`FindController`（状态机）、`FindBar`（自绘查找条）。
+    规划里「预览侧高亮」挪去了 beta——源码命中数与渲染文本命中数天然不一致
+    （`**粗体**` 的星号在预览里不存在），两侧各自按所在视图算才诚实
+  - **高亮只走 `layoutManager` 临时属性**：`findHighlightIsTemporaryAndSurvivesARebuild`
+    同时断言「临时属性在、textStorage 里没有」，且模拟一次按键重建高亮后仍在
+  - **替换必须经过 `NSTextView`**：`shouldChangeText` + `textStorage.replaceCharacters` +
+    `didChangeText` 成对调用才算一步撤销——全部替换因此也是 `⌘Z` 一步
+  - **一个真 bug 被测试逼出来**：`ReplaceRequest` 执行完不清，`⌘/` 重建编辑器会拿同一个
+    区间**再改一遍**（那时它指向别的字）。编辑器执行完回调 `onReplaceApplied`，
+    store 异步清掉
+  - **替换成同样的文本**（「甲」→「甲」）内容没变，`attach` 里 `changed || resume != nil`
+    两个条件都要走重扫，否则「替换」永远停在同一处
+  - 快捷键落定：`⌘F` 查找、`⌥⌘R` 替换（`⌥⌘F` 归专注模式，加了「无两条命令共享快捷键」
+    的守门用例）
+  - 预览模式按 `⌘F` 自动切到对照——命中的高亮只存在于源码侧，切过去才看得见
+  - 快照用例的坑（两个）：`ImageRenderer` 会把 `TextField`/`Button` 画成黄色占位块
+    （离屏没有 AppKit 上下文），换 `NSHostingView` + `cacheDisplay` 才是真渲染；
+    画布要用 `fittingSize` 贴合，且**像素断言会被显示倍率绊倒**——CI 是 1x、本机 2x，
+    一律换算回点数再比（首跑 CI 双红就是这条）。两条形态（查找 / 替换）渲染图都人工复核过
+  - 测试 254 → **288**（引擎 14 + 状态机 9 + 编辑器 7 + 快照 2 + 命令 2）；
+    反向验证三组：高亮写进 textStorage、替换直接赋值不记账撤销、导航不绕回——对应用例全红

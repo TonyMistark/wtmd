@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -90,6 +91,10 @@ final class DocumentStore: ObservableObject {
     let themeManager = ThemeManager()
     /// 跨视图重建的位置账本：`⌘/` 会销毁并重建编辑器/预览，位置得存在视图之外。
     let positionMemory = PositionMemory()
+    /// 文档内查找。状态跟着窗口走，不落盘——关掉应用再打开，没人期待搜索框还在。
+    let find = FindController()
+    /// 待执行的替换（编辑器消费后保留 id，避免重复执行）。
+    @Published var replaceRequest: ReplaceRequest?
 
     private let draftDirectory: URL
     /// Debounce before an edit is persisted. Injectable so tests do not have to
@@ -106,6 +111,8 @@ final class DocumentStore: ObservableObject {
     private var saveTask: Task<Void, Never>?
     /// Keeps the exit observers alive; removed in `deinit`.
     private var exitObservers: [NSObjectProtocol] = []
+    /// 把 `find` 的变化转成 store 的变化——查找条与编辑器都挂在 ContentView 上。
+    private var findObservation: AnyCancellable?
 
     static let welcomeMarkdown = """
     # 欢迎使用 wtmd
@@ -191,6 +198,11 @@ final class DocumentStore: ObservableObject {
             seedPosition(from: restoredPosition, for: storedURL, generation: renderGeneration)
         }
         observeExitForPendingEdits()
+
+        find.attach(text)
+        findObservation = find.objectWillChange.sink { [weak self] in
+            self?.objectWillChange.send()
+        }
     }
 
     // MARK: - 状态
@@ -201,8 +213,68 @@ final class DocumentStore: ObservableObject {
 
     func textDidChange(_ new: String) {
         text = new
+        find.attach(new)
         scheduleRender()
         scheduleSave()
+    }
+
+    // MARK: - 查找替换
+
+    /// `⌘F` / `⌥⌘R`。
+    ///
+    /// 成文模式里没有源码可高亮，按 ⌘F 先切到对照——读者找东西时想看的是
+    /// 「它在原文哪儿」，而不是一个找不到落点的计数。
+    func showFind(replacing: Bool = false) {
+        if mode == .preview { setMode(.split) }
+        find.attach(text)
+        find.present(focusingReplacement: replacing)
+    }
+
+    func hideFind() {
+        find.dismiss()
+        replaceRequest = nil
+    }
+
+    /// 编辑器执行完替换后回调：请求是一次性的，留着会在视图重建时被重放。
+    func consumeReplaceRequest() {
+        replaceRequest = nil
+    }
+
+    /// 换文档时作废查找：上一个文档的命中区间放到新文本里毫无意义。
+    private func resetFind() {
+        find.dismiss()
+        replaceRequest = nil
+        find.attach(text)
+    }
+
+    /// 替换当前命中，并把「下一处」放到替换文本之后。
+    func replaceCurrentMatch() {
+        guard let target = find.currentMatch else { return }
+        let newLength = (find.replacement as NSString).length
+        find.noteReplacement(at: target, newLength: newLength)
+        replaceRequest = ReplaceRequest(
+            id: UUID().uuidString,
+            range: target,
+            replacement: find.replacement,
+            selectionAfter: NSRange(location: target.location + newLength, length: 0)
+        )
+    }
+
+    /// 全部替换。整篇一次改完：`⌘Z` 退一步就全回来了。
+    func replaceAllMatches() {
+        guard let first = find.matches.first else { return }
+        guard let updated = FindEngine.replacingAll(
+            in: text, query: find.query, options: find.options, template: find.replacement
+        ) else { return }
+        find.noteReplaceAll()
+        replaceRequest = ReplaceRequest(
+            id: UUID().uuidString,
+            range: NSRange(location: 0, length: (text as NSString).length),
+            replacement: updated,
+            selectionAfter: NSRange(
+                location: min(first.location, (updated as NSString).length), length: 0
+            )
+        )
     }
 
     func setMode(_ newMode: ViewMode) {
@@ -336,6 +408,7 @@ final class DocumentStore: ObservableObject {
         mode = .edit
         clearDraft()
         session?.setOpenFile(nil)
+        resetFind()
     }
 
     func openPanel() {
@@ -373,6 +446,7 @@ final class DocumentStore: ObservableObject {
         }
         session?.setOpenFile(url)
         recomputeNow()
+        resetFind()
     }
 
     func save() {

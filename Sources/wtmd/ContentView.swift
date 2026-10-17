@@ -240,7 +240,19 @@ struct ContentView: View {
                         }
                     }
                 }
-                .safeAreaInset(edge: .bottom) { statusBar }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 0) {
+                        if store.find.isVisible {
+                            FindBar(
+                                find: store.find,
+                                onReplaceCurrent: { store.replaceCurrentMatch() },
+                                onReplaceAll: { store.replaceAllMatches() },
+                                onClose: { store.hideFind() }
+                            )
+                        }
+                        statusBar
+                    }
+                }
         }
     }
 
@@ -276,7 +288,12 @@ struct ContentView: View {
             typewriterMode: writing.typewriter,
             focusMode: writing.focusMode,
             positionMemory: store.positionMemory,
-            generation: store.renderGeneration
+            generation: store.renderGeneration,
+            findMatches: store.find.matches,
+            findCurrent: store.find.currentMatch,
+            findSeekToken: store.find.seekToken,
+            replaceRequest: store.replaceRequest,
+            onReplaceApplied: { store.consumeReplaceRequest() }
         )
         .overlay(alignment: .topLeading) {
             if store.text.isEmpty {
