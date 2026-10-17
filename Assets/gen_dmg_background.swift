@@ -158,12 +158,21 @@ func drawRule(in ctx: CGContext, from x0: CGFloat, to x1: CGFloat, y topY: CGFlo
 func draw(in ctx: CGContext) {
     drawBackground(in: ctx)
 
-    // Headline: what to do with the two icons below.
+    // Headline: what to do with the two icons below. Every hint is bilingual —
+    // Chinese first, then an English line underneath, so the DMG reads for
+    // someone who cannot read the Chinese at all.
     drawCentered(
         "把 wtmd 拖进右侧的「应用程序」",
         spec: TextSpec(size: 15, weight: .medium, color: ink(0.86)),
         centerX: W / 2,
-        topY: 58,
+        topY: 50,
+        in: ctx
+    )
+    drawCentered(
+        "Drag wtmd into the Applications folder on the right",
+        spec: TextSpec(size: 11.5, color: ink(0.46)),
+        centerX: W / 2,
+        topY: 74,
         in: ctx
     )
 
@@ -180,14 +189,28 @@ func draw(in ctx: CGContext) {
         "首次打开若被 macOS 拦截（「无法验证开发者」「已损坏」）",
         spec: TextSpec(size: 12, color: NSColor(srgbRed: 152 / 255, green: 162 / 255, blue: 182 / 255, alpha: 1)),
         centerX: W / 2,
-        topY: 322,
+        topY: 304,
         in: ctx
     )
     drawCentered(
         "系统设置 › 隐私与安全性 › 仍要打开　·　xattr -cr /Applications/wtmd.app",
         spec: TextSpec(size: 12, color: NSColor(srgbRed: 122 / 255, green: 133 / 255, blue: 155 / 255, alpha: 1)),
         centerX: W / 2,
-        topY: 344,
+        topY: 324,
+        in: ctx
+    )
+    drawCentered(
+        "If macOS blocks the first launch (\"unidentified developer\" / \"damaged\")",
+        spec: TextSpec(size: 10.5, color: NSColor(srgbRed: 130 / 255, green: 140 / 255, blue: 160 / 255, alpha: 1)),
+        centerX: W / 2,
+        topY: 350,
+        in: ctx
+    )
+    drawCentered(
+        "System Settings › Privacy & Security › Open Anyway　·　xattr -cr /Applications/wtmd.app",
+        spec: TextSpec(size: 10.5, color: NSColor(srgbRed: 108 / 255, green: 119 / 255, blue: 140 / 255, alpha: 1)),
+        centerX: W / 2,
+        topY: 368,
         in: ctx
     )
 
