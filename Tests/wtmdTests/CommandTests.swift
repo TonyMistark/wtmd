@@ -128,6 +128,8 @@ import Testing
     #expect(shortcutLabel(.find) == "⌘F")
     // ⌥⌘F 已经归专注模式，替换只能另找一格：R 记 Replace
     #expect(shortcutLabel(.findReplace) == "⌥⌘R")
+    // 文档内是 ⌘F，整个工作区是 ⇧⌘F——同一件事的两个范围，顺手
+    #expect(shortcutLabel(.searchWorkspace) == "⇧⌘F")
 }
 
 /// 查找与替换在同一个分组里：读者找东西时会想「顺便换掉」，
@@ -135,6 +137,7 @@ import Testing
 @Test func findCommandsLiveInTheEditSection() {
     #expect(CommandCatalog.command(for: .find)?.section == .edit)
     #expect(CommandCatalog.command(for: .findReplace)?.section == .edit)
+    #expect(CommandCatalog.command(for: .searchWorkspace)?.section == .edit)
 }
 
 /// 快捷键撞车是静默的：菜单里一条永远打不开，而且没人会发现。

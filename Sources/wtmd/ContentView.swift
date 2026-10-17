@@ -48,6 +48,18 @@ struct ContentView: View {
                     .frame(width: 0, height: 0)
                     .accessibilityHidden(true)
 
+                if store.workspaceSearch.isVisible {
+                    WorkspaceSearchPanel(
+                        search: store.workspaceSearch,
+                        onOpen: { hit in
+                            store.workspaceSearch.dismiss()
+                            store.openSearchHit(hit)
+                        },
+                        onDismiss: { store.workspaceSearch.dismiss() }
+                    )
+                    .transition(.opacity)
+                }
+
                 if paletteVisible {
                     CommandPalette(
                         commands: CommandCatalog.commands(
@@ -61,8 +73,7 @@ struct ContentView: View {
                 }
             }
             .animation(.easeOut(duration: 0.12), value: paletteVisible)
-        }
-    }
+        }    }
 
     // MARK: - 命令
 

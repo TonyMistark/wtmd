@@ -51,7 +51,7 @@ struct EditorTextView: NSViewRepresentable {
 
         if let jump, jump.id != coordinator.lastJumpID {
             coordinator.lastJumpID = jump.id
-            coordinator.jump(toLine: jump.line)
+            coordinator.jump(toLine: jump.line, column: jump.column, length: jump.length)
         }
 
         if let insert = pendingImageInsert, insert != coordinator.lastInsertedImage {
@@ -540,13 +540,45 @@ struct EditorTextView: NSViewRepresentable {
 
         // MARK: 跳转
 
-        func jump(toLine line: Int) {
+        func jump(toLine line: Int, column: Int = 0, length: Int = 0) {
             guard line >= 0, line < lineStarts.count else { return }
-            let location = lineStarts[line]
-            textView.selectedRange = NSRange(location: location, length: 0)
-            textView.scrollRangeToVisible(NSRange(location: location, length: 0))
-            recenter()
+            let content = NSString(string: textView.string)
+            let start = lineStarts[line]
+            // 行尾不含换行符：`lineStarts[line + 1]` 指向下一行的第一个字符
+            let end = line + 1 < lineStarts.count ? lineStarts[line + 1] - 1 : content.length
+            let lineLength = max(0, end - start)
+            let targetColumn = min(max(0, column), lineLength)
+            let targetLength = min(max(0, length), lineLength - targetColumn)
+            let target = NSRange(location: start + targetColumn, length: targetLength)
+
+            textView.setSelectedRange(target)
+            if parent.typewriterMode {
+                recenter()
+            } else {
+                reveal(target)
+            }
             textView.window?.makeFirstResponder(textView)
+        }
+
+        /// 让目标停在大约三分之一处，而不是贴着视口边缘。
+        ///
+        /// `scrollRangeToVisible` 只保证「看得见」，命中落到底部时上半句在屏幕外，
+        /// 读者还得自己往上滚一格才知道这句话在说什么。
+        private func reveal(_ range: NSRange) {
+            guard let layoutManager = textView.layoutManager,
+                  let container = textView.textContainer
+            else {
+                textView.scrollRangeToVisible(range)
+                return
+            }
+            layoutManager.ensureLayout(forCharacterRange: range)
+            let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: container)
+            rect.origin.x += textView.textContainerInset.width
+            rect.origin.y += textView.textContainerInset.height
+            let target = max(0, rect.minY - clipView.bounds.height / 3)
+            clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: target))
+            scrollView.reflectScrolledClipView(clipView)
         }
 
         func rebuildLineStarts() {
