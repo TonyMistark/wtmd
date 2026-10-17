@@ -70,6 +70,12 @@ final class DocumentStore: ObservableObject {
     /// Debounce before an edit is persisted. Injectable so tests do not have to
     /// sit through the production 1.2s interval for every case.
     private let autoSaveDelay: UInt64
+    /// What survived the last launch. `nil` means "this instance keeps nothing":
+    /// the default for tests, which must never touch the user's real session.
+    private let session: Session?
+    /// The file's modification date as of the last read or write. A mismatch
+    /// against the disk later means someone else touched the file.
+    private(set) var knownModificationDate: Date?
     private var savedSnapshot: String = ""
     private var renderTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
@@ -122,17 +128,43 @@ final class DocumentStore: ObservableObject {
     MIT 开源协议 · 数据本地存储 · 标准纯文本
     """
 
-    init(draftDirectory: URL? = nil, autoSaveDelay: UInt64 = 1_200_000_000) {
+    init(
+        draftDirectory: URL? = nil,
+        autoSaveDelay: UInt64 = 1_200_000_000,
+        session: Session? = nil
+    ) {
         let directory = draftDirectory ?? Self.defaultDraftDirectory
         self.draftDirectory = directory
         self.autoSaveDelay = autoSaveDelay
-        if let draft = Self.readDraft(at: directory), !draft.isEmpty {
+        self.session = session
+
+        // 上次打开的那篇优先于草稿：读者按下 ⌘Tab 回来，期待看到的是刚才在写的东西，
+        // 而不是「今天早上那份未命名草稿」。
+        let storedURL = session?.openFileURL
+        let restored = storedURL.flatMap(Self.readDocument(at:))
+        var restoredPosition: Session.Position?
+        if let restored, let storedURL {
+            text = restored.content
+            fileURL = storedURL
+            savedSnapshot = restored.content
+            hasStartedWriting = true
+            knownModificationDate = restored.modifiedAt
+            renderGeneration = 1
+            restoredPosition = session?.position(for: storedURL)
+        } else if let draft = Self.readDraft(at: directory), !draft.isEmpty {
             text = draft
         } else {
             text = Self.welcomeMarkdown
             Self.writeDraft(text, at: directory)
         }
+        // 文件在两次启动之间被删了：别再指向一个不存在的路径
+        if storedURL != nil, restored == nil {
+            session?.setOpenFile(nil)
+        }
         recomputeNow()
+        if let restoredPosition, let storedURL {
+            seedPosition(from: restoredPosition, for: storedURL, generation: renderGeneration)
+        }
         observeExitForPendingEdits()
     }
 
@@ -264,9 +296,11 @@ final class DocumentStore: ObservableObject {
 
     func newDocument() {
         flushPendingSave()
+        recordSessionPosition()
         text = ""
         fileURL = nil
         savedSnapshot = ""
+        knownModificationDate = nil
         // The user explicitly asked for a blank document, so the welcome screen
         // must step aside — otherwise the empty text immediately brings it back
         // and the button looks dead.
@@ -275,6 +309,7 @@ final class DocumentStore: ObservableObject {
         recomputeNow()
         mode = .edit
         clearDraft()
+        session?.setOpenFile(nil)
     }
 
     func openPanel() {
@@ -291,16 +326,24 @@ final class DocumentStore: ObservableObject {
         // Clicking the file that is already open (in the workspace tree, say)
         // must not reload the preview and throw away the scroll position.
         guard url != fileURL else { return }
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return }
+        guard let document = Self.readDocument(at: url) else { return }
         // Flush only after the read succeeded: a failed open must not discard
         // unsaved work.
         flushPendingSave()
-        text = content
+        // 切走之前把这一篇停在哪里记下来，否则「在文件树里点来点去」的轨迹全丢
+        recordSessionPosition()
+        text = document.content
         fileURL = url
-        savedSnapshot = content
+        savedSnapshot = document.content
+        knownModificationDate = document.modifiedAt
         recentFiles.add(url)
         hasStartedWriting = true
         renderGeneration += 1
+        // 这一篇之前被读过（本次运行或上次启动）就回到当时的位置
+        if let recorded = session?.position(for: url) {
+            seedPosition(from: recorded, for: url, generation: renderGeneration)
+        }
+        session?.setOpenFile(url)
         recomputeNow()
     }
 
@@ -321,7 +364,9 @@ final class DocumentStore: ObservableObject {
         do {
             try text.write(to: targetURL, atomically: true, encoding: .utf8)
             savedSnapshot = text
+            knownModificationDate = Self.modificationDate(of: targetURL)
             recentFiles.add(targetURL)
+            session?.setOpenFile(targetURL)
             clearDraft()
         } catch {
             NSAlert(error: error).runModal()
@@ -395,6 +440,61 @@ final class DocumentStore: ObservableObject {
         PrintController.print(html: html, baseURL: fileURL?.deletingLastPathComponent())
     }
 
+    // MARK: - 会话
+
+    /// 读文件内容，连同它的修改时间。一次 stat 拿到两样东西，省得打开文件
+    /// 与建立「磁盘基线」之间被人插进一次写入。
+    private static func readDocument(at url: URL) -> (content: String, modifiedAt: Date?)? {
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return (content, modificationDate(of: url))
+    }
+
+    private static func modificationDate(of url: URL) -> Date? {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+    }
+
+    /// 把会话里记下的位置交给账本，等视图建起来时回填。
+    private func seedPosition(from recorded: Session.Position, for url: URL, generation: Int) {
+        positionMemory.seed(
+            editorPosition: PositionMemory.EditorPosition(
+                selection: NSRange(
+                    location: recorded.selectionLocation,
+                    length: recorded.selectionLength
+                ),
+                scrollOrigin: CGPoint(x: recorded.scrollX, y: recorded.scrollY)
+            ),
+            previewAnchor: PositionMemory.PreviewAnchor(
+                blockIndex: recorded.blockIndex,
+                offset: CGFloat(recorded.blockOffset)
+            ),
+            for: generation
+        )
+    }
+
+    /// 把当前文档的位置写进会话：切文档、关窗、退出各调一次。
+    ///
+    /// 位置在内存里是每帧都在更新的（滚动回调），但落盘只走这几条路径——
+    /// 把 `UserDefaults` 写进滚动回调既没必要，长文档里还会拖慢滚轮。
+    func recordSessionPosition() {
+        guard let session, let fileURL else { return }
+        let editor = positionMemory.editorPosition
+        let anchor = positionMemory.previewAnchor
+        // 账本还是空的（视图没建 / 回填没完成）：记下去等于把旧位置抹成文首
+        guard editor != nil || anchor != nil else { return }
+        session.record(
+            Session.Position(
+                selectionLocation: editor?.selection.location ?? 0,
+                selectionLength: editor?.selection.length ?? 0,
+                scrollX: Double(editor?.scrollOrigin.x ?? 0),
+                scrollY: Double(editor?.scrollOrigin.y ?? 0),
+                blockIndex: anchor?.blockIndex ?? 0,
+                blockOffset: Double(anchor?.offset ?? 0),
+                modifiedAt: knownModificationDate?.timeIntervalSince1970
+            ),
+            for: fileURL
+        )
+    }
+
     // MARK: - 草稿
 
     /// Draft storage root. Defaults to Application Support; injectable so tests
@@ -453,6 +553,7 @@ final class DocumentStore: ObservableObject {
             return false
         }
         savedSnapshot = content
+        knownModificationDate = Self.modificationDate(of: url)
         return true
     }
 
@@ -489,7 +590,11 @@ final class DocumentStore: ObservableObject {
             center.addObserver(forName: name, object: nil, queue: .main) { _ in
                 // Delivered on the main queue, possibly while the process is
                 // already tearing down — so flush inline rather than hopping.
-                MainActor.assumeIsolated { box.store?.flushPendingSave() }
+                MainActor.assumeIsolated {
+                    box.store?.flushPendingSave()
+                    // 位置也在这里落盘：写文件刚刚刷新了 mtime，先写完再记才对得上
+                    box.store?.recordSessionPosition()
+                }
             }
         }
     }

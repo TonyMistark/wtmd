@@ -2,11 +2,19 @@ import SwiftUI
 
 @main
 struct wtmdApp: App {
-    @StateObject private var store = DocumentStore()
-    @StateObject private var workspace = WorkspaceStore()
+    @StateObject private var store: DocumentStore
+    @StateObject private var workspace: WorkspaceStore
     @StateObject private var writing = WritingSettings()
     @StateObject private var updates = UpdateChecker()
     @State private var paletteVisible = false
+
+    /// One session record shared by the document and the folder around it: both
+    /// write to the same blob, and a restore has to bring them back together.
+    init() {
+        let session = Session()
+        _store = StateObject(wrappedValue: DocumentStore(session: session))
+        _workspace = StateObject(wrappedValue: WorkspaceStore(session: session))
+    }
 
     var body: some Scene {
         WindowGroup {

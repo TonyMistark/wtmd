@@ -188,15 +188,40 @@ final class WorkspaceStore: ObservableObject {
     @Published var expandedPaths: Set<String> = []
 
     private var watcher: DirectoryWatcher?
+    /// Where the workspace root and the expanded folders are remembered between
+    /// launches. `nil` in tests, which must not read or write the real session.
+    private let session: Session?
+
+    init(session: Session? = nil) {
+        self.session = session
+        restore()
+    }
 
     var isOpen: Bool { root != nil }
     var rootName: String { root?.lastPathComponent ?? "" }
+
+    /// Brings back the folder that was open last time. A path that no longer
+    /// exists (unplugged drive, deleted folder) is dropped silently: coming back
+    /// to "no workspace" is what a text editor should do, not an error dialog.
+    func restore() {
+        guard let session, let url = session.workspaceURL else { return }
+        guard WorkspaceScanner.isDirectory(url) else {
+            session.setWorkspace(nil)
+            return
+        }
+        // 先把展开状态取出来：`open` 会先 `close` 上一个工作区（顺手清空并落盘），
+        // 取晚了读到的是刚被清掉的那份。
+        let expanded = session.expandedPaths
+        open(url)
+        expandedPaths = expanded
+    }
 
     /// Opens `url` as the workspace root, replacing any previous workspace.
     func open(_ url: URL) {
         close()
         root = url
         reload()
+        session?.setWorkspace(url)
         watcher = DirectoryWatcher(root: url) { [weak self] in
             self?.reload()
         }
@@ -209,6 +234,8 @@ final class WorkspaceStore: ObservableObject {
         tree = nil
         selection = nil
         expandedPaths = []
+        session?.setWorkspace(nil)
+        session?.setExpandedPaths([])
     }
 
     func openPanel() {
@@ -251,6 +278,7 @@ final class WorkspaceStore: ObservableObject {
             expandedPaths.insert(directory.path)
         }
         selection = url
+        session?.setExpandedPaths(expandedPaths)
     }
 
     func isExpanded(_ url: URL) -> Bool { expandedPaths.contains(url.path) }
@@ -261,6 +289,7 @@ final class WorkspaceStore: ObservableObject {
         } else {
             expandedPaths.remove(url.path)
         }
+        session?.setExpandedPaths(expandedPaths)
     }
 
     // MARK: - Helpers
