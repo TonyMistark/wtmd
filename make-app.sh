@@ -23,7 +23,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
 
-echo "── 3/5 拷贝 SPM 资源包（highlight.js / mermaid，缺失会导致预览无高亮无图表）…"
+echo "── 3/5 拷贝 SPM 资源包（highlight.js / mermaid / katex，缺失会导致预览无高亮无图表无公式）…"
 RES_BUNDLE=".build/release/${APP_NAME}_${APP_NAME}.bundle"
 if [[ ! -d "$RES_BUNDLE" ]]; then
     echo "   ✗ 未找到资源包：$RES_BUNDLE"
@@ -81,6 +81,10 @@ echo "── 5/5 校验…"
 codesign --verify --verbose "$APP" 2>&1 | tail -1
 [[ -f "$APP/Contents/Resources/$(basename "$RES_BUNDLE")/Contents/Resources/Resources/highlight.min.js" ]] \
     || { echo "   ✗ 资源包内容不完整"; exit 1; }
+for f in mermaid.min.js katex.min.js katex-embedded.min.css; do
+    [[ -f "$APP/Contents/Resources/$(basename "$RES_BUNDLE")/Contents/Resources/Resources/$f" ]] \
+        || { echo "   ✗ 资源包缺少 $f"; exit 1; }
+done
 spctl --assess --type execute "$APP" 2>&1 || true
 
 echo ""

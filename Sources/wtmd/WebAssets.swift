@@ -15,6 +15,15 @@ enum WebAssets {
     /// 体积较大（~2.7MB），仅在文档确实含 mermaid 围栏时才注入。
     static let mermaidJS: String = load(name: "mermaid.min", ext: "js")
 
+    /// KaTeX v0.16.22（数学公式排版）。
+    /// 许可：MIT，版本与许可声明写在文件头。
+    /// 仅在文档确实含数学定界符时才注入（懒加载，同 mermaid）。
+    static let katexJS: String = load(name: "katex.min", ext: "js")
+
+    /// KaTeX 样式表，woff2 字体已 base64 内嵌（Assets/embed_katex_fonts.py 生成），
+    /// 预览与导出 HTML 自包含、离线可用。
+    static let katexCSS: String = load(name: "katex-embedded.min", ext: "css")
+
     /// 读取资源；缺失时返回空串（预览退化为无高亮，不影响正文渲染）。
     private static func load(name: String, ext: String) -> String {
         guard let url = Bundle.module.url(

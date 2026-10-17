@@ -178,6 +178,18 @@ public final class HTMLRenderer {
             return protect("<code>\(code)</code>")
         }
 
+        // 数学公式（行内代码之后：`` `$x$` `` 里的 $ 不构成公式；其余标记之前：
+        // `*`、`_`、`<` 属于数学语法，不能被行内标记吃掉）。输出 wtmd-math 占位，
+        // 源码已转义存入，由预览/导出端的 KaTeX 脚本消费。
+        t = replace(t, pattern: "(?s)\\$\\$(.+?)\\$\\$") { m, ns in
+            protect(mathSpan(ns.substring(with: m.range(at: 1)), display: true))
+        }
+        // 行内 `$…$`：开头后不能是空白，结尾前不能是空白，结尾 $ 后不能跟数字
+        //（防 `$5 and $10` 这类金额被当成公式）；内容单行、不含 $。
+        t = replace(t, pattern: "\\$(?![\\s$])([^$\\n]+?)(?<![\\s\\\\])\\$(?!\\d)") { m, ns in
+            protect(mathSpan(ns.substring(with: m.range(at: 1)), display: false))
+        }
+
         // 脚注引用 [^id]（在图片/链接之前，登记出现顺序）
         t = replace(t, pattern: "\\[\\^([^\\]\\s]+)\\]") { m, ns in
             let id = ns.substring(with: m.range(at: 1))
@@ -237,6 +249,15 @@ public final class HTMLRenderer {
     }
 
     // MARK: - 占位符机制
+
+    /// 数学占位元素：KaTeX 脚本读取 textContent 作为公式源码渲染。
+    /// 输入取自已转义的文本（实体在 textContent 中解码回原字符），不再二次转义。
+    private func mathSpan(_ source: String, display: Bool) -> String {
+        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayAttr = display ? "1" : "0"
+        let cls = display ? "wtmd-math wtmd-math-display" : "wtmd-math"
+        return "<span class=\"\(cls)\" data-display=\"\(displayAttr)\">\(trimmed)</span>"
+    }
 
     private func protect(_ html: String) -> String {
         inlineCounter += 1
