@@ -233,6 +233,11 @@ struct ContentView: View {
                 // 相遇的瞬间：思绪与成文切换时的轻柔过渡
                 .animation(.easeInOut(duration: 0.18), value: store.mode)
                 .transition(.opacity)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if let change = store.externalChange {
+                        conflictBanner(change)
+                    }
+                }
                 .safeAreaInset(edge: .bottom) { statusBar }
         }
     }
@@ -247,6 +252,43 @@ struct ContentView: View {
         case .split:
             splitPane
         }
+    }
+
+    /// 磁盘上的文件被别处改过（或被删了）：一条非模态横幅，不是弹窗。
+    ///
+    /// 写作工具最不该做的事是在句子中间抢走焦点，而弹窗恰好会。横幅不打断输入；
+    /// 在读者做出选择之前自动保存**不写盘**，所以放着不动也不会丢东西。
+    private func conflictBanner(_ change: ExternalChange) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: change == .deleted ? "trash" : "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .font(.callout)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(change == .deleted
+                     ? "「\(store.displayName)」已被删除"
+                     : "「\(store.displayName)」已在别处被修改")
+                    .font(.callout.weight(.medium))
+                Text(change == .deleted
+                     ? "自动保存已暂停。另存为一个新文件，或把内容留作草稿。"
+                     : "自动保存已暂停，磁盘上的版本没有被覆盖。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 12)
+            if change == .deleted {
+                Button("留作草稿") { store.resolveExternalChange(.keepAsDraft) }
+                Button("另存为…") { store.resolveExternalChange(.saveAs) }
+            } else {
+                Button("载入磁盘版本") { store.resolveExternalChange(.reloadDisk) }
+                Button("保留我的修改") { store.resolveExternalChange(.keepLocal) }
+            }
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .overlay(alignment: .bottom) { Divider() }
     }
 
     /// 思绪：源码编辑器 + 空文档提示。

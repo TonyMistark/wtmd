@@ -27,6 +27,29 @@ struct JumpRequest: Equatable {
     let slug: String
 }
 
+/// 磁盘上的文件和编辑器里的版本对不上了。
+///
+/// 自动保存是「读者没下命令也在写盘」，所以它必须先确认磁盘还是上次看到的那个
+/// 版本——否则同步盘、另一个编辑器、`git checkout` 的改动会被一声不响地盖掉。
+enum ExternalChange: Equatable {
+    /// 文件还在，但内容被别处改过（`mtime` 变了）。
+    case modified
+    /// 文件已经不在了。
+    case deleted
+}
+
+/// 读者对 `ExternalChange` 的选择。
+enum ExternalChangeResolution: Equatable {
+    /// 我的版本赢：写回去，把磁盘基线刷成这次写入的 `mtime`。
+    case keepLocal
+    /// 磁盘的版本赢：重新载入，未保存的修改作废。
+    case reloadDisk
+    /// 文件已经没了：另存到一个新路径。
+    case saveAs
+    /// 文件已经没了：内容留在草稿里，文档转为未命名。
+    case keepAsDraft
+}
+
 @MainActor
 final class DocumentStore: ObservableObject {
     @Published var text: String
@@ -54,6 +77,8 @@ final class DocumentStore: ObservableObject {
     /// back to the welcome screen, which is what happened when the condition was
     /// derived from `text.isEmpty` alone.
     @Published private(set) var hasStartedWriting = false
+    /// 磁盘与编辑器不一致，等着读者决定用谁的版本。非空期间自动保存**不写盘**。
+    @Published private(set) var externalChange: ExternalChange?
 
     /// Single source of truth for the welcome screen. Kept on the store (instead
     /// of inline in the view body) so the condition is unit-testable.
@@ -297,6 +322,7 @@ final class DocumentStore: ObservableObject {
     func newDocument() {
         flushPendingSave()
         recordSessionPosition()
+        externalChange = nil
         text = ""
         fileURL = nil
         savedSnapshot = ""
@@ -332,6 +358,8 @@ final class DocumentStore: ObservableObject {
         flushPendingSave()
         // 切走之前把这一篇停在哪里记下来，否则「在文件树里点来点去」的轨迹全丢
         recordSessionPosition()
+        // 横幅跟着文档走：换了一篇，上一篇的冲突与这一篇无关
+        externalChange = nil
         text = document.content
         fileURL = url
         savedSnapshot = document.content
@@ -350,6 +378,11 @@ final class DocumentStore: ObservableObject {
     func save() {
         saveTask?.cancel()
         saveTask = nil
+        // ⌘S 也是「写盘」，同样不能盖掉别处刚改过的版本：交给横幅让读者选。
+        if let change = detectExternalChange() {
+            externalChange = change
+            return
+        }
         let targetURL: URL
         if let existing = fileURL {
             targetURL = existing
@@ -371,6 +404,14 @@ final class DocumentStore: ObservableObject {
         } catch {
             NSAlert(error: error).runModal()
         }
+    }
+
+    /// 冲突未解决就要退出/关窗：磁盘上那份是别人的版本，不去动它；自己的改动
+    /// 留在草稿里，下次启动以未命名文档出现——总比一声不响地丢掉好。
+    private func preserveLocalVersionIfConflicted() {
+        guard externalChange != nil, isDirty else { return }
+        Self.writeDraft(text, at: draftDirectory)
+        session?.setOpenFile(nil)
     }
 
     // MARK: - 导出
@@ -449,8 +490,13 @@ final class DocumentStore: ObservableObject {
         return (content, modificationDate(of: url))
     }
 
+    /// 文件修改时间。
+    ///
+    /// **不能用 `URL.resourceValues`**：`NSURL` 会缓存资源值，写完再 stat 拿到的
+    /// 还是上一次的 mtime，于是「自己刚写的」和「被别人改过」永远分不清
+    /// （实测同一路径两次读到相同值，差 6ms 的那种漂移也会随机出现）。
     private static func modificationDate(of url: URL) -> Date? {
-        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
     }
 
     /// 把会话里记下的位置交给账本，等视图建起来时回填。
@@ -541,10 +587,74 @@ final class DocumentStore: ObservableObject {
     /// the draft file while it has no path.
     private func persist(_ content: String) {
         if let fileURL {
+            // 只在真正要写盘的那一刻确认磁盘版本：早一点查（比如每次按键）会
+            // 在读者犹豫的时候反复报同一个冲突。
+            if let change = detectExternalChange() {
+                externalChange = change
+                return
+            }
             writeFile(content, to: fileURL)
         } else {
             Self.writeDraft(content, at: draftDirectory)
         }
+    }
+
+    /// 磁盘还是我们上次看到的那个版本吗？
+    ///
+    /// 未命名文档没有基线（`knownModificationDate == nil`），也就谈不上冲突；
+    /// 文件不在了算删除——两者都要在写之前判断，写下去就晚了。
+    private func detectExternalChange() -> ExternalChange? {
+        guard let fileURL, let known = knownModificationDate else { return nil }
+        guard let disk = Self.modificationDate(of: fileURL) else { return .deleted }
+        return disk == known ? nil : .modified
+    }
+
+    /// 读者选定了冲突的处理方式。决定与副作用都在这里，横幅只管把按钮接过来。
+    func resolveExternalChange(_ resolution: ExternalChangeResolution) {
+        switch resolution {
+        case .keepLocal:
+            guard let fileURL else { return }
+            externalChange = nil
+            // `writeFile` 成功后会顺手把基线刷成本次写入的 mtime；失败就说明
+            // 磁盘那边还是别的版本（只读卷、路径被占），冲突得重新亮出来。
+            if !writeFile(text, to: fileURL) {
+                externalChange = detectExternalChange() ?? .modified
+            }
+        case .reloadDisk:
+            guard let fileURL, let document = Self.readDocument(at: fileURL) else {
+                // 读取失败通常就是文件已经没了：退化为删除，而不是清空编辑器
+                externalChange = .deleted
+                return
+            }
+            // 排队中的那次自动保存握的是旧内容，先撤掉再换文本
+            cancelScheduledSave()
+            externalChange = nil
+            text = document.content
+            savedSnapshot = document.content
+            knownModificationDate = document.modifiedAt
+            renderGeneration += 1
+            recomputeNow()
+        case .saveAs:
+            // 文件已经没了：转成未命名再走「存为新文件」这条既有路径。
+            // 面板被取消时文档就留在未命名状态，内容随之进草稿——不丢东西。
+            fileURL = nil
+            knownModificationDate = nil
+            externalChange = nil
+            save()
+        case .keepAsDraft:
+            fileURL = nil
+            knownModificationDate = nil
+            externalChange = nil
+            session?.setOpenFile(nil)
+            Self.writeDraft(text, at: draftDirectory)
+        }
+    }
+
+    /// 撤掉排队中的自动保存（不写盘）。用于「读者刚决定用磁盘版本」这类
+    /// 必须让旧内容彻底失效的时刻。
+    private func cancelScheduledSave() {
+        saveTask?.cancel()
+        saveTask = nil
     }
 
     @discardableResult
@@ -594,6 +704,8 @@ final class DocumentStore: ObservableObject {
                     box.store?.flushPendingSave()
                     // 位置也在这里落盘：写文件刚刚刷新了 mtime，先写完再记才对得上
                     box.store?.recordSessionPosition()
+                    // 冲突没解决就走人：本地版本进草稿，别让它随窗口一起消失
+                    box.store?.preserveLocalVersionIfConflicted()
                 }
             }
         }
