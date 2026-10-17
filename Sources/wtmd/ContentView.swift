@@ -15,6 +15,7 @@ struct ContentView: View {
     /// 冲突副本清单是否展开。
     @State private var conflictListVisible = false
 
+
     var body: some View {
         NavigationSplitView(
             columnVisibility: Binding(
@@ -49,6 +50,11 @@ struct ContentView: View {
             guard let newValue else { return }
             workspace.reveal(newValue)
         }
+        // 未命名文档另存时默认落到当前工作区，省掉一次从「文稿」导航过去
+        .onChange(of: workspace.root) { _, newValue in
+            store.preferredSaveDirectory = newValue
+        }
+        .onAppear { store.preferredSaveDirectory = workspace.root }
         .overlay {
             ZStack {
                 // ⌘/ 切换模式（快捷键可以被改派，跟着生效值走）
@@ -117,7 +123,7 @@ struct ContentView: View {
     private var sidebar: some View {
         List {
             if workspace.isOpen {
-                workspaceSection
+                WorkspaceTreeView()
             }
 
             Section("大纲") {
@@ -154,81 +160,6 @@ struct ContentView: View {
         .listStyle(.sidebar)
     }
 
-    // MARK: - 工作区
-
-    @ViewBuilder
-    private var workspaceSection: some View {
-        Section {
-            let nodes = workspace.tree?.children ?? []
-            if nodes.isEmpty {
-                Text("这个文件夹里还没有 Markdown 文件")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
-            } else {
-                ForEach(nodes) { node in
-                    treeRow(node)
-                }
-            }
-        } header: {
-            HStack(spacing: 6) {
-                Text(workspace.rootName)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 4)
-                Button {
-                    workspace.close()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-                .help("关闭工作区")
-            }
-        }
-    }
-
-    /// 文件树的一行：文件夹可折叠，文件点击即打开，当前文档高亮。
-    ///
-    /// `AnyView` 是必需的：递归视图的返回类型没法用 `some View` 自引用
-    /// （编译器会报 `OpaqueTypeInference`）。
-    private func treeRow(_ node: WorkspaceNode) -> AnyView {
-        if node.isDirectory {
-            return AnyView(
-                DisclosureGroup(
-                    isExpanded: Binding(
-                        get: { workspace.isExpanded(node.url) },
-                        set: { workspace.setExpanded(node.url, to: $0) }
-                    )
-                ) {
-                    ForEach(node.children) { child in
-                        treeRow(child)
-                    }
-                } label: {
-                    Label(node.name, systemImage: "folder")
-                        .font(.callout)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            )
-        }
-
-        return AnyView(
-            Button {
-                store.open(url: node.url)
-            } label: {
-                Label(node.name, systemImage: "doc.text")
-                    .font(.callout)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(
-                workspace.selection == node.url ? Color.accentColor : Color.primary
-            )
-        )
-    }
 
     private func outlineRow(_ item: OutlineItem) -> some View {
         Button {

@@ -378,7 +378,7 @@ struct CommandRuntime {
 
     func run(_ command: AppCommand) {
         switch command.kind {
-        case .newDocument: store.newDocument()
+        case .newDocument: newDocument()
         case .openDocument: store.openPanel()
         case .openFolder: workspace.openPanel()
         case .save: store.save()
@@ -400,5 +400,28 @@ struct CommandRuntime {
         case .checkForUpdates: Task { await updates.check(force: true) }
         case .openRecent(let url): store.open(url: url)
         }
+    }
+
+    /// 工作区打开着，「新建」就该在那个文件夹里留下一篇真的文件。
+    ///
+    /// 只在内存里起一篇未命名草稿，读者还得自己另存一次、再导航到那个文件夹——
+    /// 那一步在 v0.6 之前是必须的，现在文件夹就在手边，不该还要绕。
+    private func newDocument() {
+        guard workspace.isOpen,
+              let url = workspace.createDocument(in: targetDirectory)
+        else {
+            store.newDocument()
+            return
+        }
+        store.open(url: url)
+    }
+
+    /// 选中文件就建在它旁边，选中目录就建在里面，什么都没选就建在根上。
+    private var targetDirectory: URL? {
+        guard let root = workspace.root else { return nil }
+        guard let selection = workspace.selection else { return root }
+        return WorkspaceScanner.isDirectory(selection)
+            ? selection
+            : selection.deletingLastPathComponent()
     }
 }

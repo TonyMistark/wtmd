@@ -107,6 +107,10 @@ final class DocumentStore: ObservableObject {
     /// 待执行的替换（编辑器消费后保留 id，避免重复执行）。
     @Published var replaceRequest: ReplaceRequest?
 
+    /// 未命名文档另存时的默认目录（当前工作区）。由视图在切换工作区时写入；
+    /// `nil` 就交给系统记得的上次位置。
+    var preferredSaveDirectory: URL?
+
     private let draftDirectory: URL
     /// Debounce before an edit is persisted. Injectable so tests do not have to
     /// sit through the production 1.2s interval for every case.
@@ -522,6 +526,11 @@ final class DocumentStore: ObservableObject {
             let panel = NSSavePanel()
             panel.nameFieldStringValue = "未命名.md"
             panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
+            // 工作区打开着就以它为默认落点：读者已经在那个文件夹里了，
+            // 再让他从「文稿」一路导航过去是多出来的一步。
+            if let preferredSaveDirectory {
+                panel.directoryURL = preferredSaveDirectory
+            }
             guard panel.runModal() == .OK, let url = panel.url else { return }
             targetURL = url
             fileURL = url
@@ -910,6 +919,59 @@ final class DocumentStore: ObservableObject {
     }
 }
 
+// MARK: - 跟着磁盘走
+
+extension DocumentStore: WorkspaceFileEvents {
+    /// 当前这一篇（或它所在的目录）改了名、换了位置：路径跟着走，内容一个字不动。
+    ///
+    /// **不重载、不递增 `renderGeneration`**：改名没有改变任何字符，重渲染只会把
+    /// 读者的滚动位置和光标一起吞掉。`savedSnapshot` 也留在原处——它记的是
+    /// 「编辑器里这段字与磁盘一致」，与文件叫什么名字无关。
+    func documentDidMove(from old: URL, to new: URL) {
+        guard let current = fileURL,
+              WorkspaceStore.isDescendantOrSelf(current, of: old)
+        else { return }
+
+        // 路径一律按归一后的拼法算：树里枚举出来的是 `/private/var/…`，
+        // 而从面板/会话来的可能是 `/var/…`，字面比较会把同一份文件当成两份。
+        let currentPath = WorkspaceStore.canonicalPath(current)
+        let oldPath = WorkspaceStore.canonicalPath(old)
+        let suffix = String(currentPath.dropFirst(oldPath.count))
+        let newCurrent = URL(fileURLWithPath: WorkspaceStore.canonicalPath(new) + suffix)
+
+        fileURL = newCurrent
+        // mtime 刷新到新路径：否则下一次自动保存会把它判成「被别处改过」
+        knownModificationDate = Self.modificationDate(of: newCurrent)
+        recentFiles.remove(old)
+        recentFiles.add(newCurrent)
+        session?.setOpenFile(newCurrent)
+    }
+
+    /// 当前这一篇进了废纸篓：字留在编辑器里，文档转成未命名草稿。
+    ///
+    /// **绝不先 flush**：那会把内容写回一个刚被丢掉的文件，等于在废纸篓里复活一份，
+    /// 而读者已经明确说了不要它。内容改走草稿盘——下次启动它还在。
+    func documentWasTrashed(at url: URL) {
+        guard let current = fileURL,
+              WorkspaceStore.isDescendantOrSelf(current, of: url)
+        else { return }
+
+        saveTask?.cancel()
+        saveTask = nil
+        fileURL = nil
+        knownModificationDate = nil
+        // 相对「空文档」是脏的：退出时才会把草稿再写一遍，而不是当成已保存的空文档
+        savedSnapshot = ""
+        externalChange = nil
+        hasStartedWriting = true
+        recentFiles.remove(current)
+        session?.setOpenFile(nil)
+        if !text.isEmpty {
+            Self.writeDraft(text, at: draftDirectory)
+        }
+    }
+}
+
 // MARK: - 最近文件
 
 final class RecentFiles: ObservableObject {
@@ -922,11 +984,25 @@ final class RecentFiles: ObservableObject {
     }
 
     func add(_ url: URL) {
-        var next = urls.filter { $0 != url }
+        var next = urls.filter { !Self.isSameFile($0, url) }
         next.insert(url, at: 0)
         if next.count > 8 { next = Array(next.prefix(8)) }
         urls = next
         UserDefaults.standard.set(next.map(\.absoluteString), forKey: Self.key)
+    }
+
+    /// 文件被删掉或改名之后，旧路径不能还留在列表里等着被点。
+    func remove(_ url: URL) {
+        let next = urls.filter { !Self.isSameFile($0, url) }
+        guard next.count != urls.count else { return }
+        urls = next
+        UserDefaults.standard.set(next.map(\.absoluteString), forKey: Self.key)
+    }
+
+    /// `/var/…` 与 `/private/var/…` 是同一份文件，比较前先归一。
+    private static func isSameFile(_ a: URL, _ b: URL) -> Bool {
+        a.resolvingSymlinksInPath().standardizedFileURL.path
+            == b.resolvingSymlinksInPath().standardizedFileURL.path
     }
 }
 
