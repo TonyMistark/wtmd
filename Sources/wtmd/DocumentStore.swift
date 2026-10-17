@@ -85,6 +85,10 @@ final class DocumentStore: ObservableObject {
     @Published private(set) var hasStartedWriting = false
     /// 磁盘与编辑器不一致，等着读者决定用谁的版本。非空期间自动保存**不写盘**。
     @Published private(set) var externalChange: ExternalChange?
+    /// 冲突未解决就切走时留下的本地副本（`conflicts/` 目录）。最新的在前。
+    @Published private(set) var archivedConflicts: [ConflictArchiveEntry] = []
+    /// 刚存下一份副本时的一句提示，几秒后自己消失——存档不能是无声的。
+    @Published private(set) var archiveNotice: String?
 
     /// Single source of truth for the welcome screen. Kept on the store (instead
     /// of inline in the view body) so the condition is unit-testable.
@@ -110,6 +114,9 @@ final class DocumentStore: ObservableObject {
     /// What survived the last launch. `nil` means "this instance keeps nothing":
     /// the default for tests, which must never touch the user's real session.
     private let session: Session?
+    /// 冲突副本的存放处。`nil`（测试默认）表示不存档，绝不污染真实的
+    /// `~/Library/Application Support/wtmd/conflicts`。
+    private let conflicts: ConflictArchive?
     /// The file's modification date as of the last read or write. A mismatch
     /// against the disk later means someone else touched the file.
     private(set) var knownModificationDate: Date?
@@ -120,6 +127,8 @@ final class DocumentStore: ObservableObject {
     private var exitObservers: [NSObjectProtocol] = []
     /// 把 `find` 的变化转成 store 的变化——查找条与编辑器都挂在 ContentView 上。
     private var findObservation: AnyCancellable?
+    /// 存档提示的自动隐去。
+    private var archiveNoticeTask: Task<Void, Never>?
 
     static let welcomeMarkdown = """
     # 欢迎使用 wtmd
@@ -170,12 +179,15 @@ final class DocumentStore: ObservableObject {
     init(
         draftDirectory: URL? = nil,
         autoSaveDelay: UInt64 = 1_200_000_000,
-        session: Session? = nil
+        session: Session? = nil,
+        conflicts: ConflictArchive? = nil
     ) {
         let directory = draftDirectory ?? Self.defaultDraftDirectory
         self.draftDirectory = directory
         self.autoSaveDelay = autoSaveDelay
         self.session = session
+        self.conflicts = conflicts
+        self.archivedConflicts = conflicts?.entries() ?? []
 
         // 上次打开的那篇优先于草稿：读者按下 ⌘Tab 回来，期待看到的是刚才在写的东西，
         // 而不是「今天早上那份未命名草稿」。
@@ -407,7 +419,8 @@ final class DocumentStore: ObservableObject {
     func newDocument() {
         flushPendingSave()
         recordSessionPosition()
-        externalChange = nil
+        // 换一篇之前先把上一位读者的处境收好：冲突没解决的本地版本进副本
+        archiveLocalVersionIfConflicted()
         text = ""
         fileURL = nil
         savedSnapshot = ""
@@ -471,8 +484,9 @@ final class DocumentStore: ObservableObject {
         flushPendingSave()
         // 切走之前把这一篇停在哪里记下来，否则「在文件树里点来点去」的轨迹全丢
         recordSessionPosition()
-        // 横幅跟着文档走：换了一篇，上一篇的冲突与这一篇无关
-        externalChange = nil
+        // 横幅跟着文档走：换了一篇，上一篇的冲突与这一篇无关。但本地那份不能跟着
+        // 一起消失——没解决的冲突先存档。
+        archiveLocalVersionIfConflicted()
         text = document.content
         fileURL = url
         savedSnapshot = document.content
@@ -530,6 +544,65 @@ final class DocumentStore: ObservableObject {
         guard externalChange != nil, isDirty else { return }
         Self.writeDraft(text, at: draftDirectory)
         session?.setOpenFile(nil)
+    }
+
+    // MARK: - 冲突副本
+
+    /// 冲突没解决就要切走：磁盘那份是别人的，不去动它；编辑器里这份是读者写的，
+    /// 也不能一声不响地扔掉。折中是存成副本留在 `conflicts/`，状态栏留个入口。
+    ///
+    /// **不拦切换**：写作工具不该为了保住一段话先开一场对话。存下副本本身就是
+    /// 「已经保住了」的证据，取不取回是之后的事。
+    private func archiveLocalVersionIfConflicted() {
+        let hadConflict = externalChange != nil
+        if hadConflict { externalChange = nil }
+        guard hadConflict, isDirty, let conflicts else { return }
+        guard let entry = conflicts.archive(text, originalURL: fileURL) else { return }
+        refreshArchivedConflicts()
+        showArchiveNotice("已把「\(entry.originalName)」的本地版本存入冲突副本")
+    }
+
+    private func refreshArchivedConflicts() {
+        archivedConflicts = conflicts?.entries() ?? []
+    }
+
+    /// 副本所在的文件夹，供界面「在访达中打开」用。
+    var conflictFolder: URL? { conflicts?.directory }
+
+    private func showArchiveNotice(_ message: String) {
+        archiveNotice = message
+        archiveNoticeTask?.cancel()
+        archiveNoticeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.archiveNotice = nil
+        }
+    }
+
+    /// 把副本取回编辑器：作为**未命名文档**打开，而不是直接写回原文件。
+    /// 原文件此刻是别人的版本，要不要盖掉得读者拿主意；他要做的只是先救回自己的字。
+    func recoverArchivedConflict(_ entry: ConflictArchiveEntry) {
+        guard let conflicts, let content = conflicts.content(of: entry) else { return }
+        flushPendingSave()
+        archiveLocalVersionIfConflicted()
+        recordSessionPosition()
+        conflicts.remove(entry)
+        refreshArchivedConflicts()
+        text = content
+        fileURL = nil
+        savedSnapshot = ""
+        knownModificationDate = nil
+        hasStartedWriting = true
+        renderGeneration += 1
+        mode = .edit
+        session?.setOpenFile(nil)
+        recomputeNow()
+        resetFind()
+    }
+
+    func discardArchivedConflict(_ entry: ConflictArchiveEntry) {
+        conflicts?.remove(entry)
+        refreshArchivedConflicts()
     }
 
     // MARK: - 导出

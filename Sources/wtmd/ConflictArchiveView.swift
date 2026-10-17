@@ -1,0 +1,133 @@
+import AppKit
+import SwiftUI
+
+/// 「冲突副本」清单：冲突没解决时切走留下的本地版本都在这里。
+///
+/// 它是一张表，不是一场对话——副本已经存好了，这里只提供「取回 / 丢掉 / 去看看」
+/// 三个动作，随时可以关掉走人。
+struct ConflictArchiveView: View {
+    let entries: [ConflictArchiveEntry]
+    /// 副本所在的文件夹（测试里是一个临时目录，正式运行时是 `Application Support`）。
+    let folder: URL?
+    let recover: (ConflictArchiveEntry) -> Void
+    let discard: (ConflictArchiveEntry) -> Void
+    let reveal: (ConflictArchiveEntry) -> Void
+    let close: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            Divider()
+
+            if entries.isEmpty {
+                empty
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(entries) { entry in
+                            row(entry)
+                            Divider().padding(.leading, 34)
+                        }
+                    }
+                }
+                .frame(maxHeight: 320)
+            }
+
+            Divider()
+            footer
+        }
+        .frame(width: 480)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("冲突副本")
+                .font(.headline)
+            Text("文件在别处被改动、冲突还没解决就切走时，你写的那一版会存在这里。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var empty: some View {
+        Text("没有待处理的副本。")
+            .font(.callout)
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func row(_ entry: ConflictArchiveEntry) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "doc.text")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.originalName)
+                    .font(.callout)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(Self.subtitle(for: entry))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 8)
+
+            Button("取回") { recover(entry) }
+                .help("作为未命名文档打开，内容进编辑器后自行决定存到哪里")
+            Button {
+                reveal(entry)
+            } label: {
+                Image(systemName: "folder")
+            }
+            .help("在访达中显示这份副本")
+            Button("丢弃") { discard(entry) }
+                .help("删掉这份副本，无法撤销")
+        }
+        .controlSize(.small)
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 9)
+    }
+
+    private var footer: some View {
+        HStack {
+            Button("在访达中打开文件夹") {
+                if let folder { NSWorkspace.shared.open(folder) }
+            }
+            .buttonStyle(.link)
+            .font(.caption)
+            .disabled(folder == nil)
+            Spacer()
+            Button("关闭", action: close)
+                .keyboardShortcut(.defaultAction)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    private static func subtitle(for entry: ConflictArchiveEntry) -> String {
+        let time = timeFormatter.string(from: entry.savedAt)
+        guard let path = entry.originalPath else { return time }
+        let folder = (path as NSString).deletingLastPathComponent
+        return "\(time) · \(folder)"
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M月d日 HH:mm"
+        return formatter
+    }()
+}
