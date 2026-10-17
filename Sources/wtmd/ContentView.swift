@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import WTMarkdownKit
 
@@ -6,6 +7,7 @@ struct ContentView: View {
     @EnvironmentObject var workspace: WorkspaceStore
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var writing: WritingSettings
+    @EnvironmentObject var updates: UpdateChecker
     /// Owned by the app so the menu bar can open the palette too.
     @Binding var paletteVisible: Bool
 
@@ -23,6 +25,8 @@ struct ContentView: View {
         }
         .navigationTitle(store.windowTitle)
         .toolbar { toolbarContent }
+        // 每天最多查一次新版本；失败静默，绝不打断写作
+        .task { await updates.checkIfDue() }
         // 文档从任何入口打开（⌘O、最近文件、标题栏）后，工作区树跟上高亮
         .onChange(of: store.fileURL) { _, newValue in
             guard let newValue else { return }
@@ -65,7 +69,7 @@ struct ContentView: View {
     /// The single runtime behind the toolbar, the menus and the palette, so a
     /// command behaves identically wherever it is invoked from.
     private var commandRuntime: CommandRuntime {
-        CommandRuntime(store: store, workspace: workspace, writing: writing)
+        CommandRuntime(store: store, workspace: workspace, writing: writing, updates: updates)
     }
 
     private func isEnabled(_ kind: CommandKind) -> Bool {
@@ -288,6 +292,7 @@ struct ContentView: View {
                 Text("约 \(store.statistics.readingMinutes) 分钟读完")
             }
             Spacer()
+            updateBadge
             writingModeToggles
             Text(store.fileURL?.lastPathComponent ?? "草稿")
                 .foregroundStyle(.tertiary)
@@ -299,6 +304,37 @@ struct ContentView: View {
         .background(.bar)
         .overlay(alignment: .top) {
             Divider()
+        }
+    }
+
+    /// 更新提示：有新版时是可点的徽标，其余反馈（已是最新 / 失败）短暂停留后自己消失。
+    @ViewBuilder
+    private var updateBadge: some View {
+        switch updates.status {
+        case .checking:
+            ProgressView()
+                .controlSize(.mini)
+                .scaleEffect(0.7)
+                .frame(width: 12, height: 12)
+                .help("正在检查更新…")
+        case .available(let version, let url):
+            Button {
+                NSWorkspace.shared.open(url)
+            } label: {
+                Label("v\(version) 可用", systemImage: "arrow.down.circle")
+                    .foregroundStyle(Color.accentColor)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("打开下载页：\(url.absoluteString)")
+        case .upToDate(let version):
+            Text("v\(version) 已是最新")
+                .foregroundStyle(.tertiary)
+        case .failed:
+            Text("检查更新失败")
+                .foregroundStyle(.tertiary)
+        case .idle:
+            EmptyView()
         }
     }
 

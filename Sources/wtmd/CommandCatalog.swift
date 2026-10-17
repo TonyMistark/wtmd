@@ -10,6 +10,7 @@ enum CommandSection: String, CaseIterable, Identifiable {
     case view
     case writing
     case theme
+    case app
     case recent
 
     var id: String { rawValue }
@@ -20,6 +21,7 @@ enum CommandSection: String, CaseIterable, Identifiable {
         case .view: return "视图"
         case .writing: return "写作"
         case .theme: return "主题"
+        case .app: return "应用"
         case .recent: return "最近文件"
         }
     }
@@ -59,6 +61,8 @@ enum CommandKind: Hashable {
     case openThemesFolder
     /// Rescan themes from disk.
     case rescanThemes
+    /// Ask GitHub for the latest release, ignoring the daily throttle.
+    case checkForUpdates
     /// Open a file from the recent list.
     case openRecent(URL)
 
@@ -80,6 +84,7 @@ enum CommandKind: Hashable {
         case .selectTheme(let id): return "theme.select.\(id)"
         case .openThemesFolder: return "theme.openFolder"
         case .rescanThemes: return "theme.rescan"
+        case .checkForUpdates: return "app.checkForUpdates"
         case .openRecent(let url): return "recent.\(url.absoluteString)"
         }
     }
@@ -178,6 +183,11 @@ enum CommandCatalog {
             symbol: "arrow.clockwise", shortcut: nil,
             keywords: ["theme", "rescan", "reload", "refresh"], subtitle: nil
         ),
+        AppCommand(
+            kind: .checkForUpdates, title: "检查更新…", section: .app,
+            symbol: "arrow.triangle.2.circlepath", shortcut: nil,
+            keywords: ["update", "upgrade", "version", "release", "github"], subtitle: nil
+        ),
     ]
 
     /// One command per theme, so the palette can switch themes without leaving
@@ -244,6 +254,7 @@ struct CommandRuntime {
     let store: DocumentStore
     let workspace: WorkspaceStore
     let writing: WritingSettings
+    let updates: UpdateChecker
 
     private var themeManager: ThemeManager { store.themeManager }
 
@@ -268,6 +279,8 @@ struct CommandRuntime {
             return !store.showsWelcome && (store.isDirty || store.fileURL == nil)
         case .closeWorkspace:
             return workspace.isOpen
+        case .checkForUpdates:
+            return !updates.isChecking
         case .openRecent(let url):
             // A recent file may have been moved away. Greying it out beats
             // doing nothing when clicked.
@@ -293,6 +306,7 @@ struct CommandRuntime {
         case .selectTheme(let id): themeManager.select(id)
         case .openThemesFolder: themeManager.openThemesFolder()
         case .rescanThemes: themeManager.reload()
+        case .checkForUpdates: Task { await updates.check(force: true) }
         case .openRecent(let url): store.open(url: url)
         }
     }

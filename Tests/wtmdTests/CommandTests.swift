@@ -352,7 +352,21 @@ private final class CommandHarness {
     }
 
     var runtime: CommandRuntime {
-        CommandRuntime(store: store, workspace: workspace, writing: writing)
+        CommandRuntime(
+            store: store,
+            workspace: workspace,
+            writing: writing,
+            updates: UpdateChecker(
+                configuration: UpdateChecker.Configuration(
+                    currentVersion: "0.0.0",
+                    endpoint: URL(string: "https://example.invalid/latest")!,
+                    interval: 0,
+                    retryInterval: 0
+                ),
+                defaults: defaults,
+                fetch: { throw URLError(.notConnectedToInternet) }
+            )
+        )
     }
 
     func cleanup() {

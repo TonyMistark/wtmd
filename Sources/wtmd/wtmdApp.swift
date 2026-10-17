@@ -5,6 +5,7 @@ struct wtmdApp: App {
     @StateObject private var store = DocumentStore()
     @StateObject private var workspace = WorkspaceStore()
     @StateObject private var writing = WritingSettings()
+    @StateObject private var updates = UpdateChecker()
     @State private var paletteVisible = false
 
     var body: some Scene {
@@ -13,6 +14,7 @@ struct wtmdApp: App {
                 .environmentObject(store)
                 .environmentObject(workspace)
                 .environmentObject(writing)
+                .environmentObject(updates)
                 .environmentObject(store.themeManager)
                 .frame(minWidth: 760, minHeight: 500)
         }
@@ -22,6 +24,10 @@ struct wtmdApp: App {
                 .environmentObject(writing)
         }
         .commands {
+            CommandGroup(after: .appInfo) {
+                menuItem(.checkForUpdates)
+                Divider()
+            }
             CommandGroup(replacing: .newItem) {
                 menuItem(.newDocument)
             }
@@ -50,7 +56,9 @@ struct wtmdApp: App {
     @ViewBuilder
     private func menuItem(_ kind: CommandKind) -> some View {
         if let command = CommandCatalog.command(for: kind, themes: store.themeManager.themes) {
-            let runtime = CommandRuntime(store: store, workspace: workspace, writing: writing)
+            let runtime = CommandRuntime(
+                store: store, workspace: workspace, writing: writing, updates: updates
+            )
             if let isOn = runtime.isOn(command) {
                 Toggle(command.title, isOn: Binding(get: { isOn }, set: { _ in runtime.run(command) }))
                     .keyboardShortcut(command.shortcut)
