@@ -102,6 +102,18 @@ private func drainMainQueue() async {
     #expect(memory.editorPosition == nil)
 }
 
+/// 换文档（不是换视图）时，光标要从文首开始：`textView.string` 赋值默认把
+/// 插入点送到末尾，读者打开一个文件却要往上翻，是同一类「位置不对」。
+@Test @MainActor func switchingDocumentsPutsTheCaretAtTheTop() async throws {
+    let memory = PositionMemory()
+    let probe = EditorPositionProbe(text: "旧文档", memory: memory, generation: 1)
+
+    probe.coordinator.syncText("新文档的第一行\n第二行")
+
+    #expect(probe.coordinator.textView.string == "新文档的第一行\n第二行")
+    #expect(probe.coordinator.textView.selectedRange().location == 0)
+}
+
 /// 打字机模式：滚动交给 recenter 决定（光标行居中），不能把旧的像素偏移
 /// 硬塞回去——那会让光标偏离中线，直到下一次按键才被纠正。
 @Test @MainActor func typewriterModeRecentersInsteadOfReplayingTheOffset() async throws {

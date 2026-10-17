@@ -174,6 +174,9 @@ struct EditorTextView: NSViewRepresentable {
             textView.string = text
             EditorTextView.highlight(textView)
             rebuildLineStarts()
+            // `string` 赋值会把光标送到文档末尾。换文档时应该从文首开始——
+            // 视图重建（⌘/ 切回来）也走这条路，回填会随后把光标放回原位。
+            textView.selectedRange = NSRange(location: 0, length: 0)
             textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
         }
 
