@@ -53,6 +53,8 @@ final class DocumentStore: ObservableObject {
 
     let recentFiles = RecentFiles()
     let themeManager = ThemeManager()
+    /// 跨视图重建的位置账本：`⌘/` 会销毁并重建编辑器/预览，位置得存在视图之外。
+    let positionMemory = PositionMemory()
 
     private let draftDirectory: URL
     /// Debounce before an edit is persisted. Injectable so tests do not have to

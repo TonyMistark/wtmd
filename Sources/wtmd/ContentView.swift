@@ -246,7 +246,9 @@ struct ContentView: View {
                         jump: store.editorJump,
                         onImagePaste: { store.handleImagePaste($0) },
                         typewriterMode: writing.typewriter,
-                        focusMode: writing.focusMode
+                        focusMode: writing.focusMode,
+                        positionMemory: store.positionMemory,
+                        generation: store.renderGeneration
                     )
                     .overlay(alignment: .topLeading) {
                         if store.text.isEmpty {
@@ -270,7 +272,8 @@ struct ContentView: View {
                         jump: store.previewJump,
                         generation: store.renderGeneration,
                         documentTitle: store.displayName,
-                        baseURL: store.fileURL?.deletingLastPathComponent()
+                        baseURL: store.fileURL?.deletingLastPathComponent(),
+                        positionMemory: store.positionMemory
                     )
                 }
             }

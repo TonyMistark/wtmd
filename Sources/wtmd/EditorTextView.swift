@@ -14,6 +14,10 @@ struct EditorTextView: NSViewRepresentable {
     var typewriterMode: Bool = false
     /// 当前段落之外的内容退成浅灰。
     var focusMode: Bool = false
+    /// 跨视图重建的位置账本（`⌘/` 切换会把编辑器整个重建）。
+    var positionMemory: PositionMemory?
+    /// 位置账本归属的文档代数；换代即作废旧位置。
+    var generation: Int = 0
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -28,6 +32,9 @@ struct EditorTextView: NSViewRepresentable {
         coordinator.parent = self
 
         coordinator.syncText(text)
+
+        // 重建后回填一次：此时文本已同步、视图即将布局，异步一拍等布局完成
+        coordinator.restorePositionIfNeeded()
 
         if let jump, jump.id != coordinator.lastJumpID {
             coordinator.lastJumpID = jump.id
@@ -75,6 +82,12 @@ struct EditorTextView: NSViewRepresentable {
         /// 当前未被压暗的区间（专注模式）。
         private var focusedRange: NSRange?
         private var lineStarts: [Int] = []
+        /// 回填是否已排期 / 已完成。排期之前记下的一切都是「刚建出来的零点」，
+        /// 写进账本就等于把刚存的位置立刻抹掉。
+        private var restoreScheduled = false
+        private var positionRestored = false
+        /// 回填期间不播放居中动画：建视图的这一拍窗口还没稳定，动画代理会踩空。
+        private var isRestoring = false
 
         init(_ parent: EditorTextView) {
             self.parent = parent
@@ -127,6 +140,10 @@ struct EditorTextView: NSViewRepresentable {
             textView.onPasteInterceptor = { [weak self] in
                 self?.handleImagePasteIfNeeded() ?? false
             }
+            // 滚轮/滚动条拖动的每一帧都可能是「读者停下的位置」，随手记下
+            clipView.onOriginChange = { [weak self] in
+                self?.recordPosition()
+            }
             EditorTextView.highlight(textView)
             rebuildLineStarts()
         }
@@ -157,6 +174,9 @@ struct EditorTextView: NSViewRepresentable {
             textView.string = text
             EditorTextView.highlight(textView)
             rebuildLineStarts()
+            // `string` 赋值会把光标送到文档末尾。换文档时应该从文首开始——
+            // 视图重建（⌘/ 切回来）也走这条路，回填会随后把光标放回原位。
+            textView.selectedRange = NSRange(location: 0, length: 0)
             textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
         }
 
@@ -223,6 +243,64 @@ struct EditorTextView: NSViewRepresentable {
             // 光标一动，聚焦段落与居中位置都可能变
             applyFocusIncremental()
             recenter()
+            recordPosition()
+        }
+
+        // MARK: 位置记忆
+
+        /// 重建后把读者原来的选区与滚动位置还回来（只做一次）。
+        ///
+        /// 排到下一次 runloop：`updateNSView` 触发时滚动视图还没参与布局，
+        /// 这时 `clipView.bounds` 是零高度，直接 `scroll(to:)` 会被夹成 0。
+        func restorePositionIfNeeded() {
+            guard !restoreScheduled else { return }
+            restoreScheduled = true
+            parent.positionMemory?.startSession(generation: parent.generation)
+            let snapshot = parent.positionMemory?.editorPosition
+            DispatchQueue.main.async { [weak self] in
+                self?.applyStoredPosition(snapshot)
+            }
+        }
+
+        /// 记下当前位置。回填完成之前不记——那会儿记的都是重建后的零点。
+        func recordPosition() {
+            guard positionRestored else { return }
+            parent.positionMemory?.recordEditorPosition(
+                PositionMemory.EditorPosition(
+                    selection: textView.selectedRange(),
+                    scrollOrigin: clipView.bounds.origin
+                )
+            )
+        }
+
+        func applyStoredPosition(_ snapshot: PositionMemory.EditorPosition?) {
+            positionRestored = true
+            guard let snapshot else { return }
+
+            isRestoring = true
+            defer { isRestoring = false }
+
+            let content = NSString(string: textView.string)
+            let location = min(max(0, snapshot.selection.location), content.length)
+            let length = min(max(0, snapshot.selection.length), content.length - location)
+            textView.selectedRange = NSRange(location: location, length: length)
+
+            if parent.typewriterMode {
+                // 打字机模式自己会把光标行拉到中部，再回填原始偏移只会打架
+                recenter(animated: false)
+            } else {
+                if let container = textView.textContainer {
+                    textView.layoutManager?.ensureLayout(for: container)
+                }
+                clipView.scroll(to: snapshot.scrollOrigin)
+                scrollView.reflectScrolledClipView(clipView)
+            }
+
+            // 回到源码视图就该能接着打字。只在焦点不在别的文本控件上时抢，
+            // 免得把命令行/查找栏的焦点夺走。
+            if let window = textView.window, !(window.firstResponder is NSTextView) {
+                window.makeFirstResponder(textView)
+            }
         }
 
         /// 让滚动位置回到当前模式下允许的范围里。
@@ -321,7 +399,14 @@ struct EditorTextView: NSViewRepresentable {
             )
             guard abs(clipView.bounds.origin.y - target) > 0.5 else { return }
 
-            if animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            // 只有真正在屏幕上滚动的视图才做动画：离屏/未显示的窗口上跑动画代理，
+            // 会在窗口先一步销毁时留下悬空的图层引用（AppKit 下一帧踩空）。
+            let canAnimate = animated
+                && !isRestoring
+                && clipView.window?.isVisible == true
+                && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
+            if canAnimate {
                 NSAnimationContext.runAnimationGroup { context in
                     context.duration = 0.08
                     context.allowsImplicitAnimation = true
@@ -371,6 +456,18 @@ struct EditorTextView: NSViewRepresentable {
     /// 等于什么也没放开。
     final class TypewriterClipView: NSClipView {
         var centersCaret = false
+        /// 滚动发生的回调：位置记忆靠它随时记下「读者看到的顶部」。
+        var onOriginChange: (() -> Void)?
+
+        override func setBoundsOrigin(_ newOrigin: NSPoint) {
+            super.setBoundsOrigin(newOrigin)
+            onOriginChange?()
+        }
+
+        override func scroll(to newOrigin: NSPoint) {
+            super.scroll(to: newOrigin)
+            onOriginChange?()
+        }
 
         override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
             var rect = super.constrainBoundsRect(proposedBounds)
