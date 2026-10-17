@@ -390,6 +390,16 @@ private func write(_ name: String, in directory: URL, content: String) throws ->
     return url
 }
 
+/// 命令注册表是菜单与面板的单一来源：导出 Word 必须注册在文件分组，
+/// 否则只有菜单有、面板搜不到（或反过来）。
+@Test func wordExportCommandIsRegisteredInTheFileSection() throws {
+    let command = try #require(CommandCatalog.command(for: .exportWord))
+
+    #expect(command.section == .file)
+    #expect(command.kind.id == "file.exportWord")
+    #expect(CommandSearch.filter("docx", in: [command]).count == 1)
+}
+
 /// `open(url:)` 会写 UserDefaults 里的最近文件列表——测试不该留下痕迹。
 private func preservingRecentFiles<T>(_ body: () throws -> T) rethrows -> T {
     let key = "wtmd.recentFiles"

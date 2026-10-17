@@ -43,6 +43,8 @@ enum CommandKind: Hashable {
     case save
     /// Export the preview as a standalone HTML file.
     case exportHTML
+    /// Export as Word (.docx).
+    case exportWord
     /// Print / save as PDF.
     case exportPDF
     /// Flip between source and preview.
@@ -77,6 +79,7 @@ enum CommandKind: Hashable {
         case .openFolder: return "file.openFolder"
         case .save: return "file.save"
         case .exportHTML: return "file.exportHTML"
+        case .exportWord: return "file.exportWord"
         case .exportPDF: return "file.exportPDF"
         case .toggleMode: return "view.toggleMode"
         case .toggleSplit: return "view.toggleSplit"
@@ -145,6 +148,11 @@ enum CommandCatalog {
             kind: .exportHTML, title: "导出 HTML…", section: .file,
             symbol: "square.and.arrow.up", shortcut: KeyboardShortcut("e", modifiers: [.command, .shift]),
             keywords: ["export", "html", "share"], subtitle: nil
+        ),
+        AppCommand(
+            kind: .exportWord, title: "导出 Word…", section: .file,
+            symbol: "doc.richtext", shortcut: nil,
+            keywords: ["word", "docx", "office", "export"], subtitle: nil
         ),
         AppCommand(
             kind: .exportPDF, title: "打印 / 存为 PDF…", section: .file,
@@ -307,6 +315,7 @@ struct CommandRuntime {
         case .openFolder: workspace.openPanel()
         case .save: store.save()
         case .exportHTML: store.exportHTML()
+        case .exportWord: store.exportWord()
         case .exportPDF: store.exportPDF()
         case .toggleMode: store.toggleMode()
         case .toggleSplit: store.toggleSplit()
