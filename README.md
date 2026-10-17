@@ -4,7 +4,7 @@
 
 一个开源、本地优先的 macOS Markdown 写作与阅读工具。思绪落下的一刻，成文已然成型。
 
-![Status](https://img.shields.io/badge/status-v0.3.0-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
+![Status](https://img.shields.io/badge/status-v0.4.0-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
 
 ## 特性
 
@@ -92,7 +92,7 @@ result.outline // [OutlineItem(level: 1, text: "标题", slug: "标题", line: 0
 - v0.1 — 已发布：双模式视图、大纲导航、文件管理、HTML/PDF 导出
 - v0.2 — **已发布（v0.2.0）**：主题系统、图片粘贴落地、脚注、实时统计、长文档增量渲染、预览代码高亮、Mermaid 图表（[详见规划](docs/V02_PLAN.md)）
 - v0.3 — **已发布（v0.3.0）**：文件夹工作区、打字机 + 专注模式、⌘K 命令面板、DMG 分发（[详见规划](docs/V03_PLAN.md)）
-- v0.4 — `[TOC]` 目录语法、KaTeX 数学公式、更新检查、WYSIWYG 评估（[详见规划](docs/V04_PLAN.md)）
+- v0.4 — **已发布（v0.4.0）**：`[TOC]` 目录语法、KaTeX 数学公式、更新检查、WYSIWYG 评估（[详见规划](docs/V04_PLAN.md)）
 
 ## 参与贡献
 
