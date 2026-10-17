@@ -19,8 +19,9 @@ import Testing
     #expect(node.children.map(\.name) == ["a.md", "b.markdown"])
 }
 
-/// 不含任何 Markdown 的目录（含空目录）不进树 —— 它们只会让写作现场变吵。
-@Test func scannerDropsFoldersWithoutMarkdown() throws {
+/// 空目录要留一行：v0.7 起树里能新建文件夹，建完当场消失等于没建成。
+/// 只装非 Markdown 文件的目录仍然不进树 —— 它们只会让写作现场变吵。
+@Test func scannerShowsEmptyFoldersButDropsFoldersOfOtherFiles() throws {
     let root = try makeTempDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     _ = try makeDirectory("空目录", in: root)
@@ -29,7 +30,21 @@ import Testing
     try write("readme.md", in: root)
 
     let node = try #require(WorkspaceScanner.scan(root: root))
-    #expect(node.children.map(\.name) == ["readme.md"])
+    #expect(node.children.map(\.name) == ["空目录", "readme.md"])
+}
+
+/// 依赖与构建产物不进树：一个 `node_modules` 就能把每篇笔记埋掉。
+@Test func scannerSkipsNoiseDirectories() throws {
+    let root = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let modules = try makeDirectory("node_modules", in: root)
+    try write("readme.md", in: modules)
+    let build = try makeDirectory(".build", in: root)
+    try write("artifact.md", in: build)
+    try write("note.md", in: root)
+
+    let node = try #require(WorkspaceScanner.scan(root: root))
+    #expect(node.children.map(\.name) == ["note.md"])
 }
 
 /// 目录在前，同类按 Finder 的自然顺序（doc2 在 doc10 之前）。

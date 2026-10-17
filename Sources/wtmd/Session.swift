@@ -119,6 +119,51 @@ final class Session {
         flush()
     }
 
+    /// 磁盘上的一次改名/移动：会话里以旧路径为前缀的记录全部改挂到新路径。
+    ///
+    /// 不搬的后果不是「下次没有位置」那么轻：记着的工作区、展开的目录、当前文件
+    /// 都指着一个已经不存在的路径，下次启动会去开它、然后静默失败。
+    func remapPaths(from old: URL, to new: URL) {
+        let oldPath = old.standardizedFileURL.path
+        let newPath = new.standardizedFileURL.path
+        guard oldPath != newPath else { return }
+
+        func remap(_ path: String) -> String {
+            if path == oldPath { return newPath }
+            guard path.hasPrefix(oldPath + "/") else { return path }
+            return newPath + String(path.dropFirst(oldPath.count))
+        }
+
+        if let path = snapshot.workspacePath { snapshot.workspacePath = remap(path) }
+        if let path = snapshot.openFilePath { snapshot.openFilePath = remap(path) }
+        snapshot.expandedPaths = snapshot.expandedPaths.map(remap)
+        snapshot.positions = Dictionary(
+            snapshot.positions.map { (remap($0.key), $0.value) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        flush()
+    }
+
+    /// 一个文件或目录已经不在磁盘上了：把它名下的记录全部划掉。
+    func forgetPaths(at url: URL) {
+        let path = url.standardizedFileURL.path
+        func under(_ candidate: String) -> Bool {
+            candidate == path || candidate.hasPrefix(path + "/")
+        }
+        var changed = false
+        if let open = snapshot.openFilePath, under(open) {
+            snapshot.openFilePath = nil
+            changed = true
+        }
+        let expanded = snapshot.expandedPaths
+        snapshot.expandedPaths = expanded.filter { !under($0) }
+        if snapshot.expandedPaths.count != expanded.count { changed = true }
+        let positions = snapshot.positions
+        snapshot.positions = positions.filter { !under($0.key) }
+        if snapshot.positions.count != positions.count { changed = true }
+        if changed { flush() }
+    }
+
     /// Drops everything. Used when the workspace is gone for good, and by tests.
     func clear() {
         snapshot = Snapshot()

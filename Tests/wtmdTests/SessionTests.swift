@@ -156,3 +156,58 @@ private func makePosition(
     // 清空也要落盘，否则重启又把旧记录读回来
     #expect(Session(defaults: defaults).openFileURL == nil)
 }
+
+// MARK: - 磁盘改名 / 删除后的路径迁移
+
+/// 目录改名后，会话里以它开头的路径全部要跟着搬——否则下次启动会去开一个
+/// 已经不存在的路径，展开状态也会凭空收起来。
+@Test func sessionRemapsEverythingUnderARenamedFolder() throws {
+    let (defaults, suite) = makeIsolatedDefaults()
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    let root = URL(fileURLWithPath: "/tmp/书房")
+    let drafts = root.appendingPathComponent("drafts")
+    let file = drafts.appendingPathComponent("a.md")
+
+    let session = Session(defaults: defaults)
+    session.setWorkspace(root)
+    session.setOpenFile(file)
+    session.setExpandedPaths([drafts.path])
+    session.record(makePosition(location: 7, scrollY: 42), for: file)
+
+    let renamed = root.appendingPathComponent("草稿")
+    session.remapPaths(from: drafts, to: renamed)
+
+    // 落盘再读回来：要改的是真的存下来的那一份，不只是内存
+    let reopened = Session(defaults: defaults)
+    let newFile = renamed.appendingPathComponent("a.md")
+    #expect(reopened.openFileURL?.path == newFile.path)
+    #expect(reopened.expandedPaths == Set([renamed.path]))
+    #expect(reopened.position(for: newFile)?.scrollY == 42)
+    #expect(reopened.position(for: file) == nil)
+    // 工作区本身没改名
+    #expect(reopened.workspaceURL?.path == root.path)
+}
+
+@Test func sessionForgetsEverythingUnderADeletedFolder() throws {
+    let (defaults, suite) = makeIsolatedDefaults()
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    let root = URL(fileURLWithPath: "/tmp/书房")
+    let drafts = root.appendingPathComponent("drafts")
+    let file = drafts.appendingPathComponent("a.md")
+
+    let session = Session(defaults: defaults)
+    session.setWorkspace(root)
+    session.setOpenFile(file)
+    session.setExpandedPaths([drafts.path, root.path])
+    session.record(makePosition(scrollY: 5), for: file)
+
+    session.forgetPaths(at: drafts)
+
+    let reopened = Session(defaults: defaults)
+    #expect(reopened.openFileURL == nil)
+    #expect(reopened.expandedPaths == Set([root.path]))
+    #expect(reopened.position(for: file) == nil)
+    #expect(reopened.workspaceURL?.path == root.path)
+}

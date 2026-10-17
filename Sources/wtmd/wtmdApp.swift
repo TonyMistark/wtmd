@@ -14,8 +14,13 @@ struct wtmdApp: App {
     init() {
         let session = Session()
         // 冲突副本落在 Application Support/wtmd/conflicts：切文档时救下来的本地版本
-        _store = StateObject(wrappedValue: DocumentStore(session: session, conflicts: ConflictArchive()))
-        _workspace = StateObject(wrappedValue: WorkspaceStore(session: session))
+        let documentStore = DocumentStore(session: session, conflicts: ConflictArchive())
+        let workspaceStore = WorkspaceStore(session: session)
+        // 树里改名/删除之后，当前文档得跟着磁盘走——两个 store 各自独立，
+        // 这条线只走一个协议，谁也不拥有谁。
+        workspaceStore.fileEvents = documentStore
+        _store = StateObject(wrappedValue: documentStore)
+        _workspace = StateObject(wrappedValue: workspaceStore)
     }
 
     var body: some Scene {
