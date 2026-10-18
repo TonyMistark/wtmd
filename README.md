@@ -4,7 +4,7 @@
 
 一个开源、本地优先的 macOS Markdown 写作与阅读工具。思绪落下的一刻，成文已然成型。
 
-![Status](https://img.shields.io/badge/status-v0.7.0-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
+![Status](https://img.shields.io/badge/status-v0.8.0-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
 
 ## 特性
 
@@ -19,14 +19,15 @@
 - **代码高亮** — 预览中 ```lang 围栏代码块按语言着色；本地内嵌 highlight.js（36 种常用语言），离线可用、不外联网，配色由当前主题派生，未识别的语言保持纯文本
 - **Mermaid 图表** — ```mermaid 围栏渲染为流程图/时序图，本地内嵌 mermaid，配色随主题变量自适应；渲染失败降级为原代码块并提示错误，打印与导出同样出图
 - **数学公式** — `$E=mc^2$` 行内、`$$…$$` 块级，本地内嵌 KaTeX（字体已打包进样式表），离线可用；渲染失败降级为原文本并提示，打印与导出同样出公式；金额 `$5 and $10`、行内代码里的 `$` 不误判
-- **实时统计** — 状态栏字数/词数/阅读时长，中英混合口径，Markdown 感知（代码块与 URL 不掺水）
+- **实时统计** — 状态栏字数/词数/阅读时长，中英混合口径，Markdown 感知（代码块与 URL 不掺水）；设了每日字数目标后，状态栏再添「今日净增 / 目标」与一条细进度条，达成换强调色，删字会扣回去
+- **编辑手感** — 回车自动续列表/引用/任务（空项回车退出列表），Tab / ⇧Tab 缩进与表格跳格（表格里回车补行），输入法组合中一律不拦；从浏览器或 Word 复制的内容粘进来自动转成干净的 Markdown，格式不再丢
 - **语法高亮源码编辑器** — 标题、强调、代码、链接、引用、列表一目了然
 - **排版级预览** — 阅读级字体版式，浅色/深色主题自动跟随系统
 - **大纲导航** — 侧栏自动生成标题层级，点击跳转，滚动时同步高亮当前章节
 - **文件管理** — 最近文件、未命名草稿自动保存（重启不丢）、⌘⇧O 打开文件夹；重开应用回到上次的工作区、上次那篇、上次那一段；外部改动冲突未解决时切走，本地版本自动存成副本，状态栏一键取回
 - **更新提示** — 启动时每天最多查一次 GitHub Release，有新版本就在状态栏给一个可点的徽标；只读版本号，不上报任何数据，离线或失败时完全静默
 - **导出** — 独立 HTML 文件（内联主题）、Word（.docx，标题/列表/表格/代码/图片都保留结构）、打印/存为 PDF
-- **零第三方依赖** — Markdown 解析器完全自研（`WTMarkdownKit`），390 项单元测试覆盖，GitHub Actions 双系统 CI
+- **零第三方依赖** — Markdown 解析器完全自研（`WTMarkdownKit`），490 项单元测试覆盖，GitHub Actions 双系统 CI
 
 ## 安装
 
@@ -97,6 +98,7 @@ result.outline // [OutlineItem(level: 1, text: "标题", slug: "标题", line: 0
 - v0.5 — **已发布（v0.5.0）**：双视图无损切换、分栏对照、导出 Word、会话恢复与外部修改冲突提示（[详见规划](docs/V05_PLAN.md)）
 - v0.6 — **已发布（v0.6.0）**：文档内查找替换（`⌘F`）、工作区全文搜索（`⌘⇧F`）、冲突时保全本地版本、自定义快捷键（[详见规划](docs/V06_PLAN.md)）
 - v0.7 — **已发布（v0.7.0）**：树内文件操作（新建/重命名/废纸篓）、拖拽移动、访达改动静默跟随、界面英文化（[详见规划](docs/V07_PLAN.md)）
+- v0.8 — **已发布（v0.8.0）**：编辑手感线——回车续行与 Tab 缩进、表格辅助与富文本转 Markdown 粘贴、每日字数目标与写作统计（[详见规划](docs/V08_PLAN.md)）
 
 ## 参与贡献
 
