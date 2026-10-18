@@ -105,6 +105,8 @@ struct EditorTextView: NSViewRepresentable {
         let clipView: TypewriterClipView
         let textView: NSTextView
         var isEditing = false
+        /// 粘贴板。测试换成私有板，免得动到用户当前的剪贴板内容。
+        var pasteboard: NSPasteboard = .general
         var lastJumpID = ""
         var lastInsertedImage = ""
         /// 已经生效的开关状态，用来只在真正变化时重刷。
@@ -179,6 +181,11 @@ struct EditorTextView: NSViewRepresentable {
             textView.delegate = self
             textView.onPasteInterceptor = { [weak self] in
                 self?.handleImagePasteIfNeeded() ?? false
+            }
+            textView.onRichPasteInterceptor = { [weak self] in
+                guard let self else { return false }
+                // 粘贴永远发生在主线程（AppKit 事件），这里只是把这件事告诉编译器
+                return MainActor.assumeIsolated { self.handleRichPasteIfNeeded() }
             }
             // 滚轮/滚动条拖动的每一帧都可能是「读者停下的位置」，随手记下
             clipView.onOriginChange = { [weak self] in
@@ -256,9 +263,9 @@ struct EditorTextView: NSViewRepresentable {
             case #selector(NSResponder.insertNewline(_:)):
                 edit = MarkdownEditing.newline(in: textView.string, selection: selection)
             case #selector(NSResponder.insertTab(_:)):
-                edit = MarkdownEditing.indent(in: textView.string, selection: selection, outdent: false)
+                edit = MarkdownEditing.tab(in: textView.string, selection: selection, outdent: false)
             case #selector(NSResponder.insertBacktab(_:)):
-                edit = MarkdownEditing.indent(in: textView.string, selection: selection, outdent: true)
+                edit = MarkdownEditing.tab(in: textView.string, selection: selection, outdent: true)
             default:
                 return false
             }
@@ -297,10 +304,25 @@ struct EditorTextView: NSViewRepresentable {
         /// 返回 true 表示本次粘贴已完全处理（图片落地 + 插入引用）。
         func handleImagePasteIfNeeded() -> Bool {
             guard let onPaste = parent.onImagePaste else { return false }
-            guard let png = ImageAssets.imagePNGData(from: NSPasteboard.general) else {
+            guard let png = ImageAssets.imagePNGData(from: pasteboard) else {
                 return false
             }
             return onPaste(png)
+        }
+
+        /// 富文本粘贴：HTML（或只有 RTF）先转成 Markdown 再插入。
+        ///
+        /// 纯文本、图片都不走这里：前者照旧由系统插入，后者在上面那条管线里已经落地。
+        /// 返回 true 表示这次粘贴已被接管。
+        @MainActor
+        func handleRichPasteIfNeeded() -> Bool {
+            guard let markdown = HTMLToMarkdown.markdown(from: pasteboard), !markdown.isEmpty else {
+                return false
+            }
+            // 组合中粘贴会替换 marked range：先让拼音落定
+            if textView.hasMarkedText() { textView.unmarkText() }
+            insertAtCursor(markdown)
+            return true
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -660,12 +682,16 @@ struct EditorTextView: NSViewRepresentable {
 
     // MARK: - 粘贴拦截子类
 
-    /// 覆写 paste：粘贴板有图片数据时交给落地管线，否则走系统默认。
+    /// 覆写 paste：粘贴板有图片数据时交给落地管线，有 HTML/RTF 时先转 Markdown，
+    /// 其余情况（纯文本）走系统默认。
     final class EditorTextPasteView: NSTextView {
         var onPasteInterceptor: (() -> Bool)?
+        /// 富文本转换要读粘贴板、跑 RTF→HTML，都是主线程的东西
+        var onRichPasteInterceptor: (() -> Bool)?
 
         override func paste(_ sender: Any?) {
             if onPasteInterceptor?() == true { return }
+            if onRichPasteInterceptor?() == true { return }
             super.paste(sender)
         }
     }

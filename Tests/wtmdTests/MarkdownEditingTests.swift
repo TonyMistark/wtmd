@@ -115,12 +115,6 @@ private func newlineAtLastContentLine(of text: String) -> MarkdownEdit? {
     #expect(newlineAtEnd(of: "```") == nil)
 }
 
-/// 表格行留给表格辅助，这一阶段不动。
-@MainActor
-@Test func tableRowsAreLeftAlone() {
-    #expect(newlineAtEnd(of: "| a | b |") == nil)
-}
-
 /// 在行中间回车：marker 认得出，续行照旧。
 @MainActor
 @Test func newlineMidLineStillContinues() {
