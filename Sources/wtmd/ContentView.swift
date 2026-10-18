@@ -126,9 +126,9 @@ struct ContentView: View {
                 WorkspaceTreeView()
             }
 
-            Section("大纲") {
+            Section(t("Outline", "大纲")) {
                 if store.outline.isEmpty {
-                    Text("思绪尚未成章 —— 输入 # 开始第一个标题")
+                    Text(t("No headings yet — type # to start the first one", "思绪尚未成章 —— 输入 # 开始第一个标题"))
                         .font(.callout)
                         .foregroundStyle(.tertiary)
                 } else {
@@ -140,7 +140,7 @@ struct ContentView: View {
 
             // 工作区打开时，文件树已经承担了导航职责，最近文件只会让侧栏变长
             if !workspace.isOpen, !store.recentFiles.urls.isEmpty {
-                Section("最近文件") {
+                Section(t("Recent Files", "最近文件")) {
                     ForEach(store.recentFiles.urls, id: \.absoluteString) { url in
                         Button {
                             store.open(url: url)
@@ -165,7 +165,7 @@ struct ContentView: View {
         Button {
             store.jump(to: item)
         } label: {
-            Text(item.text.isEmpty ? "（无标题）" : item.text)
+            Text(item.text.isEmpty ? t("(untitled)", "（无标题）") : item.text)
                 .font(item.level <= 2 ? .callout.weight(.medium) : .callout)
                 .lineLimit(1)
                 .padding(.leading, CGFloat(item.level - 1) * 11)
@@ -260,7 +260,7 @@ struct ContentView: View {
         )
         .overlay(alignment: .topLeading) {
             if store.text.isEmpty {
-                Text("落笔即成文 —— 输入第一行思绪，⌘/ 见证它成为文档")
+                Text(t("Start writing — press ⌘/ to watch it become a document", "落笔即成文 —— 输入第一行思绪，⌘/ 见证它成为文档"))
                     .font(.callout)
                     .foregroundStyle(.tertiary)
                     .padding(.top, 16)
@@ -310,10 +310,10 @@ struct ContentView: View {
     /// 状态栏：字数 / 词数 / 阅读时长 —— 写作者的距离感。
     private var statusBar: some View {
         HStack(spacing: 14) {
-            Text("\(store.statistics.characters) 字")
-            Text("\(store.statistics.words) 词")
+            Text(t("\(store.statistics.characters) characters", "\(store.statistics.characters) 字"))
+            Text(t("\(store.statistics.words) words", "\(store.statistics.words) 词"))
             if store.statistics.readingMinutes > 0 {
-                Text("约 \(store.statistics.readingMinutes) 分钟读完")
+                Text(t("~\(store.statistics.readingMinutes) min read", "约 \(store.statistics.readingMinutes) 分钟读完"))
             }
             Spacer()
             if let notice = store.archiveNotice {
@@ -326,18 +326,18 @@ struct ContentView: View {
                     conflictListVisible = true
                 } label: {
                     Label(
-                        "\(store.archivedConflicts.count) 份未合并的本地版本",
+                        t("\(store.archivedConflicts.count) unmerged local copies", "\(store.archivedConflicts.count) 份未合并的本地版本"),
                         systemImage: "exclamationmark.triangle.fill"
                     )
                     .foregroundStyle(.orange)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("冲突未解决时切走留下的本地版本，点开可取回或丢弃")
+                .help(t("Local copies kept when a conflict was left unresolved. Open to recover or discard them.", "冲突未解决时切走留下的本地版本，点开可取回或丢弃"))
             }
             updateBadge
             writingModeToggles
-            Text(store.fileURL?.lastPathComponent ?? "草稿")
+            Text(store.fileURL?.lastPathComponent ?? t("Draft", "草稿"))
                 .foregroundStyle(.tertiary)
         }
         .font(.caption)
@@ -359,22 +359,22 @@ struct ContentView: View {
                 .controlSize(.mini)
                 .scaleEffect(0.7)
                 .frame(width: 12, height: 12)
-                .help("正在检查更新…")
+                .help(t("Checking for updates…", "正在检查更新…"))
         case .available(let version, let url):
             Button {
                 NSWorkspace.shared.open(url)
             } label: {
-                Label("v\(version) 可用", systemImage: "arrow.down.circle")
+                Label(t("v\(version) available", "v\(version) 可用"), systemImage: "arrow.down.circle")
                     .foregroundStyle(Color.accentColor)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("打开下载页：\(url.absoluteString)")
+            .help(t("Open the download page: \(url.absoluteString)", "打开下载页：\(url.absoluteString)"))
         case .upToDate(let version):
-            Text("v\(version) 已是最新")
+            Text(t("v\(version) is up to date", "v\(version) 已是最新"))
                 .foregroundStyle(.tertiary)
         case .failed:
-            Text("检查更新失败")
+            Text(t("Update check failed", "检查更新失败"))
                 .foregroundStyle(.tertiary)
         case .idle:
             EmptyView()
@@ -387,13 +387,13 @@ struct ContentView: View {
             modeToggle(
                 symbol: "align.vertical.center",
                 isOn: writing.typewriter,
-                help: "打字机模式：光标行停在屏幕中部（⌥⌘T）"
+                help: t("Typewriter mode: keep the caret line centred (⌥⌘T)", "打字机模式：光标行停在屏幕中部（⌥⌘T）")
             ) { writing.typewriter.toggle() }
 
             modeToggle(
                 symbol: "scope",
                 isOn: writing.focusMode,
-                help: "专注模式：当前段落之外退成浅灰（⌥⌘F）"
+                help: t("Focus mode: dim everything but the current paragraph (⌥⌘F)", "专注模式：当前段落之外退成浅灰（⌥⌘F）")
             ) { writing.focusMode.toggle() }
         }
     }
@@ -420,28 +420,28 @@ struct ContentView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
             Picker(
-                "模式",
+                t("Mode", "模式"),
                 selection: Binding(
                     get: { store.mode },
                     set: { store.setMode($0) }
                 )
             ) {
-                Label("思绪", systemImage: "character.cursor.ibeam").tag(ViewMode.edit)
-                Label("成文", systemImage: "doc.richtext").tag(ViewMode.preview)
-                Label("对照", systemImage: "rectangle.split.2x1").tag(ViewMode.split)
+                Label(ViewMode.edit.label, systemImage: "character.cursor.ibeam").tag(ViewMode.edit)
+                Label(ViewMode.preview.label, systemImage: "doc.richtext").tag(ViewMode.preview)
+                Label(ViewMode.split.label, systemImage: "rectangle.split.2x1").tag(ViewMode.split)
             }
             .pickerStyle(.segmented)
             .frame(width: 240)
-            .help("思绪 / 成文 / 对照（⌘/ 切思绪⇄成文，⌘⇧\\ 切对照）")
+            .help(t("Source / Preview / Split (⌘/ toggles, ⌘⇧\\ switches)", "思绪 / 成文 / 对照（⌘/ 切思绪⇄成文，⌘⇧\\ 切对照）"))
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
             Button {
                 workspace.openPanel()
             } label: {
-                Label("打开文件夹", systemImage: "folder.badge.plus")
+                Label(t("Open Folder", "打开文件夹"), systemImage: "folder.badge.plus")
             }
-            .help("把文件夹作为工作区打开（⌘⇧O）")
+            .help(t("Open a folder as the workspace (⌘⇧O)", "把文件夹作为工作区打开（⌘⇧O）"))
 
             // 主题：成文的外观（源码模式高亮仍走系统语义色，不受主题影响）
             Menu {
@@ -457,30 +457,30 @@ struct ContentView: View {
                     }
                 }
                 Divider()
-                Button("打开主题文件夹…") { themeManager.openThemesFolder() }
-                Button("重新扫描主题") { themeManager.reload() }
+                Button(t("Open Themes Folder…", "打开主题文件夹…")) { themeManager.openThemesFolder() }
+                Button(t("Rescan Themes", "重新扫描主题")) { themeManager.reload() }
             } label: {
-                Label("主题", systemImage: "paintpalette")
+                Label(t("Theme", "主题"), systemImage: "paintpalette")
             }
-            .help("选择成文主题（拖入 .wttheme 文件夹到主题目录即安装）")
+            .help(t("Choose the preview theme (drop a .wttheme folder into the themes directory to install)", "选择成文主题（拖入 .wttheme 文件夹到主题目录即安装）"))
 
             Button {
                 store.sidebarVisible.toggle()
             } label: {
-                Label("侧栏", systemImage: "sidebar.left")
+                Label(t("Sidebar", "侧栏"), systemImage: "sidebar.left")
             }
 
             Menu {
-                Button("导出 HTML…") { store.exportHTML() }
-                Button("打印 / 存为 PDF…") { store.exportPDF() }
+                Button(t("Export HTML…", "导出 HTML…")) { store.exportHTML() }
+                Button(t("Print / Save as PDF…", "打印 / 存为 PDF…")) { store.exportPDF() }
             } label: {
-                Label("导出", systemImage: "square.and.arrow.up")
+                Label(t("Export", "导出"), systemImage: "square.and.arrow.up")
             }
 
             Button {
                 store.save()
             } label: {
-                Label("保存", systemImage: "square.and.arrow.down")
+                Label(t("Save", "保存"), systemImage: "square.and.arrow.down")
             }
             .disabled(!isEnabled(.save))
         }
@@ -511,31 +511,31 @@ struct WelcomeView: View {
                 .font(.title3)
                 .foregroundStyle(.secondary)
 
-            Text("思绪落下的一刻，成文已然成型")
+            Text(t("The moment a thought lands, the document is already taking shape", "思绪落下的一刻，成文已然成型"))
                 .font(.callout)
                 .foregroundStyle(.tertiary)
 
             HStack(spacing: 16) {
                 Button(action: onNew) {
-                    Label("记下思绪", systemImage: "character.cursor.ibeam")
+                    Label(t("Start Writing", "记下思绪"), systemImage: "character.cursor.ibeam")
                         .padding(.horizontal, 8)
                 }
                 .controlSize(.large)
-                .help("新建一篇文档（⌘N）")
+                .help(t("New document (⌘N)", "新建一篇文档（⌘N）"))
 
                 Button(action: onOpen) {
-                    Label("打开文档", systemImage: "folder")
+                    Label(t("Open File", "打开文档"), systemImage: "folder")
                         .padding(.horizontal, 8)
                 }
                 .controlSize(.large)
-                .help("打开 Markdown 文件（⌘O）")
+                .help(t("Open a Markdown file (⌘O)", "打开 Markdown 文件（⌘O）"))
 
                 Button(action: onOpenFolder) {
-                    Label("打开文件夹", systemImage: "folder.badge.plus")
+                    Label(t("Open Folder", "打开文件夹"), systemImage: "folder.badge.plus")
                         .padding(.horizontal, 8)
                 }
                 .controlSize(.large)
-                .help("把文件夹作为工作区打开（⌘⇧O）")
+                .help(t("Open a folder as the workspace (⌘⇧O)", "把文件夹作为工作区打开（⌘⇧O）"))
             }
 
             Spacer()

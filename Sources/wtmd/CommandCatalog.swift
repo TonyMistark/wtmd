@@ -18,13 +18,13 @@ enum CommandSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .file: return "文件"
-        case .edit: return "编辑"
-        case .view: return "视图"
-        case .writing: return "写作"
-        case .theme: return "主题"
-        case .app: return "应用"
-        case .recent: return "最近文件"
+        case .file: return t("File", "文件")
+        case .edit: return t("Edit", "编辑")
+        case .view: return t("View", "视图")
+        case .writing: return t("Writing", "写作")
+        case .theme: return t("Theme", "主题")
+        case .app: return t("App", "应用")
+        case .recent: return t("Recent Files", "最近文件")
         }
     }
 }
@@ -142,104 +142,106 @@ enum CommandCatalog {
     ///
     /// Order matters: it is the order the palette shows for an empty query, and
     /// the tie-breaker when two commands score the same.
-    static let staticCommands: [AppCommand] = [
+    /// Computed, not stored: titles follow the system language, and a stored
+    /// array would freeze whichever language ran first.
+    static var staticCommands: [AppCommand] = [
         AppCommand(
-            kind: .newDocument, title: "新建文档", section: .file,
+            kind: .newDocument, title: t("New Document", "新建文档"), section: .file,
             symbol: "square.and.pencil", shortcut: KeyboardShortcut("n", modifiers: .command),
             keywords: ["new", "create", "blank"], subtitle: nil
         ),
         AppCommand(
-            kind: .openDocument, title: "打开…", section: .file,
+            kind: .openDocument, title: t("Open…", "打开…"), section: .file,
             symbol: "folder", shortcut: KeyboardShortcut("o", modifiers: .command),
             keywords: ["open", "file", "document"], subtitle: nil
         ),
         AppCommand(
-            kind: .openFolder, title: "打开文件夹…", section: .file,
+            kind: .openFolder, title: t("Open Folder…", "打开文件夹…"), section: .file,
             symbol: "folder.badge.plus", shortcut: KeyboardShortcut("o", modifiers: [.command, .shift]),
             keywords: ["open", "folder", "workspace", "directory"], subtitle: nil
         ),
         AppCommand(
-            kind: .save, title: "保存", section: .file,
+            kind: .save, title: t("Save", "保存"), section: .file,
             symbol: "square.and.arrow.down", shortcut: KeyboardShortcut("s", modifiers: .command),
             keywords: ["save", "write"], subtitle: nil
         ),
         AppCommand(
-            kind: .exportHTML, title: "导出 HTML…", section: .file,
+            kind: .exportHTML, title: t("Export HTML…", "导出 HTML…"), section: .file,
             symbol: "square.and.arrow.up", shortcut: KeyboardShortcut("e", modifiers: [.command, .shift]),
             keywords: ["export", "html", "share"], subtitle: nil
         ),
         AppCommand(
-            kind: .exportWord, title: "导出 Word…", section: .file,
+            kind: .exportWord, title: t("Export Word…", "导出 Word…"), section: .file,
             symbol: "doc.richtext", shortcut: nil,
             keywords: ["word", "docx", "office", "export"], subtitle: nil
         ),
         AppCommand(
-            kind: .exportPDF, title: "打印 / 存为 PDF…", section: .file,
+            kind: .exportPDF, title: t("Print / Save as PDF…", "打印 / 存为 PDF…"), section: .file,
             symbol: "printer", shortcut: KeyboardShortcut("p", modifiers: .command),
             keywords: ["print", "pdf", "export"], subtitle: nil
         ),
         AppCommand(
-            kind: .find, title: "查找…", section: .edit,
+            kind: .find, title: t("Find…", "查找…"), section: .edit,
             symbol: "magnifyingglass", shortcut: KeyboardShortcut("f", modifiers: .command),
             keywords: ["find", "search", "lookup", "查找", "搜索"], subtitle: nil
         ),
         AppCommand(
             // ⌥⌘F 是专注模式，别抢；R 记「Replace」。
-            kind: .findReplace, title: "查找与替换…", section: .edit,
+            kind: .findReplace, title: t("Find & Replace…", "查找与替换…"), section: .edit,
             symbol: "arrow.2.squarepath",
             shortcut: KeyboardShortcut("r", modifiers: [.command, .option]),
             keywords: ["replace", "find", "search", "替换"], subtitle: nil
         ),
         AppCommand(
-            kind: .searchWorkspace, title: "在工作区中搜索…", section: .edit,
+            kind: .searchWorkspace, title: t("Search Workspace…", "在工作区中搜索…"), section: .edit,
             symbol: "text.magnifyingglass",
             shortcut: KeyboardShortcut("f", modifiers: [.command, .shift]),
             keywords: ["search", "workspace", "folder", "grep", "全局搜索", "搜索文件夹"],
             subtitle: nil
         ),
         AppCommand(
-            kind: .toggleMode, title: "思绪 ⇄ 成文", section: .view,
+            kind: .toggleMode, title: t("Source ⇄ Preview", "思绪 ⇄ 成文"), section: .view,
             symbol: "arrow.left.arrow.right", shortcut: KeyboardShortcut("/", modifiers: .command),
             keywords: ["mode", "preview", "source", "edit", "toggle"], subtitle: nil
         ),
         AppCommand(
-            kind: .toggleSplit, title: "对照（源码 ｜ 成文）", section: .view,
+            kind: .toggleSplit, title: t("Split (Source ｜ Preview)", "对照（源码 ｜ 成文）"), section: .view,
             symbol: "rectangle.split.2x1",
             shortcut: KeyboardShortcut("\\", modifiers: [.command, .shift]),
             keywords: ["split", "compare", "side", "columns", "对照", "分栏"], subtitle: nil
         ),
         AppCommand(
-            kind: .toggleSidebar, title: "侧栏", section: .view,
+            kind: .toggleSidebar, title: t("Sidebar", "侧栏"), section: .view,
             symbol: "sidebar.left", shortcut: nil,
             keywords: ["sidebar", "outline", "panel"], subtitle: nil
         ),
         AppCommand(
-            kind: .closeWorkspace, title: "关闭工作区", section: .view,
+            kind: .closeWorkspace, title: t("Close Workspace", "关闭工作区"), section: .view,
             symbol: "xmark.circle", shortcut: nil,
             keywords: ["close", "workspace", "folder"], subtitle: nil
         ),
         AppCommand(
-            kind: .toggleTypewriter, title: "打字机模式", section: .writing,
+            kind: .toggleTypewriter, title: t("Typewriter Mode", "打字机模式"), section: .writing,
             symbol: "align.vertical.center", shortcut: KeyboardShortcut("t", modifiers: [.command, .option]),
             keywords: ["typewriter", "center", "centre", "writing"], subtitle: nil
         ),
         AppCommand(
-            kind: .toggleFocus, title: "专注模式", section: .writing,
+            kind: .toggleFocus, title: t("Focus Mode", "专注模式"), section: .writing,
             symbol: "scope", shortcut: KeyboardShortcut("f", modifiers: [.command, .option]),
             keywords: ["focus", "dim", "paragraph", "writing"], subtitle: nil
         ),
         AppCommand(
-            kind: .openThemesFolder, title: "打开主题文件夹…", section: .theme,
+            kind: .openThemesFolder, title: t("Open Themes Folder…", "打开主题文件夹…"), section: .theme,
             symbol: "folder", shortcut: nil,
             keywords: ["theme", "folder", "install"], subtitle: nil
         ),
         AppCommand(
-            kind: .rescanThemes, title: "重新扫描主题", section: .theme,
+            kind: .rescanThemes, title: t("Rescan Themes", "重新扫描主题"), section: .theme,
             symbol: "arrow.clockwise", shortcut: nil,
             keywords: ["theme", "rescan", "reload", "refresh"], subtitle: nil
         ),
         AppCommand(
-            kind: .checkForUpdates, title: "检查更新…", section: .app,
+            kind: .checkForUpdates, title: t("Check for Updates…", "检查更新…"), section: .app,
             symbol: "arrow.triangle.2.circlepath", shortcut: nil,
             keywords: ["update", "upgrade", "version", "release", "github"], subtitle: nil
         ),

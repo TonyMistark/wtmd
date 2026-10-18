@@ -42,9 +42,9 @@ struct ConflictArchiveView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("冲突副本")
+            Text(t("Conflict Copies", "冲突副本"))
                 .font(.headline)
-            Text("文件在别处被改动、冲突还没解决就切走时，你写的那一版会存在这里。")
+            Text(t("When a file changes elsewhere and you leave with the conflict unresolved, your version is kept here.", "文件在别处被改动、冲突还没解决就切走时，你写的那一版会存在这里。"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -55,7 +55,7 @@ struct ConflictArchiveView: View {
     }
 
     private var empty: some View {
-        Text("没有待处理的副本。")
+        Text(t("Nothing waiting to be recovered.", "没有待处理的副本。"))
             .font(.callout)
             .foregroundStyle(.tertiary)
             .padding(.horizontal, 16)
@@ -83,16 +83,16 @@ struct ConflictArchiveView: View {
 
             Spacer(minLength: 8)
 
-            Button("取回") { recover(entry) }
-                .help("作为未命名文档打开，内容进编辑器后自行决定存到哪里")
+            Button(t("Recover", "取回")) { recover(entry) }
+                .help(t("Opens as an untitled document — decide where to save it yourself", "作为未命名文档打开，内容进编辑器后自行决定存到哪里"))
             Button {
                 reveal(entry)
             } label: {
                 Image(systemName: "folder")
             }
-            .help("在访达中显示这份副本")
-            Button("丢弃") { discard(entry) }
-                .help("删掉这份副本，无法撤销")
+            .help(t("Reveal this copy in Finder", "在访达中显示这份副本"))
+            Button(t("Discard", "丢弃")) { discard(entry) }
+                .help(t("Deletes this copy; this cannot be undone", "删掉这份副本，无法撤销"))
         }
         .controlSize(.small)
         .buttonStyle(.borderless)
@@ -102,14 +102,14 @@ struct ConflictArchiveView: View {
 
     private var footer: some View {
         HStack {
-            Button("在访达中打开文件夹") {
+            Button(t("Open Folder in Finder", "在访达中打开文件夹")) {
                 if let folder { NSWorkspace.shared.open(folder) }
             }
             .buttonStyle(.link)
             .font(.caption)
             .disabled(folder == nil)
             Spacer()
-            Button("关闭", action: close)
+            Button(t("Close", "关闭"), action: close)
                 .keyboardShortcut(.defaultAction)
                 .controlSize(.small)
         }
@@ -127,7 +127,7 @@ struct ConflictArchiveView: View {
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "M月d日 HH:mm"
+        formatter.dateFormat = L10n.isChinese ? "M月d日 HH:mm" : "MMM d, HH:mm"
         return formatter
     }()
 }

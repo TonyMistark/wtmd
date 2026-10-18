@@ -132,11 +132,11 @@ final class ShortcutOverrides: ObservableObject {
 
         // 系统级的角落不让碰：命令面板的 ⌘K 是写死在界面里的隐藏按钮
         guard !RecordedShortcut.reservedChords.contains(shortcut.chordKey) else {
-            return .rejected("⌘K 属于命令面板，不能改派")
+            return .rejected(t("⌘K belongs to the command palette and cannot be reassigned", "⌘K 属于命令面板，不能改派"))
         }
         // 至少要有一个真正的修饰键：光杆字母用来打字
         guard shortcut.modifiers.contains(where: { $0 != "shift" }) else {
-            return .rejected("快捷键至少要带上 ⌘、⌥ 或 ⌃ 中的一个")
+            return .rejected(t("A shortcut must include at least one of ⌘, ⌥ or ⌃", "快捷键至少要带上 ⌘、⌥ 或 ⌃ 中的一个"))
         }
         // 自己派给自己就是「恢复现状」
         if let current = effectiveShortcut(for: kind), let currentRecorded = RecordedShortcut(current),
@@ -147,7 +147,7 @@ final class ShortcutOverrides: ObservableObject {
         if let owner = command(owningChord: shortcut.chordKey), owner != kind.id,
            let ownerKind = CommandKind(ownerID: owner) {
             let title = CommandCatalog.command(for: ownerKind)?.title ?? owner
-            return .rejected("「\(shortcut.label)」已分配给「\(title)」，先改开它再录")
+            return .rejected(t("\(shortcut.label) is already assigned to \(title) — release it first", "「\(shortcut.label)」已分配给「\(title)」，先改开它再录"))
         }
 
         overrides[kind.id] = shortcut

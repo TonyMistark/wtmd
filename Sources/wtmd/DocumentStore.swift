@@ -15,9 +15,9 @@ enum ViewMode: String, CaseIterable, Identifiable {
     /// 中心思想的界面落点：源码是思绪的原貌，预览是思绪的成文。
     var label: String {
         switch self {
-        case .edit: return "思绪"
-        case .preview: return "成文"
-        case .split: return "对照"
+        case .edit: return t("Source", "思绪")
+        case .preview: return t("Preview", "成文")
+        case .split: return t("Split", "对照")
         }
     }
 }
@@ -237,7 +237,7 @@ final class DocumentStore: ObservableObject {
     // MARK: - 状态
 
     var isDirty: Bool { text != savedSnapshot }
-    var displayName: String { fileURL?.lastPathComponent ?? "未命名.md" }
+    var displayName: String { fileURL?.lastPathComponent ?? t("Untitled.md", "未命名.md") }
     var windowTitle: String { (isDirty ? "● " : "") + displayName }
 
     func textDidChange(_ new: String) {
@@ -524,7 +524,7 @@ final class DocumentStore: ObservableObject {
             targetURL = existing
         } else {
             let panel = NSSavePanel()
-            panel.nameFieldStringValue = "未命名.md"
+            panel.nameFieldStringValue = t("Untitled.md", "未命名.md")
             panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
             // 工作区打开着就以它为默认落点：读者已经在那个文件夹里了，
             // 再让他从「文稿」一路导航过去是多出来的一步。
@@ -568,7 +568,7 @@ final class DocumentStore: ObservableObject {
         guard hadConflict, isDirty, let conflicts else { return }
         guard let entry = conflicts.archive(text, originalURL: fileURL) else { return }
         refreshArchivedConflicts()
-        showArchiveNotice("已把「\(entry.originalName)」的本地版本存入冲突副本")
+        showArchiveNotice(t("Saved a local copy of \(entry.originalName) to the conflict archive", "已把「\(entry.originalName)」的本地版本存入冲突副本"))
     }
 
     private func refreshArchivedConflicts() {
@@ -625,7 +625,7 @@ final class DocumentStore: ObservableObject {
         panel.allowedContentTypes = [.html]
 
         // 附件选项：使用当前主题（不勾则导出默认主题）
-        let useCurrent = NSButton(checkboxWithTitle: "使用当前主题样式", target: nil, action: nil)
+        let useCurrent = NSButton(checkboxWithTitle: t("Style with current theme", "使用当前主题样式"), target: nil, action: nil)
         useCurrent.state = .on
         useCurrent.controlSize = .small
         panel.accessoryView = useCurrent
@@ -977,10 +977,20 @@ extension DocumentStore: WorkspaceFileEvents {
 final class RecentFiles: ObservableObject {
     private static let key = "wtmd.recentFiles"
     @Published var urls: [URL] = []
+    /// Injectable so tests do not read or write the user's real defaults.
+    private let userDefaults: UserDefaults
 
-    init() {
-        let paths = UserDefaults.standard.stringArray(forKey: Self.key) ?? []
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+        let paths = userDefaults.stringArray(forKey: Self.key) ?? []
+        // A file that was renamed keeps its old path in the list — it no longer
+        // exists, so it is dropped here, and the pruning is persisted too: a
+        // list that is re-filtered at every launch without ever being written
+        // back never actually shrinks.
         urls = paths.compactMap { URL(string: $0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
+        if urls.count != paths.count {
+            persist()
+        }
     }
 
     func add(_ url: URL) {
@@ -988,7 +998,7 @@ final class RecentFiles: ObservableObject {
         next.insert(url, at: 0)
         if next.count > 8 { next = Array(next.prefix(8)) }
         urls = next
-        UserDefaults.standard.set(next.map(\.absoluteString), forKey: Self.key)
+        persist()
     }
 
     /// 文件被删掉或改名之后，旧路径不能还留在列表里等着被点。
@@ -996,7 +1006,22 @@ final class RecentFiles: ObservableObject {
         let next = urls.filter { !Self.isSameFile($0, url) }
         guard next.count != urls.count else { return }
         urls = next
-        UserDefaults.standard.set(next.map(\.absoluteString), forKey: Self.key)
+        persist()
+    }
+
+    /// Drops entries whose file no longer exists on disk, and reports whether
+    /// anything was dropped.
+    @discardableResult
+    func pruneMissing() -> Bool {
+        let next = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard next.count != urls.count else { return false }
+        urls = next
+        persist()
+        return true
+    }
+
+    private func persist() {
+        userDefaults.set(urls.map(\.absoluteString), forKey: Self.key)
     }
 
     /// `/var/…` 与 `/private/var/…` 是同一份文件，比较前先归一。

@@ -79,7 +79,7 @@ enum FindEngine {
         _ options: FindOptions
     ) -> FindScan {
         guard let regex = makeRegex(query, options) else {
-            return FindScan(matches: [], error: "正则表达式无效")
+            return FindScan(matches: [], error: t("Invalid regular expression", "正则表达式无效"))
         }
         var matches: [NSRange] = []
         let full = NSRange(location: 0, length: text.length)

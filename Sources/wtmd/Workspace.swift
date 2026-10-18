@@ -206,6 +206,31 @@ final class DirectoryWatcher {
 
 // MARK: - 工作区
 
+/// A file's size and modification time — the fingerprint by which a rename
+/// made behind our back (in the Finder, say) is recognized. Both survive a
+/// rename untouched, and together they are unlikely to collide by accident.
+struct FileStat: Equatable {
+    let size: Int
+    let modified: Date
+
+    init?(url: URL) {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        guard
+            let size = (attributes?[.size] as? NSNumber)?.intValue,
+            let modified = attributes?[.modificationDate] as? Date
+        else { return nil }
+        self.size = size
+        self.modified = modified
+    }
+}
+
+/// One row of the roster: where the file was and what it looked like when it
+/// was last seen. Kept together so the relink matcher can pair the *recorded*
+/// canonical key with the URL that produced it.
+struct FileRecord {
+    let url: URL
+    let stat: FileStat
+}
 /// 磁盘上的树变了，文档层得知道。
 ///
 /// 协议而不是直接引用 `DocumentStore`：工作区与文档是两件独立的账，
@@ -247,6 +272,14 @@ final class WorkspaceStore: ObservableObject {
     private let session: Session?
     /// 删除怎么落地。可注入：测试不能把文件丢进读者的真实废纸篓。
     private let moveToTrash: (URL) throws -> Void
+    /// Every file in the tree, by canonical path: its URL plus its fingerprint.
+    /// Rebuilt after each scan; **between** scans it doubles as the roster of
+    /// what existed last time — and that is the only stable form of it. A file
+    /// that has just vanished can no longer be canonicalized reliably (the
+    /// resolver gives up on paths that are gone and hands back the raw input),
+    /// so the vanished side of the match is taken from this table, recorded
+    /// while the file still existed.
+    private var fileRecords: [String: FileRecord] = [:]
 
     init(session: Session? = nil, moveToTrash: ((URL) throws -> Void)? = nil) {
         self.session = session
@@ -302,8 +335,8 @@ final class WorkspaceStore: ObservableObject {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "打开工作区"
-        panel.message = "选择包含 Markdown 文件的文件夹"
+        panel.prompt = t("Open Workspace", "打开工作区")
+        panel.message = t("Choose a folder that holds Markdown files", "选择包含 Markdown 文件的文件夹")
         if panel.runModal() == .OK, let url = panel.url {
             open(url)
         }
@@ -311,13 +344,21 @@ final class WorkspaceStore: ObservableObject {
 
     /// Rescans the folder on disk. Called on open and whenever the watcher
     /// reports a change.
-    func reload() {
+    ///
+    /// `relinking` is off for reloads that follow an operation wtmd itself just
+    /// performed: those already remapped every local path explicitly, and the
+    /// matcher would only find the old-new pairs a second time.
+    func reload(relinking: Bool = true) {
         guard let root else {
             tree = nil
             return
         }
         let scanned = WorkspaceScanner.scan(root: root)
         tree = scanned
+        if relinking {
+            relinkExternalChanges(to: scanned)
+        }
+        refreshFileRecords()
         // A file that was deleted or moved out must not stay highlighted.
         if let selection, !Self.contains(selection, in: scanned) {
             self.selection = nil
@@ -365,7 +406,7 @@ final class WorkspaceStore: ObservableObject {
         guard let parent = directory ?? root else { return nil }
         guard let url = try? WorkspaceFiles.createDocument(in: parent) else { return nil }
         expand(parent)
-        reload()
+        reload(relinking: false)
         selection = url
         pendingRename = url
         return url
@@ -376,7 +417,7 @@ final class WorkspaceStore: ObservableObject {
         guard let parent = directory ?? root else { return nil }
         guard let url = try? WorkspaceFiles.createFolder(in: parent) else { return nil }
         expand(parent)
-        reload()
+        reload(relinking: false)
         selection = url
         pendingRename = url
         return url
@@ -389,7 +430,7 @@ final class WorkspaceStore: ObservableObject {
             let newURL = try WorkspaceFiles.rename(url, to: newName)
             guard newURL != url else { return nil }
             remapPaths(from: url, to: newURL)
-            reload()
+            reload(relinking: false)
             return nil
         } catch let error as FileOperationError {
             return error
@@ -408,7 +449,7 @@ final class WorkspaceStore: ObservableObject {
             remapPaths(from: url, to: newURL)
             // 目标是折叠着的话，东西「移进去了但看不见」和丢了没区别
             expand(directory)
-            reload()
+            reload(relinking: false)
             return nil
         } catch let error as FileOperationError {
             return error
@@ -428,7 +469,7 @@ final class WorkspaceStore: ObservableObject {
             return .failed(error.localizedDescription)
         }
         dropPaths(at: url)
-        reload()
+        reload(relinking: false)
         fileEvents?.documentWasTrashed(at: url)
         return nil
     }
@@ -484,6 +525,87 @@ final class WorkspaceStore: ObservableObject {
     }
 
     // MARK: - Helpers
+
+    // MARK: 外部改动的静默跟随
+
+    /// A file that disappeared while the tree changed elsewhere was most likely
+    /// renamed or moved in the Finder. Match it against files the new tree
+    /// gained, by size + modification time — if one matches, this **is** the
+    /// same file under a new name, and everything recorded about the old path
+    /// should follow it instead of dangling. No banner, no reload.
+    private func relinkExternalChanges(to current: WorkspaceNode?) {
+        guard !fileRecords.isEmpty else { return }
+        var newFiles: [String: URL] = [:]
+        Self.collectFiles(in: current, into: &newFiles)
+        for pair in Self.relinkedPaths(oldRecords: fileRecords, newFiles: newFiles) {
+            remapPaths(from: pair.old, to: pair.new)
+        }
+    }
+
+    /// Every Markdown file in the subtree, by canonical path.
+    static func collectFiles(in node: WorkspaceNode?, into result: inout [String: URL]) {
+        guard let node else { return }
+        if !node.isDirectory {
+            result[canonicalPath(node.url)] = node.url
+            return
+        }
+        for child in node.children {
+            collectFiles(in: child, into: &result)
+        }
+    }
+
+    /// Pairs up vanished files with newcomers by fingerprint. The vanished
+    /// side comes from the roster recorded by the *previous* scan — the disk
+    /// can no longer be asked about a file that is gone — while newcomers are
+    /// stat'ed on the spot. Candidates in the file's own directory win: a
+    /// rename is the common case, and picking a same-sized twin from another
+    /// folder for it would be a coincidence to conjure. Deterministic
+    /// otherwise (path order) so tests can pin behavior.
+    static func relinkedPaths(
+        oldRecords: [String: FileRecord],
+        newFiles: [String: URL],
+        stat: (URL) -> FileStat? = { FileStat(url: $0) }
+    ) -> [(old: URL, new: URL)] {
+        let vanished = oldRecords.keys.filter { newFiles[$0] == nil }.sorted()
+        var newcomers = newFiles.filter { oldRecords[$0.key] == nil }
+        var pairs: [(old: URL, new: URL)] = []
+        for oldPath in vanished {
+            guard let record = oldRecords[oldPath] else { continue }
+            let oldURL = record.url
+            let fingerprint = record.stat
+            let oldParent = (oldPath as NSString).deletingLastPathComponent
+            guard
+                let candidate = newcomers
+                    .filter({ stat($0.value) == fingerprint })
+                    .sorted(by: { a, b in
+                        let aSameParent = (a.key as NSString).deletingLastPathComponent == oldParent
+                        let bSameParent = (b.key as NSString).deletingLastPathComponent == oldParent
+                        if aSameParent != bSameParent { return aSameParent }
+                        return a.key < b.key
+                    })
+                    .first
+            else { continue }
+            newcomers[candidate.key] = nil
+            pairs.append((oldURL, candidate.value))
+        }
+        return pairs
+    }
+
+    /// Rebuilds the roster from the freshly scanned tree.
+    private func refreshFileRecords() {
+        var files: [String: URL] = [:]
+        Self.collectFiles(in: tree, into: &files)
+        var records: [String: FileRecord] = [:]
+        for (path, url) in files {
+            if let stat = FileStat(url: url) {
+                // The URL is rebuilt from the canonical key on purpose: once
+                // the file is gone, no resolver can be trusted with the raw
+                // path again, and the roster is what survives.
+                records[path] = FileRecord(url: URL(fileURLWithPath: path), stat: stat)
+            }
+        }
+        fileRecords = records
+    }
 
     /// Folders between `url` and `root`, nearest first. Empty when `url` sits
     /// directly in the root.
