@@ -246,6 +246,7 @@ final class ThemeManager: ObservableObject {
 struct ThemeSettingsView: View {
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var writing: WritingSettings
+    @EnvironmentObject var typesetting: TypesettingSettings
 
     var body: some View {
         Form {
@@ -290,9 +291,69 @@ struct ThemeSettingsView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }
+
+            Section(t("Reading Layout", "阅读版式")) {
+                layoutSlider(
+                    title: t("Measure", "版心宽度"),
+                    value: "\(typesetting.measure) px",
+                    binding: Binding(
+                        get: { Double(typesetting.measure) },
+                        set: { typesetting.measure = Int($0) }
+                    ),
+                    range: 480...1_100,
+                    step: 20
+                )
+                layoutSlider(
+                    title: t("Text size", "正文字号"),
+                    value: "\(typesetting.fontSize) px",
+                    binding: Binding(
+                        get: { Double(typesetting.fontSize) },
+                        set: { typesetting.fontSize = Int($0) }
+                    ),
+                    range: 14...22,
+                    step: 1
+                )
+                layoutSlider(
+                    title: t("Line height", "行距"),
+                    value: String(format: "%.2f", typesetting.lineHeight),
+                    binding: $typesetting.lineHeight,
+                    range: 1.4...2.2,
+                    step: 0.05
+                )
+                HStack {
+                    Text(t(
+                        "Preview only: colours and fonts still come from the theme.",
+                        "只影响预览；颜色与字体仍由主题决定。"
+                    ))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(t("Restore Defaults", "恢复默认")) { typesetting.reset() }
+                }
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 440, height: 400)
+        .frame(width: 460, height: 680)
+    }
+
+    /// 一行「标题 + 滑块 + 当前值」：三个版式值长得一样，就不各写一遍。
+    private func layoutSlider(
+        title: String,
+        value: String,
+        binding: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double
+    ) -> some View {
+        LabeledContent(title) {
+            HStack(spacing: 10) {
+                Slider(value: binding, in: range, step: step)
+                    .frame(width: 160)
+                Text(value)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 56, alignment: .trailing)
+            }
+        }
     }
 
     /// 开关与数字写在同一个值上：0 就是关。省掉「开了但没填」这种半吊子状态。

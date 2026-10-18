@@ -7,6 +7,8 @@ struct PreviewView: NSViewRepresentable {
     @Binding var html: String
     @Binding var currentSlug: String?
     var themeCSS: String
+    /// 读者的版式（版心/字号/行距）变量层。与主题分开：切主题不冲掉版式。
+    var layoutCSS: String
     var diff: BlockDiff?
     var jump: JumpRequest?
     var generation: Int
@@ -33,6 +35,7 @@ struct PreviewView: NSViewRepresentable {
             coordinator.lastGeneration = generation
             coordinator.lastHTML = html
             coordinator.lastThemeCSS = themeCSS
+            coordinator.lastLayoutCSS = layoutCSS
             coordinator.reload()
             return
         }
@@ -53,6 +56,12 @@ struct PreviewView: NSViewRepresentable {
         if themeCSS != coordinator.lastThemeCSS {
             coordinator.lastThemeCSS = themeCSS
             coordinator.applyTheme(themeCSS)
+        }
+
+        // 版式同理：拖滑块时只换那几个变量，页面不重载
+        if layoutCSS != coordinator.lastLayoutCSS {
+            coordinator.lastLayoutCSS = layoutCSS
+            coordinator.applyLayout(layoutCSS)
         }
 
         if let jump, jump.id != coordinator.lastJumpID {
@@ -85,10 +94,13 @@ struct PreviewView: NSViewRepresentable {
         let webView: WKWebView
         var lastHTML = ""
         var lastThemeCSS = ""
+        var lastLayoutCSS = ""
         var lastGeneration = -1
         var lastJumpID = ""
         /// 文档未加载完时暂存的主题，didFinish 后补发。
         private var pendingThemeCSS: String?
+        /// 同上，版式。
+        private var pendingLayoutCSS: String?
         /// 重建前记住的锚点，页面加载完成后回填一次。
         private var pendingAnchor: PositionMemory.PreviewAnchor?
 
@@ -118,12 +130,14 @@ struct PreviewView: NSViewRepresentable {
                 title: parent.documentTitle,
                 body: parent.html,
                 themeCSS: parent.themeCSS,
-                includeScript: true
+                includeScript: true,
+                layoutCSS: parent.layoutCSS
             )
             // 重载后的 DOM 就是当前 html/主题这一代，先对齐基准：
             // 否则首帧会把上一轮的 diff 套用到刚装载的 DOM 上（模式切换回来时会错位）
             lastHTML = parent.html
             lastThemeCSS = parent.themeCSS
+            lastLayoutCSS = parent.layoutCSS
             lastGeneration = parent.generation
             // 换文档时 startSession 会作废旧锚点，所以这里读到的要么是本篇的
             // 位置，要么是 nil（新文档，从头看起）。
@@ -142,6 +156,16 @@ struct PreviewView: NSViewRepresentable {
             webView.evaluateJavaScript("__wtmdSetTheme(\(json))")
         }
 
+        /// 应用版式：与主题同一套队列，加载中先存着。
+        func applyLayout(_ css: String) {
+            guard !webView.isLoading else {
+                pendingLayoutCSS = css
+                return
+            }
+            let json = PreviewView.encodeJSStatic(css)
+            webView.evaluateJavaScript("__wtmdSetLayout(\(json))")
+        }
+
         nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -149,6 +173,11 @@ struct PreviewView: NSViewRepresentable {
                     self.pendingThemeCSS = nil
                     let json = PreviewView.encodeJSStatic(pending)
                     self.webView.evaluateJavaScript("__wtmdSetTheme(\(json))")
+                }
+                if let pending = self.pendingLayoutCSS {
+                    self.pendingLayoutCSS = nil
+                    let json = PreviewView.encodeJSStatic(pending)
+                    self.webView.evaluateJavaScript("__wtmdSetLayout(\(json))")
                 }
                 // 回到原来的位置：DOM 就绪才有元素可量。放在主题补发之后，
                 // 是因为主题只改 CSS 变量、不改块高度（量早量晚差不了几像素）。
