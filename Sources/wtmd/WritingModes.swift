@@ -10,6 +10,7 @@ final class WritingSettings: ObservableObject {
     private enum Key {
         static let typewriter = "wtmd.typewriterMode"
         static let focus = "wtmd.focusMode"
+        static let dailyGoal = "wtmd.dailyCharacterGoal"
     }
 
     private let defaults: UserDefaults
@@ -22,10 +23,16 @@ final class WritingSettings: ObservableObject {
         didSet { defaults.set(focusMode, forKey: Key.focus) }
     }
 
+    /// 每日字数目标。**0 表示不设**——状态栏里那条进度只在设了之后才出现。
+    @Published var dailyGoal: Int {
+        didSet { defaults.set(dailyGoal, forKey: Key.dailyGoal) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         typewriter = defaults.bool(forKey: Key.typewriter)
         focusMode = defaults.bool(forKey: Key.focus)
+        dailyGoal = max(0, defaults.integer(forKey: Key.dailyGoal))
     }
 }
 

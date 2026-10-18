@@ -270,13 +270,37 @@ struct ThemeSettingsView: View {
             Section(t("Writing", "写作")) {
                 Toggle(t("Typewriter Mode", "打字机模式"), isOn: $writing.typewriter)
                 Toggle(t("Focus Mode", "专注模式"), isOn: $writing.focusMode)
-                Text(t("Typewriter keeps the caret line centred; focus dims everything outside the current paragraph. Both can be on at once.", "打字机让光标行停在屏幕中部；专注把当前段落之外的内容退成浅灰。两者可同时开启。"))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Toggle(t("Daily character goal", "每日字数目标"), isOn: goalEnabled)
+                if writing.dailyGoal > 0 {
+                    Stepper(value: $writing.dailyGoal, in: 100...10_000, step: 100) {
+                        Text(t("\(writing.dailyGoal.formatted()) characters a day", "每天 \(writing.dailyGoal.formatted()) 字"))
+                            .monospacedDigit()
+                    }
+                }
+                Text(t(
+                    "Typewriter keeps the caret line centred; focus dims everything outside the current paragraph. Both can be on at once.",
+                    "打字机让光标行停在屏幕中部；专注把当前段落之外的内容退成浅灰。两者可同时开启。"
+                ))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                Text(t(
+                    "The goal counts net characters: deleting takes them back off. It shows up in the status bar only once a goal is set.",
+                    "目标算的是净增：删字会扣回去。设了目标之后，状态栏才会出现今日进度。"
+                ))
+                .font(.callout)
+                .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 440, height: 340)
+        .frame(width: 440, height: 400)
+    }
+
+    /// 开关与数字写在同一个值上：0 就是关。省掉「开了但没填」这种半吊子状态。
+    private var goalEnabled: Binding<Bool> {
+        Binding(
+            get: { writing.dailyGoal > 0 },
+            set: { writing.dailyGoal = $0 ? 800 : 0 }
+        )
     }
 
     private var themeSelection: Binding<String> {

@@ -98,6 +98,8 @@ final class DocumentStore: ObservableObject {
 
     let recentFiles = RecentFiles()
     let themeManager = ThemeManager()
+    /// 每日净增字数的账本。`nil`（测试默认）表示不记账，绝不写真实的 preferences。
+    let writingStats: WritingStats?
     /// 跨视图重建的位置账本：`⌘/` 会销毁并重建编辑器/预览，位置得存在视图之外。
     let positionMemory = PositionMemory()
     /// 文档内查找。状态跟着窗口走，不落盘——关掉应用再打开，没人期待搜索框还在。
@@ -133,6 +135,11 @@ final class DocumentStore: ObservableObject {
     private var findObservation: AnyCancellable?
     /// 存档提示的自动隐去。
     private var archiveNoticeTask: Task<Void, Never>?
+    /// 把账本的变化转成 store 的变化——状态栏挂在 ContentView 上，只认 store。
+    private var writingStatsObservation: AnyCancellable?
+    /// 每打开/新建一篇就 +1：它参与 `documentKey`，让「换了文档」永远能被认出来。
+    /// 未命名草稿改成空文档时路径没变，只看路径会把清空算成删了几百字。
+    private var documentEpoch = 0
 
     static let welcomeMarkdown = """
     # 欢迎使用 wtmd
@@ -184,13 +191,15 @@ final class DocumentStore: ObservableObject {
         draftDirectory: URL? = nil,
         autoSaveDelay: UInt64 = 1_200_000_000,
         session: Session? = nil,
-        conflicts: ConflictArchive? = nil
+        conflicts: ConflictArchive? = nil,
+        writingStats: WritingStats? = nil
     ) {
         let directory = draftDirectory ?? Self.defaultDraftDirectory
         self.draftDirectory = directory
         self.autoSaveDelay = autoSaveDelay
         self.session = session
         self.conflicts = conflicts
+        self.writingStats = writingStats
         self.archivedConflicts = conflicts?.entries() ?? []
 
         // 上次打开的那篇优先于草稿：读者按下 ⌘Tab 回来，期待看到的是刚才在写的东西，
@@ -231,6 +240,9 @@ final class DocumentStore: ObservableObject {
         workspaceSearch.liveDocument = { [weak self] in
             guard let self, let url = self.fileURL else { return nil }
             return (url, self.text)
+        }
+        writingStatsObservation = writingStats?.objectWillChange.sink { [weak self] in
+            self?.objectWillChange.send()
         }
     }
 
@@ -384,6 +396,7 @@ final class DocumentStore: ObservableObject {
         outline = output.outline
         previewHTML = output.html
         statistics = output.statistics
+        noteWritingProgress()
         // DOM 基准与即将注入的全文一致，后续编辑可直接走增量
         renderedBlocks = output.blocks
         pendingDiff = nil
@@ -394,12 +407,41 @@ final class DocumentStore: ObservableObject {
     private func applyIncremental(_ output: RenderOutput) {
         outline = output.outline
         statistics = output.statistics
+        noteWritingProgress()
         previewHTML = output.html
 
         let diff = BlockDiff.compute(old: renderedBlocks, new: output.blocks)
         renderedBlocks = output.blocks
         // 块数组完全一致时没有可发的增量，显式清空避免上一轮的 diff 被重复套用
         pendingDiff = diff.isEmpty ? nil : diff
+    }
+
+    // MARK: - 每日字数
+
+    /// 认「是不是同一篇」用的身份：归一路径 + 代数。
+    ///
+    /// 路径走 canonical：`/var` 与 `/private/var` 是同一份文件，不该让账本以为换了篇。
+    /// 未命名草稿没有路径，新建之后仍是同一串 `-`——只靠路径的话，把一篇
+    /// 五百字的草稿换成空文档会被算成「删了五百字」，所以还要带上代数。
+    private var documentKey: String {
+        let path = fileURL.map { WorkspaceStore.canonicalPath($0) } ?? "-"
+        return "\(path)#\(documentEpoch)"
+    }
+
+    /// 统计一更新就报给账本：同一篇报两次，差就是净增。
+    private func noteWritingProgress() {
+        writingStats?.observe(document: documentKey, characters: statistics.characters)
+    }
+
+    /// 结算前先按正文**同步**数一遍字数：防抖里最后半秒敲的字还没进
+    /// `statistics`，直接结算会把它们漏掉。全篇数一次只发生在切文档与退出。
+    private func settleWritingStats() {
+        guard let writingStats else { return }
+        writingStats.observe(
+            document: documentKey,
+            characters: TextStatistics.count(text).characters
+        )
+        writingStats.settle()
     }
 
     private func scheduleRender() {
@@ -434,6 +476,7 @@ final class DocumentStore: ObservableObject {
         // and the button looks dead.
         hasStartedWriting = true
         renderGeneration += 1
+        documentEpoch += 1
         recomputeNow()
         mode = .edit
         clearDraft()
@@ -498,6 +541,7 @@ final class DocumentStore: ObservableObject {
         recentFiles.add(url)
         hasStartedWriting = true
         renderGeneration += 1
+        documentEpoch += 1
         if let request {
             // 行列只存在于源码里：预览没有行号可落
             if mode == .preview { mode = .edit }
@@ -603,6 +647,7 @@ final class DocumentStore: ObservableObject {
         knownModificationDate = nil
         hasStartedWriting = true
         renderGeneration += 1
+        documentEpoch += 1
         mode = .edit
         session?.setOpenFile(nil)
         recomputeNow()
@@ -873,6 +918,8 @@ final class DocumentStore: ObservableObject {
     func flushPendingSave() {
         saveTask?.cancel()
         saveTask = nil
+        // 结算不依赖「有没有脏改动」：没保存但改过又改回去，净增也该落账
+        settleWritingStats()
         guard isDirty else { return }
         persist(text)
     }

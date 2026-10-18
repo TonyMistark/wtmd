@@ -315,6 +315,9 @@ struct ContentView: View {
             if store.statistics.readingMinutes > 0 {
                 Text(t("~\(store.statistics.readingMinutes) min read", "约 \(store.statistics.readingMinutes) 分钟读完"))
             }
+            if let stats = store.writingStats, writing.dailyGoal > 0 {
+                dailyGoalBadge(total: stats.today)
+            }
             Spacer()
             if let notice = store.archiveNotice {
                 Text(notice)
@@ -348,6 +351,36 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             Divider()
         }
+    }
+
+    /// 今日净增与目标。达成只换一条进度条的颜色——不弹窗、不庆祝、不打断。
+    private func dailyGoalBadge(total: Int) -> some View {
+        let goal = writing.dailyGoal
+        let reached = WritingGoal.isReached(total: total, goal: goal)
+        return HStack(spacing: 6) {
+            Text(t(
+                "Today \(total.formatted()) / \(goal.formatted()) characters",
+                "今日 \(total.formatted()) / \(goal.formatted()) 字"
+            ))
+            .monospacedDigit()
+            goalBar(fraction: WritingGoal.fraction(total: total, goal: goal), reached: reached)
+        }
+        .help(t(
+            "Net characters written today — deleting takes them back off. Set the goal under Settings › Theme › Writing.",
+            "今天净增的字数，删字会扣回去。目标在「设置 › 主题 › 写作」里改。"
+        ))
+    }
+
+    private func goalBar(fraction: Double, reached: Bool) -> some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.18))
+                Capsule()
+                    .fill(reached ? Color.accentColor : Color.secondary.opacity(0.55))
+                    .frame(width: proxy.size.width * fraction)
+            }
+        }
+        .frame(width: 46, height: 4)
     }
 
     /// 更新提示：有新版时是可点的徽标，其余反馈（已是最新 / 失败）短暂停留后自己消失。
