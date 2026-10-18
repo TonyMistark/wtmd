@@ -63,6 +63,11 @@ final class DocumentStore: ObservableObject {
     @Published var mode: ViewMode = .edit
     @Published var outline: [OutlineItem] = []
     @Published var previewHTML: String = ""
+    /// 每个顶层块的源码起始行（与渲染出的块一一对应，脚注区为 -1）。
+    ///
+    /// 分栏联动靠它把「预览里的第几块」翻译成「源码里的第几行」。不进块 HTML：
+    /// 那样每在文档前面插一行，后面所有块的字符串都会变，增量 diff 全盘失效。
+    @Published var blockLines: [Int] = []
     /// 增量渲染：上次已渲染的块数组（diff 基准）。
     private var renderedBlocks: [String] = []
     /// 挂起的增量更新（预览视图消费后清空）。
@@ -375,6 +380,8 @@ final class DocumentStore: ObservableObject {
     private struct RenderOutput: Sendable {
         let html: String
         let blocks: [String]
+        /// 每个顶层块的源码起始行（与 `blocks` 平行）。分栏联动用。
+        let blockLines: [Int]
         let outline: [OutlineItem]
         let statistics: TextStatistics
     }
@@ -385,6 +392,7 @@ final class DocumentStore: ObservableObject {
         return RenderOutput(
             html: result.html,
             blocks: result.blocks,
+            blockLines: result.blockLines,
             outline: result.outline,
             statistics: TextStatistics.count(markdown)
         )
@@ -395,6 +403,7 @@ final class DocumentStore: ObservableObject {
         let output = Self.build(text)
         outline = output.outline
         previewHTML = output.html
+        blockLines = output.blockLines
         statistics = output.statistics
         noteWritingProgress()
         // DOM 基准与即将注入的全文一致，后续编辑可直接走增量
@@ -409,6 +418,7 @@ final class DocumentStore: ObservableObject {
         statistics = output.statistics
         noteWritingProgress()
         previewHTML = output.html
+        blockLines = output.blockLines
 
         let diff = BlockDiff.compute(old: renderedBlocks, new: output.blocks)
         renderedBlocks = output.blocks

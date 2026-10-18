@@ -15,6 +15,8 @@ struct ContentView: View {
 
     /// 冲突副本清单是否展开。
     @State private var conflictListVisible = false
+    /// 分栏两侧的联动账本：谁动了、动到第几行、另一边该跟到哪。
+    @StateObject private var splitSync = SplitSyncController()
 
 
     var body: some View {
@@ -197,6 +199,11 @@ struct ContentView: View {
                 // 相遇的瞬间：思绪与成文切换时的轻柔过渡
                 .animation(.easeInOut(duration: 0.18), value: store.mode)
                 .transition(.opacity)
+                // 两侧联动只在分栏里生效：单栏编辑时预览不在场，让它拽着源码走
+                // 是纯粹的打扰（正在打字，视口被搬走）。
+                .onAppear { splitSync.isActive = store.mode == .split }
+                .onChange(of: store.mode) { _, mode in splitSync.isActive = mode == .split }
+                .onChange(of: store.cursorLine) { _, line in splitSync.editorMoved(to: line) }
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if let change = store.externalChange {
                         ConflictBanner(change: change, fileName: store.displayName) {
@@ -248,6 +255,7 @@ struct ContentView: View {
                 set: { store.pendingImageInsert = $0 }
             ),
             jump: store.editorJump,
+            syncReveal: splitSync.editorReveal,
             onImagePaste: { store.handleImagePaste($0) },
             typewriterMode: writing.typewriter,
             focusMode: writing.focusMode,
@@ -286,7 +294,10 @@ struct ContentView: View {
             generation: store.renderGeneration,
             documentTitle: store.displayName,
             baseURL: store.fileURL?.deletingLastPathComponent(),
-            positionMemory: store.positionMemory
+            positionMemory: store.positionMemory,
+            scrollLine: splitSync.previewScroll,
+            onLineChange: { line in splitSync.previewMoved(to: line) },
+            blockLines: store.blockLines
         )
     }
 
