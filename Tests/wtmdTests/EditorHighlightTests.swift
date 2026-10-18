@@ -38,6 +38,25 @@ import Testing
     #expect(font?.fontDescriptor.symbolicTraits.contains(.bold) == true)
 }
 
+/// 列表 marker 的高亮必须落在**这一行**：`firstMatch` 给的是行内偏移，
+/// 少了行首 base 就会去染文档开头——以前只有第一行能染对，其余行全在染别处。
+@MainActor
+@Test func listMarkersOnLaterLinesAreColouredInPlace() {
+    let harness = EditorHarness(text: "- 第一项\n- 第二项\n\n> 引用\n> 第二行引用")
+
+    let storage = harness.textView.textStorage
+    let secondMarker = storage?.attribute(.foregroundColor, at: 6, effectiveRange: nil) as? NSColor
+    #expect(secondMarker == NSColor.systemOrange, "第二行的 marker 没染上")
+
+    // 第一行的正文不该被误染成 marker 色
+    let firstContent = storage?.attribute(.foregroundColor, at: 2, effectiveRange: nil) as? NSColor
+    #expect(firstContent == NSColor.labelColor)
+
+    // 引用行的 `>` 也走同一个 base：位置 18 是第二行引用的 `>`
+    let quoteMarker = storage?.attribute(.foregroundColor, at: 18, effectiveRange: nil) as? NSColor
+    #expect(quoteMarker != NSColor.labelColor)
+}
+
 // MARK: - 用户报的场景
 
 /// 文档第一行敲回车：光标应留在刚插入的换行之后，视口不该整篇滚到底。
