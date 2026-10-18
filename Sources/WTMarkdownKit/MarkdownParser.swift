@@ -1,5 +1,16 @@
 import Foundation
 
+/// 一个块，外加它在源码里的起始行（0-based）。
+///
+/// 行号是给**分栏联动**用的：预览滚到第几块，源码就滚到第几行。它与块本身
+/// 是并列关系而不是块的字段——`Block` 是纯内容，带上位置会让每处模式匹配
+/// 都多一层解包，而位置只在顶层块上有意义。
+struct NumberedBlock {
+    var block: Block
+    /// 原文行号（脚注定义行被剥离过，所以不能拿过滤后的下标充数）。
+    var line: Int
+}
+
 /// 轻量级 Markdown 解析器：两阶段（块级切分 → 行级内联展开）。
 /// 支持 CommonMark 常用子集 + GFM 扩展（表格、任务列表、删除线）。
 public struct MarkdownParser: Sendable {
@@ -24,25 +35,41 @@ public struct MarkdownParser: Sendable {
         onHeading: ((Int, String, Int) -> Void)?,
         footnotes: inout [Footnote]?
     ) -> [Block] {
+        parseNumbered(source, onHeading: onHeading, footnotes: &footnotes).map(\.block)
+    }
+
+    /// 带源码行号的解析：每个顶层块配一条起始行（0-based，按**原文**计）。
+    ///
+    /// 行号必须跟着原行走，不能拿过滤后的下标充数——脚注定义行会在解析前被
+    /// 剥掉，一旦文档里有 `[^id]: …`，此后的每一块都会整体上移。
+    func parseNumbered(
+        _ source: String,
+        onHeading: ((Int, String, Int) -> Void)?,
+        footnotes: inout [Footnote]?
+    ) -> [NumberedBlock] {
         let normalized = source
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
         var lines = normalized.components(separatedBy: "\n")
+        var numbers = Array(0..<lines.count)
         // 预扫描：剥离脚注定义行（允许任意位置），收集到 footnotes
         if footnotes != nil {
             var defs: [Footnote] = []
             var kept: [String] = []
-            for line in lines {
+            var keptNumbers: [Int] = []
+            for (idx, line) in lines.enumerated() {
                 if let fn = Self.footnoteDefinition(line) {
                     defs.append(fn)
                 } else {
                     kept.append(line)
+                    keptNumbers.append(numbers[idx])
                 }
             }
             footnotes = defs
             lines = kept
+            numbers = keptNumbers
         }
-        return parseLines(lines, topLevel: true, onHeading: onHeading)
+        return parseLines(lines, numbers: numbers, topLevel: true, onHeading: onHeading)
     }
 
     /// 匹配 `    [^id]: 内容` 形式的脚注定义行（缩进 ≤3 空格）。
@@ -70,23 +97,34 @@ public struct MarkdownParser: Sendable {
 
     func parseLines(
         _ lines: [String],
+        numbers: [Int],
         topLevel: Bool,
         onHeading: ((Int, String, Int) -> Void)?
-    ) -> [Block] {
-        var blocks: [Block] = []
+    ) -> [NumberedBlock] {
+        var blocks: [NumberedBlock] = []
         var paragraph: [String] = []
+        var paragraphLine: Int?
+
+        /// 过滤后的下标 → 原文行号。容错取末行，调用方永远不会越界。
+        func line(at index: Int) -> Int {
+            index < numbers.count ? numbers[index] : (numbers.last ?? 0)
+        }
 
         func flushParagraph() {
             if !paragraph.isEmpty {
-                blocks.append(.paragraph(paragraph.joined(separator: "\n")))
+                blocks.append(NumberedBlock(
+                    block: .paragraph(paragraph.joined(separator: "\n")),
+                    line: paragraphLine ?? line(at: 0)
+                ))
                 paragraph = []
+                paragraphLine = nil
             }
         }
 
         var i = 0
         while i < lines.count {
-            let line = lines[i]
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let source = lines[i]
+            let trimmed = source.trimmingCharacters(in: .whitespaces)
 
             // 空行
             if trimmed.isEmpty {
@@ -98,6 +136,7 @@ public struct MarkdownParser: Sendable {
             // 围栏代码块
             if let fence = Self.fenceStart(trimmed) {
                 flushParagraph()
+                let start = line(at: i)
                 var code: [String] = []
                 var j = i + 1
                 let closeMarker = String(repeating: fence.char, count: fence.length)
@@ -107,7 +146,10 @@ public struct MarkdownParser: Sendable {
                     code.append(lines[j])
                     j += 1
                 }
-                blocks.append(.code(language: fence.language, code: code.joined(separator: "\n")))
+                blocks.append(NumberedBlock(
+                    block: .code(language: fence.language, code: code.joined(separator: "\n")),
+                    line: start
+                ))
                 i = j + 1
                 continue
             }
@@ -115,9 +157,9 @@ public struct MarkdownParser: Sendable {
             // 标题
             if let (level, text) = Self.headingInfo(trimmed) {
                 flushParagraph()
-                blocks.append(.heading(level: level, text: text))
+                blocks.append(NumberedBlock(block: .heading(level: level, text: text), line: line(at: i)))
                 if topLevel, let onHeading {
-                    onHeading(level, text, i)
+                    onHeading(level, text, line(at: i))
                 }
                 i += 1
                 continue
@@ -126,7 +168,7 @@ public struct MarkdownParser: Sendable {
             // [TOC] 目录占位：仅顶层独占一行时识别（引用/列表/围栏代码内是普通文本）
             if topLevel, trimmed == "[TOC]" {
                 flushParagraph()
-                blocks.append(.toc)
+                blocks.append(NumberedBlock(block: .toc, line: line(at: i)))
                 i += 1
                 continue
             }
@@ -134,7 +176,7 @@ public struct MarkdownParser: Sendable {
             // 分隔线
             if Self.isDivider(trimmed) {
                 flushParagraph()
-                blocks.append(.divider)
+                blocks.append(NumberedBlock(block: .divider, line: line(at: i)))
                 i += 1
                 continue
             }
@@ -142,29 +184,35 @@ public struct MarkdownParser: Sendable {
             // 引用块
             if trimmed.hasPrefix(">") {
                 flushParagraph()
+                let quoteLine = line(at: i)
                 var quoteLines: [String] = []
+                var quoteNumbers: [Int] = []
                 while i < lines.count {
                     let t = lines[i].trimmingCharacters(in: .whitespaces)
                     if t.hasPrefix(">") {
                         var content = String(t.dropFirst())
                         if content.hasPrefix(" ") { content.removeFirst() }
                         quoteLines.append(content)
+                        quoteNumbers.append(line(at: i))
                         i += 1
                     } else if !t.isEmpty, !quoteLines.isEmpty, !Self.isBlockStartLine(t) {
                         // 懒惰延续：引用内紧跟的普通文本
                         quoteLines.append(t)
+                        quoteNumbers.append(line(at: i))
                         i += 1
                     } else {
                         break
                     }
                 }
-                blocks.append(.quote(parseLines(quoteLines, topLevel: false, onHeading: nil)))
+                let inner = parseLines(quoteLines, numbers: quoteNumbers, topLevel: false, onHeading: nil)
+                blocks.append(NumberedBlock(block: .quote(inner.map(\.block)), line: quoteLine))
                 continue
             }
 
             // 表格（当前行含 | 且下一行是分隔行）
             if Self.isTableStart(lines, at: i) {
                 flushParagraph()
+                let start = line(at: i)
                 let header = Self.splitRow(lines[i])
                 let alignments = Self.parseAlignments(lines[i + 1])
                 var rows: [[String]] = []
@@ -175,7 +223,10 @@ public struct MarkdownParser: Sendable {
                     rows.append(Self.splitRow(lines[j]))
                     j += 1
                 }
-                blocks.append(.table(header: header, alignments: alignments, rows: rows))
+                blocks.append(NumberedBlock(
+                    block: .table(header: header, alignments: alignments, rows: rows),
+                    line: start
+                ))
                 i = j
                 continue
             }
@@ -184,6 +235,7 @@ public struct MarkdownParser: Sendable {
             if Self.markerMatch(trimmed) != nil {
                 flushParagraph()
                 var listLines: [String] = []
+                var listNumbers: [Int] = []
                 var lastContentIndent = 0
                 var j = i
                 while j < lines.count {
@@ -192,6 +244,7 @@ public struct MarkdownParser: Sendable {
                     if t.isEmpty { break }
                     if let m = Self.markerMatch(t) {
                         listLines.append(t)
+                        listNumbers.append(line(at: j))
                         lastContentIndent = m.contentIndent
                         j += 1
                         continue
@@ -199,23 +252,26 @@ public struct MarkdownParser: Sendable {
                     let ind = Self.indent(of: l)
                     if !listLines.isEmpty && ind >= lastContentIndent {
                         listLines.append(l)
+                        listNumbers.append(line(at: j))
                         j += 1
                         continue
                     }
                     if !listLines.isEmpty && !Self.isBlockStartLine(t) {
                         // 懒惰延续：列表项后紧跟的普通文本
                         listLines.append(l)
+                        listNumbers.append(line(at: j))
                         j += 1
                         continue
                     }
                     break
                 }
-                blocks.append(contentsOf: parseList(listLines))
+                blocks.append(contentsOf: parseList(listLines, numbers: listNumbers))
                 i = j
                 continue
             }
 
-            paragraph.append(line)
+            if paragraph.isEmpty { paragraphLine = line(at: i) }
+            paragraph.append(source)
             i += 1
         }
         flushParagraph()
@@ -224,10 +280,15 @@ public struct MarkdownParser: Sendable {
 
     // MARK: - 列表
 
-    private func parseList(_ lines: [String]) -> [Block] {
-        guard let first = Self.markerMatch(lines.first ?? "") else {
-            return [.paragraph(lines.joined(separator: "\n"))]
+    private func parseList(_ lines: [String], numbers: [Int]) -> [NumberedBlock] {
+        func number(at index: Int) -> Int {
+            index < numbers.count ? numbers[index] : (numbers.last ?? 0)
         }
+
+        guard let first = Self.markerMatch(lines.first ?? "") else {
+            return [NumberedBlock(block: .paragraph(lines.joined(separator: "\n")), line: number(at: 0))]
+        }
+        let listLine = number(at: 0)
         let ordered = first.isOrdered
         var start = first.number
         var items: [ListItem] = []
@@ -240,9 +301,10 @@ public struct MarkdownParser: Sendable {
             }
             // 标记类型变化（有序 ⇄ 无序）：结束当前列表，剩余部分递归解析
             if !items.isEmpty && m.isOrdered != ordered && m.indent <= first.indent {
-                return [.list(ordered: ordered, start: start, items: items)]
-                    + parseList(Array(lines[i...]))
+                return [NumberedBlock(block: .list(ordered: ordered, start: start, items: items), line: listLine)]
+                    + parseList(Array(lines[i...]), numbers: Array(numbers[min(i, numbers.count)...]))
             }
+            let itemLine = number(at: i)
             var content: [String] = [m.rest ?? ""]
             i += 1
             while i < lines.count {
@@ -278,12 +340,14 @@ public struct MarkdownParser: Sendable {
                 if content[0].isEmpty { content.removeFirst() }
             }
 
-            let itemBlocks = parseLines(content, topLevel: false, onHeading: nil)
-            items.append(ListItem(blocks: itemBlocks, taskState: taskState))
+            // 列表项内部不再参与顶层联动，行号只求不越界
+            let itemNumbers = Array(repeating: itemLine, count: content.count)
+            let itemBlocks = parseLines(content, numbers: itemNumbers, topLevel: false, onHeading: nil)
+            items.append(ListItem(blocks: itemBlocks.map(\.block), taskState: taskState))
         }
 
         if ordered && items.isEmpty { start = 1 }
-        return [.list(ordered: ordered, start: start, items: items)]
+        return [NumberedBlock(block: .list(ordered: ordered, start: start, items: items), line: listLine)]
     }
 
     // MARK: - 行匹配辅助

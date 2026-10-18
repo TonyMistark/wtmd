@@ -182,14 +182,32 @@ enum StyleSheet {
     """
 
     static let script = """
-    function __wtmdUpdate(bodyHTML) {
+    // 每个顶层块对应的源码起始行，挂在 DOM 节点的自定义属性上（`el.__wtmdLine`），
+    // 而不是写成 HTML 属性：块字符串是增量 diff 的比较基准，行号一旦嵌进去，
+    // 在文档前面插一行就会让后面每一块都「变了」，增量退化成整篇重画。
+    // 节点被替换后重打一遍即可——代价只是一次线性遍历，不碰布局。
+    function __wtmdSetLines(lines) {
+      var root = document.getElementById('wtmd-content');
+      if (!root || !lines) { return; }
+      var kids = root.children;
+      var n = Math.min(kids.length, lines.length);
+      for (var i = 0; i < n; i++) { kids[i].__wtmdLine = lines[i]; }
+      // 行号数组比 DOM 短（理论上不该发生）：多出来的块清掉，免得张冠李戴
+      for (var j = n; j < kids.length; j++) { kids[j].__wtmdLine = -1; }
+    }
+    function __wtmdLineOf(el) {
+      var n = el ? el.__wtmdLine : null;
+      return (typeof n === 'number' && n >= 0) ? n : -1;
+    }
+    function __wtmdUpdate(bodyHTML, lines) {
       document.getElementById('wtmd-content').innerHTML = bodyHTML;
+      __wtmdSetLines(lines);
       if (typeof __wtmdHighlight === 'function') { __wtmdHighlight(); }
       if (typeof __wtmdMermaidRenderAll === 'function') { __wtmdMermaidRenderAll(false); }
       if (typeof __wtmdKatexRenderAll === 'function') { __wtmdKatexRenderAll(); }
     }
     // 增量更新：替换第 prefix..(total-suffix) 块，保留前后缀节点（图片/图表不重画）
-    function __wtmdUpdateRange(diff) {
+    function __wtmdUpdateRange(diff, lines) {
       var container = document.getElementById('wtmd-content');
       if (!container) { return; }
       var children = container.children;
@@ -212,6 +230,8 @@ enum StyleSheet {
           container.insertBefore(template.content.firstChild, refNode);
         }
       }
+      // 新插入的节点没有行号，整条重打一遍
+      __wtmdSetLines(lines);
       // 新插入的代码块需要着色（已着色的块由 data-wtmd-hl 标记跳过）
       if (typeof __wtmdHighlight === 'function') { __wtmdHighlight(container); }
       // 新插入的 mermaid 块需要渲染，未变化块的已渲染 SVG 保持原位
@@ -239,17 +259,53 @@ enum StyleSheet {
     // 位置记忆：⌘/ 切到源码再切回来，整个页面是 reload 出来的，scrollY 归零。
     // 所以记的不是像素，而是「视口顶部落在哪个顶层块、块内偏了多少」——
     // #wtmd-content 的顶层子元素数 == 顶层块数，这条不变式让下标有意义。
+    //
+    // 顺带把这一块的源码行一起报上去：分栏联动靠它反过来推源码（预览滚到哪，
+    // 源码跟到哪）。行号由 __wtmdSetLines 打在块节点上。
     function __wtmdCurrentAnchor() {
       var root = document.getElementById('wtmd-content');
-      if (!root || root.children.length === 0) { return { index: -1, offset: 0 }; }
+      if (!root || root.children.length === 0) { return { index: -1, offset: 0, line: -1 }; }
       var kids = root.children;
       for (var i = 0; i < kids.length; i++) {
         var rect = kids[i].getBoundingClientRect();
         // 第一个「还没完全滚出视口」的块就是锚点
-        if (rect.bottom > 1) { return { index: i, offset: -rect.top }; }
+        if (rect.bottom > 1) { return { index: i, offset: -rect.top, line: __wtmdLineOf(kids[i]) }; }
       }
       // 已经滚过最后一个块的底边：钉在最后一块
-      return { index: kids.length - 1, offset: 0 };
+      return { index: kids.length - 1, offset: 0, line: __wtmdLineOf(kids[kids.length - 1]) };
+    }
+    // 分栏联动用的块清单：只收带行号的顶层块（目录块与脚注区没有，跳过）。
+    function __wtmdLineBlocks() {
+      var root = document.getElementById('wtmd-content');
+      if (!root) { return []; }
+      var out = [];
+      var kids = root.children;
+      for (var i = 0; i < kids.length; i++) {
+        var line = __wtmdLineOf(kids[i]);
+        if (line >= 0) { out.push({ el: kids[i], line: line }); }
+      }
+      return out;
+    }
+    // 滚到「起始行 <= line 的最后一块」：光标落在块内任何一行，看的都是这一块。
+    // 贴近视口顶端 8px，而不是 scrollIntoView——后者会把块顶直接顶到 0，
+    // 标题的下缘阴影/上标字会被窗口边缘切掉。
+    function __wtmdScrollToLine(line) {
+      var list = __wtmdLineBlocks();
+      if (list.length === 0) { return false; }
+      var target = list[0];
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].line <= line) { target = list[i]; } else { break; }
+      }
+      // 第一块就是「回到顶上」：按块顶算会停在 body 的上内边距下面，
+      // 读者看到的是「滚到最上面却还差一截」。
+      if (target === list[0]) {
+        window.scrollTo(0, 0);
+        return true;
+      }
+      var current = window.scrollY || document.documentElement.scrollTop || 0;
+      var y = current + target.el.getBoundingClientRect().top - 8;
+      window.scrollTo(0, Math.max(0, y));
+      return true;
     }
     function __wtmdRestoreAnchor(index, offset) {
       var root = document.getElementById('wtmd-content');
@@ -282,7 +338,7 @@ enum StyleSheet {
           anchorFrame = 0;
           if (!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.wtmd)) { return; }
           var a = __wtmdCurrentAnchor();
-          window.webkit.messageHandlers.wtmd.postMessage({ anchor: a.index, offset: a.offset });
+          window.webkit.messageHandlers.wtmd.postMessage({ anchor: a.index, offset: a.offset, line: a.line });
         });
       }, { passive: true });
       var timer = null;

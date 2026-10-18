@@ -16,6 +16,12 @@ struct PreviewView: NSViewRepresentable {
     var baseURL: URL?
     /// Where the reader was, shared with the editor across view rebuilds.
     var positionMemory: PositionMemory?
+    /// 分栏联动：把这一行对应的块滚到视口顶部。
+    var scrollLine: SplitScrollRequest?
+    /// 视口顶部落在哪一行（源码行号，找不到块时报 -1）。
+    var onLineChange: ((Int) -> Void)?
+    /// 每个顶层块的源码起始行，与 `html` 里拼出的块一一对应。
+    var blockLines: [Int] = []
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -42,14 +48,21 @@ struct PreviewView: NSViewRepresentable {
 
         if html != coordinator.lastHTML {
             coordinator.lastHTML = html
+            coordinator.lastBlockLines = blockLines
+            let lines = PreviewView.encodeLines(blockLines)
             if let diff, !diff.isEmpty {
                 // 增量：只替换变化段，未变块（图片/图表）保持原位
                 let payload = diffPayload(diff)
-                coordinator.webView.evaluateJavaScript("__wtmdUpdateRange(\(payload))")
+                coordinator.webView.evaluateJavaScript("__wtmdUpdateRange(\(payload), \(lines))")
             } else {
                 let json = encodeJS(html)
-                coordinator.webView.evaluateJavaScript("__wtmdUpdate(\(json))")
+                coordinator.webView.evaluateJavaScript("__wtmdUpdate(\(json), \(lines))")
             }
+        } else if blockLines != coordinator.lastBlockLines {
+            // 文本没变、只有行号变了（理论上同一份文本不会，但换文档时会走 reload
+            // 之外的路径）——顺手对齐一次，免得联动指到旧行。
+            coordinator.lastBlockLines = blockLines
+            coordinator.webView.evaluateJavaScript("__wtmdSetLines(\(PreviewView.encodeLines(blockLines)))")
         }
 
         // 主题热切换：只替换变量层，正文 DOM 与滚动位置不动
@@ -70,6 +83,12 @@ struct PreviewView: NSViewRepresentable {
             coordinator.webView.evaluateJavaScript(
                 "var el = document.getElementById(\(json)); if (el) el.scrollIntoView({behavior:'smooth', block:'start'});"
             )
+        }
+
+        // 分栏联动：源码光标换了段，把预览滚过去
+        if let scrollLine, scrollLine.id != coordinator.lastScrollLineID {
+            coordinator.lastScrollLineID = scrollLine.id
+            coordinator.scrollToLine(scrollLine.line)
         }
     }
 
@@ -93,14 +112,22 @@ struct PreviewView: NSViewRepresentable {
         var parent: PreviewView
         let webView: WKWebView
         var lastHTML = ""
+        var lastBlockLines: [Int] = []
         var lastThemeCSS = ""
         var lastLayoutCSS = ""
         var lastGeneration = -1
         var lastJumpID = ""
+        var lastScrollLineID = 0
         /// 文档未加载完时暂存的主题，didFinish 后补发。
         private var pendingThemeCSS: String?
         /// 同上，版式。
         private var pendingLayoutCSS: String?
+        /// 同上，联动滚动。
+        private var pendingScrollLine: Int?
+        /// 刚装载完的一小段时间内不报联动行号：恢复上次位置本身会触发 scroll 事件，
+        /// 那一帧的位置是「上次读到哪」，不是「读者现在滚到哪」。让它去推源码，
+        /// 会把刚恢复好的光标位置顶回文首。
+        private var ignoreLineUntil: TimeInterval = 0
         /// 重建前记住的锚点，页面加载完成后回填一次。
         private var pendingAnchor: PositionMemory.PreviewAnchor?
 
@@ -136,6 +163,7 @@ struct PreviewView: NSViewRepresentable {
             // 重载后的 DOM 就是当前 html/主题这一代，先对齐基准：
             // 否则首帧会把上一轮的 diff 套用到刚装载的 DOM 上（模式切换回来时会错位）
             lastHTML = parent.html
+            lastBlockLines = parent.blockLines
             lastThemeCSS = parent.themeCSS
             lastLayoutCSS = parent.layoutCSS
             lastGeneration = parent.generation
@@ -166,9 +194,21 @@ struct PreviewView: NSViewRepresentable {
             webView.evaluateJavaScript("__wtmdSetLayout(\(json))")
         }
 
+        /// 滚到某一行对应的块（分栏联动）。加载中先存着，didFinish 后补一次。
+        func scrollToLine(_ line: Int) {
+            guard !webView.isLoading else {
+                pendingScrollLine = line
+                return
+            }
+            webView.evaluateJavaScript("__wtmdScrollToLine(\(line))")
+        }
+
         nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                self.ignoreLineUntil = ProcessInfo.processInfo.systemUptime + 0.6
+                // 刚装载的 DOM 还没有行号，先打一遍（联动从这里开始才有意义）
+                self.webView.evaluateJavaScript("__wtmdSetLines(\(PreviewView.encodeLines(self.parent.blockLines)))")
                 if let pending = self.pendingThemeCSS {
                     self.pendingThemeCSS = nil
                     let json = PreviewView.encodeJSStatic(pending)
@@ -186,6 +226,11 @@ struct PreviewView: NSViewRepresentable {
                     self.webView.evaluateJavaScript(
                         "__wtmdRestoreAnchor(\(anchor.blockIndex), \(anchor.offset))"
                     )
+                }
+                // 联动滚动放在最后：它代表「光标现在在哪」，比上次的位置更权威。
+                if let line = self.pendingScrollLine {
+                    self.pendingScrollLine = nil
+                    self.webView.evaluateJavaScript("__wtmdScrollToLine(\(line))")
                 }
             }
         }
@@ -212,6 +257,13 @@ struct PreviewView: NSViewRepresentable {
                     self?.parent.currentSlug = slug
                 }
             }
+            // 分栏联动：视口顶部落在哪一行。每帧一条，先取回调再跳线程——
+            // parent 是个 struct，异步块里再去读它就晚了一拍。
+            if let line = (body["line"] as? NSNumber)?.intValue, line >= 0,
+               ProcessInfo.processInfo.systemUptime >= ignoreLineUntil {
+                let handler = parent.onLineChange
+                DispatchQueue.main.async { handler?(line) }
+            }
         }
     }
 
@@ -220,5 +272,10 @@ struct PreviewView: NSViewRepresentable {
               let json = String(data: data, encoding: .utf8)
         else { return "\"\"" }
         return String(json.dropFirst().dropLast())
+    }
+
+    /// `[0, 2, 5]` → JS 数组字面量。行号都是非负整数，不需要转义。
+    static func encodeLines(_ lines: [Int]) -> String {
+        "[" + lines.map(String.init).joined(separator: ",") + "]"
     }
 }

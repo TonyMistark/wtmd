@@ -8,6 +8,8 @@ struct EditorTextView: NSViewRepresentable {
     /// 待插入的图片引用（由 DocumentStore 生成，插入后清空）。
     @Binding var pendingImageInsert: String?
     var jump: JumpRequest?
+    /// 分栏联动：滚到某一行，但**不动光标、不抢焦点**——读者只是在看，不是要在这里写。
+    var syncReveal: SplitScrollRequest?
     /// 图片粘贴落地回调：返回 true 表示已处理。
     var onImagePaste: ((Data) -> Bool)?
     /// 光标行保持垂直居中。
@@ -52,6 +54,12 @@ struct EditorTextView: NSViewRepresentable {
         if let jump, jump.id != coordinator.lastJumpID {
             coordinator.lastJumpID = jump.id
             coordinator.jump(toLine: jump.line, column: jump.column, length: jump.length)
+        }
+
+        // 分栏联动：预览滚到了别处，源码跟上（只滚，不碰选区与焦点）
+        if let syncReveal, syncReveal.id != coordinator.lastSyncRevealID {
+            coordinator.lastSyncRevealID = syncReveal.id
+            coordinator.revealLine(syncReveal.line)
         }
 
         if let insert = pendingImageInsert, insert != coordinator.lastInsertedImage {
@@ -108,6 +116,7 @@ struct EditorTextView: NSViewRepresentable {
         /// 粘贴板。测试换成私有板，免得动到用户当前的剪贴板内容。
         var pasteboard: NSPasteboard = .general
         var lastJumpID = ""
+        var lastSyncRevealID = 0
         var lastInsertedImage = ""
         /// 已经生效的开关状态，用来只在真正变化时重刷。
         var appliedFocusMode = false
@@ -610,6 +619,16 @@ struct EditorTextView: NSViewRepresentable {
                 reveal(target)
             }
             textView.window?.makeFirstResponder(textView)
+        }
+
+        /// 分栏联动：把某一行滚进视野。不改选区、不抢焦点——读者在右边读，
+        /// 左边的光标不该被一起搬走（那样再回来打字就得重新找地方）。
+        func revealLine(_ line: Int) {
+            guard line >= 0, line < lineStarts.count else { return }
+            let content = NSString(string: textView.string)
+            let start = lineStarts[line]
+            let end = line + 1 < lineStarts.count ? lineStarts[line + 1] - 1 : content.length
+            reveal(NSRange(location: start, length: max(0, end - start)))
         }
 
         /// 让目标停在大约三分之一处，而不是贴着视口边缘。

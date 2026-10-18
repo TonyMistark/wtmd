@@ -69,4 +69,16 @@ public struct RenderResult: Sendable {
     /// 顶层块 HTML 数组（`html` = `blocks.joined()`）。
     /// 增量渲染以此为 diff 基准，避免为同一份文本重复解析。
     public let blocks: [String]
+    /// 每个顶层块的源码起始行（0-based），与 `blocks` 平行。
+    ///
+    /// 分栏联动靠它把「预览里的第几块」翻译回「源码里的第几行」。脚注区块
+    /// 作为一个块追加在尾部，但它不对应正文里的任何一行，记 `-1`。
+    public let blockLines: [Int]
+
+    public init(html: String, outline: [OutlineItem], blocks: [String], blockLines: [Int] = []) {
+        self.html = html
+        self.outline = outline
+        self.blocks = blocks
+        self.blockLines = blockLines
+    }
 }
