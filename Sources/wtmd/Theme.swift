@@ -12,12 +12,12 @@ enum StyleSheet {
       background: var(--bg);
       color: var(--fg);
       font-family: var(--font-body);
-      font-size: 16px;
-      line-height: 1.75;
+      font-size: var(--wtmd-font-size, 16px);
+      line-height: var(--wtmd-line-height, 1.75);
       -webkit-font-smoothing: antialiased;
     }
     #wtmd-content {
-      max-width: 760px;
+      max-width: var(--wtmd-measure, 760px);
       margin: 0 auto;
     }
     h1, h2, h3, h4, h5, h6 {
@@ -224,6 +224,17 @@ enum StyleSheet {
       if (el) { el.textContent = cssText; }
       // 图表颜色已烘焙进 SVG，主题变量变化后需按新配色重绘
       if (typeof __wtmdMermaidRenderAll === 'function') { __wtmdMermaidRenderAll(true); }
+    }
+    // 版式层：只换变量文本，不重载页面。元素可能不存在（导出文档未带版式），
+    // 就现建一个——同一段脚本要在预览与导出的 HTML 里都能跑。
+    function __wtmdSetLayout(cssText) {
+      var el = document.getElementById('wtmd-layout');
+      if (!el) {
+        el = document.createElement('style');
+        el.id = 'wtmd-layout';
+        document.head.appendChild(el);
+      }
+      if (el.textContent !== cssText) { el.textContent = cssText; }
     }
     // 位置记忆：⌘/ 切到源码再切回来，整个页面是 reload 出来的，scrollY 归零。
     // 所以记的不是像素，而是「视口顶部落在哪个顶层块、块内偏了多少」——
@@ -537,9 +548,14 @@ enum StyleSheet {
         title: String,
         body: String,
         themeCSS: String,
-        includeScript: Bool
+        includeScript: Bool,
+        layoutCSS: String = ""
     ) -> String {
         let scriptTag = includeScript ? "<script>\n\(script)\n</script>\n" : ""
+        // 版式层独立成一块：切主题只改 #wtmd-theme，读者的字号行距不受牵连
+        let layoutTag = layoutCSS.isEmpty
+            ? ""
+            : "<style id=\"wtmd-layout\">\n\(layoutCSS)\n</style>\n"
         let highlight = highlightScript
         let highlightTag = highlight.isEmpty ? "" : "<script>\n\(highlight)\n</script>\n"
         let mermaid = body.contains("language-mermaid") ? mermaidScript : ""
@@ -559,7 +575,7 @@ enum StyleSheet {
         <title>\(title)</title>
         <style id="wtmd-base">\(baseCSS)</style>
         <style id="wtmd-theme">\(themeCSS)</style>
-        \(katexStyleTag)\(mermaidTag)\(highlightTag)\(katexTag)\(scriptTag)</head>
+        \(layoutTag)\(katexStyleTag)\(mermaidTag)\(highlightTag)\(katexTag)\(scriptTag)</head>
         <body>
         <div id="wtmd-content">
         \(body)

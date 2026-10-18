@@ -5,6 +5,7 @@ struct wtmdApp: App {
     @StateObject private var store: DocumentStore
     @StateObject private var workspace: WorkspaceStore
     @StateObject private var writing = WritingSettings()
+    @StateObject private var typesetting = TypesettingSettings()
     @StateObject private var updates = UpdateChecker()
     @StateObject private var overrides = ShortcutOverrides()
     @State private var paletteVisible = false
@@ -33,6 +34,7 @@ struct wtmdApp: App {
                 .environmentObject(store)
                 .environmentObject(workspace)
                 .environmentObject(writing)
+                .environmentObject(typesetting)
                 .environmentObject(updates)
                 .environmentObject(overrides)
                 .environmentObject(store.themeManager)
@@ -47,6 +49,7 @@ struct wtmdApp: App {
             }
             .environmentObject(store.themeManager)
             .environmentObject(writing)
+            .environmentObject(typesetting)
             .environmentObject(overrides)
         }
         .commands {

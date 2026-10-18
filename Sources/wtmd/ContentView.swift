@@ -7,6 +7,7 @@ struct ContentView: View {
     @EnvironmentObject var workspace: WorkspaceStore
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var writing: WritingSettings
+    @EnvironmentObject var typesetting: TypesettingSettings
     @EnvironmentObject var updates: UpdateChecker
     @EnvironmentObject var overrides: ShortcutOverrides
     /// Owned by the app so the menu bar can open the palette too.
@@ -279,6 +280,7 @@ struct ContentView: View {
                 set: { store.currentSlug = $0 }
             ),
             themeCSS: themeManager.currentThemeCSS,
+            layoutCSS: typesetting.css,
             diff: store.pendingDiff,
             jump: store.previewJump,
             generation: store.renderGeneration,
