@@ -19,9 +19,15 @@ enum L10n {
     /// A test runner always sees the Chinese copy, so assertions on UI text do
     /// not depend on the CI machine's locale. `override` wins when set — that
     /// is how the English branch gets covered.
+    ///
+    /// Detection has to cover both runners: the XCTest path exposes
+    /// `XCTestCase`, but the swift-testing helper is a separate process that
+    /// loads **no** XCTest at all — its path (`swiftpm-testing-helper`) is the
+    /// only reliable trace it leaves.
     private static let isTestProcess: Bool = {
-        NSClassFromString("XCTestCase") != nil
-            || Bundle.main.bundleURL.pathExtension == "xctest"
+        if NSClassFromString("XCTestCase") != nil { return true }
+        let path = Bundle.main.bundlePath + "/" + (CommandLine.arguments.first ?? "")
+        return path.contains("xctest") || path.contains("swiftpm")
     }()
 
     static var isChinese: Bool {
