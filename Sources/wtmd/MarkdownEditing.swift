@@ -441,7 +441,7 @@ enum MarkdownEditing {
 
         // 无序列表 / 任务列表
         if let marker = rest.first, "-*+".contains(marker) {
-            var body = String(marker)
+            let body = String(marker)
             rest = rest.dropFirst()
             var gap = ""
             while let character = rest.first, character == " " || character == "\t" {
