@@ -241,11 +241,41 @@ struct EditorTextView: NSViewRepresentable {
             isEditing = false
         }
 
-        /// 粘贴拦截：粘贴板含图片数据时走落地管线，跳过默认粘贴。
+        /// 回车与 Tab 先问写作规则：列表明明还在，回车不该把它断掉。
+        ///
+        /// 输入法组合期间一律放行——这时的回车是「确认候选」、Tab 是「翻页」，
+        /// 抢过来等于中文打不进去（与 `syncText` 里那条限制同源）。
         func textView(
             _ textView: NSTextView,
             doCommandBy commandSelector: Selector
-        ) -> Bool { false }
+        ) -> Bool {
+            guard !textView.hasMarkedText() else { return false }
+            let selection = textView.selectedRange()
+            let edit: MarkdownEdit?
+            switch commandSelector {
+            case #selector(NSResponder.insertNewline(_:)):
+                edit = MarkdownEditing.newline(in: textView.string, selection: selection)
+            case #selector(NSResponder.insertTab(_:)):
+                edit = MarkdownEditing.indent(in: textView.string, selection: selection, outdent: false)
+            case #selector(NSResponder.insertBacktab(_:)):
+                edit = MarkdownEditing.indent(in: textView.string, selection: selection, outdent: true)
+            default:
+                return false
+            }
+            guard let edit else { return false }
+            applyEditing(edit)
+            return true
+        }
+
+        /// 一次 `insertText` 落地：撤销一步，高亮与光标行由 `textDidChange` 接手。
+        private func applyEditing(_ edit: MarkdownEdit) {
+            // 不打断合并的话，这次缩进会被并进上一步输入里，⌘Z 一次退掉两件事
+            textView.breakUndoCoalescing()
+            textView.insertText(edit.text, replacementRange: edit.range)
+            if let after = edit.selectionAfter {
+                textView.setSelectedRange(after)
+            }
+        }
 
         /// 光标处插入文本（用于图片引用）。
         func insertAtCursor(_ snippet: String) {
@@ -704,16 +734,30 @@ struct EditorTextView: NSViewRepresentable {
             else if trimmed.hasPrefix(">") {
                 storage.addAttribute(.foregroundColor, value: NSColor.systemGreen, range: lineRange)
                 if let markerRange = firstMatch(lineNS, pattern: #"^>\s?"#) {
-                    storage.addAttribute(.foregroundColor, value: NSColor.systemGreen.withAlphaComponent(0.55), range: markerRange)
+                    // `firstMatch` 给的是行内偏移，染色的 range 要用绝对位置：
+                    // 少了这个 base，只有文档第一行能染对，其余行都在染别处。
+                    storage.addAttribute(
+                        .foregroundColor,
+                        value: NSColor.systemGreen.withAlphaComponent(0.55),
+                        range: offset(markerRange, by: lineRange.location)
+                    )
                 }
             }
             // 普通行：行内标记
             else {
                 // 列表标记
                 if let m = firstMatch(lineNS, pattern: #"^\s*(?:[-*+]|\d{1,9}[.)])(\s+\[[ xX]\])?\s"#) {
-                    storage.addAttribute(.foregroundColor, value: NSColor.systemOrange, range: m)
+                    storage.addAttribute(
+                        .foregroundColor,
+                        value: NSColor.systemOrange,
+                        range: offset(m, by: lineRange.location)
+                    )
                 } else if let m = firstMatch(lineNS, pattern: #"^\s*(?:[-*+]|\d{1,9}[.)])\s?"#) {
-                    storage.addAttribute(.foregroundColor, value: NSColor.systemOrange, range: m)
+                    storage.addAttribute(
+                        .foregroundColor,
+                        value: NSColor.systemOrange,
+                        range: offset(m, by: lineRange.location)
+                    )
                 }
 
                 apply(lineNS, to: storage, base: lineRange.location)
@@ -764,5 +808,10 @@ struct EditorTextView: NSViewRepresentable {
     private static func firstMatch(_ line: NSString, pattern: String) -> NSRange? {
         guard let re = try? NSRegularExpression(pattern: pattern) else { return nil }
         return re.firstMatch(in: line as String, range: NSRange(location: 0, length: line.length))?.range
+    }
+
+    /// 行内偏移换成文档内偏移。
+    private static func offset(_ range: NSRange, by base: Int) -> NSRange {
+        NSRange(location: base + range.location, length: range.length)
     }
 }
