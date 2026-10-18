@@ -67,7 +67,7 @@ enum ShortcutFormatter {
         case .return: return "↩"
         case .escape: return "⎋"
         case .tab: return "⇥"
-        case .space: return "空格"
+        case .space: return t("Space", "空格")
         case .delete: return "⌫"
         default: return String(key.character).uppercased()
         }
@@ -140,7 +140,7 @@ struct CommandPalette: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
 
-            TextField("输入命令…", text: $query)
+            TextField(t("Type a command…", "输入命令…"), text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .focused($searchFocused)
@@ -153,7 +153,7 @@ struct CommandPalette: View {
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
-                .help("清空")
+                .help(t("Clear", "清空"))
             }
         }
         .padding(.horizontal, 14)
@@ -162,10 +162,10 @@ struct CommandPalette: View {
 
     private var emptyState: some View {
         VStack(spacing: 5) {
-            Text("没有匹配的命令")
+            Text(t("No matching commands", "没有匹配的命令"))
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            Text("试试「导出」「专注」「主题」")
+            Text(t("Try \"export\", \"focus\", \"theme\"", "试试「导出」「专注」「主题」"))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }

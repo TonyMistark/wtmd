@@ -165,11 +165,11 @@ extension Theme {
     """
 
     static let builtIns: [Theme] = [
-        Theme(id: defaultID, name: "wtmd 默认", author: "wtmd", isBuiltIn: true,
+        Theme(id: defaultID, name: t("wtmd Default", "wtmd 默认"), author: "wtmd", isBuiltIn: true,
               light: defaultLight, dark: defaultDark),
-        Theme(id: "builtin.paperInk", name: "纸墨", author: "wtmd", isBuiltIn: true,
+        Theme(id: "builtin.paperInk", name: t("Paper & Ink", "纸墨"), author: "wtmd", isBuiltIn: true,
               light: paperInkLight, dark: paperInkDark),
-        Theme(id: "builtin.terminal", name: "终端", author: "wtmd", isBuiltIn: true,
+        Theme(id: "builtin.terminal", name: t("Terminal", "终端"), author: "wtmd", isBuiltIn: true,
               light: nil, dark: terminalDark),
     ]
 }
@@ -249,28 +249,28 @@ struct ThemeSettingsView: View {
 
     var body: some View {
         Form {
-            Picker("主题", selection: themeSelection) {
+            Picker(t("Theme", "主题"), selection: themeSelection) {
                 ForEach(themeManager.themes) { theme in
                     Text(theme.name).tag(theme.id)
                 }
             }
 
             if !themeManager.currentTheme.isBuiltIn {
-                LabeledContent("来源", value: "自定义")
+                LabeledContent(t("Source", "来源"), value: t("Custom", "自定义"))
             }
-            LabeledContent("作者", value: themeManager.currentTheme.author.isEmpty ? "—" : themeManager.currentTheme.author)
-            LabeledContent("外观", value: appearanceDescription)
+            LabeledContent(t("Author", "作者"), value: themeManager.currentTheme.author.isEmpty ? "—" : themeManager.currentTheme.author)
+            LabeledContent(t("Appearance", "外观"), value: appearanceDescription)
 
             HStack {
-                Button("打开主题文件夹…") { themeManager.openThemesFolder() }
+                Button(t("Open Themes Folder…", "打开主题文件夹…")) { themeManager.openThemesFolder() }
                 Spacer()
-                Button("重新扫描") { themeManager.reload() }
+                Button(t("Rescan", "重新扫描")) { themeManager.reload() }
             }
 
-            Section("写作") {
-                Toggle("打字机模式", isOn: $writing.typewriter)
-                Toggle("专注模式", isOn: $writing.focusMode)
-                Text("打字机让光标行停在屏幕中部；专注把当前段落之外的内容退成浅灰。两者可同时开启。")
+            Section(t("Writing", "写作")) {
+                Toggle(t("Typewriter Mode", "打字机模式"), isOn: $writing.typewriter)
+                Toggle(t("Focus Mode", "专注模式"), isOn: $writing.focusMode)
+                Text(t("Typewriter keeps the caret line centred; focus dims everything outside the current paragraph. Both can be on at once.", "打字机让光标行停在屏幕中部；专注把当前段落之外的内容退成浅灰。两者可同时开启。"))
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -289,9 +289,9 @@ struct ThemeSettingsView: View {
     private var appearanceDescription: String {
         let theme = themeManager.currentTheme
         switch (theme.hasLight, theme.hasDark) {
-        case (true, true): return "浅色 / 深色（跟随系统）"
-        case (true, false): return "仅浅色"
-        case (false, true): return "常暗"
+        case (true, true): return t("Light / Dark (follows system)", "浅色 / 深色（跟随系统）")
+        case (true, false): return t("Light only", "仅浅色")
+        case (false, true): return t("Dark", "常暗")
         case (false, false): return "—"
         }
     }

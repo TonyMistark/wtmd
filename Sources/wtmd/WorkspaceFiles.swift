@@ -16,19 +16,19 @@ enum FileOperationError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .emptyName:
-            return "名字不能为空"
+            return t("The name cannot be empty", "名字不能为空")
         case .nameContainsSeparator:
-            return "名字里不能有「/」或「:」"
+            return t("The name cannot contain / or :", "名字里不能有「/」或「:」")
         case .hiddenName:
-            return "名字不能以「.」开头"
+            return t("The name cannot start with a dot", "名字不能以「.」开头")
         case .alreadyExists(let name):
-            return "「\(name)」已经存在"
+            return t("\(name) already exists", "「\(name)」已经存在")
         case .notFound(let name):
-            return "「\(name)」已经不在了"
+            return t("\(name) is already gone", "「\(name)」已经不在了")
         case .notADirectory(let name):
-            return "「\(name)」不是一个文件夹"
+            return t("\(name) is not a folder", "「\(name)」不是一个文件夹")
         case .moveIntoItself(let name):
-            return "不能把「\(name)」移到它自己里面"
+            return t("Cannot move \(name) into itself", "不能把「\(name)」移到它自己里面")
         case .failed(let reason):
             return reason
         }
@@ -41,8 +41,9 @@ enum FileOperationError: LocalizedError, Equatable {
 /// 脱离 store 单独验证。目录的扇出、编号、扩展名处理都在这里定死，界面只负责
 /// 把用户的意图翻译成一次调用。
 enum WorkspaceFiles {
-    static let documentBaseName = "未命名"
-    static let folderBaseName = "新建文件夹"
+    /// Computed, not stored: the name follows the system language.
+    static var documentBaseName: String { t("Untitled", "未命名") }
+    static var folderBaseName: String { t("New Folder", "新建文件夹") }
 
     /// Creates an empty Markdown file with a name that is free right now.
     ///

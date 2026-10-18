@@ -92,7 +92,7 @@ final class FindController: ObservableObject {
         guard isVisible else { return "" }
         if let patternError { return patternError }
         if query.isEmpty { return "" }
-        guard let currentIndex, !matches.isEmpty else { return "无结果" }
+        guard let currentIndex, !matches.isEmpty else { return t("No results", "无结果") }
         let suffix = matches.count >= FindEngine.matchLimit ? "+" : ""
         return "\(currentIndex + 1) / \(matches.count)\(suffix)"
     }

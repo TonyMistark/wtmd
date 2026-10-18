@@ -26,11 +26,11 @@ struct ConflictBanner: View {
             Spacer(minLength: 12)
 
             if change == .deleted {
-                Button("留作草稿") { resolve(.keepAsDraft) }
-                Button("另存为…") { resolve(.saveAs) }
+                Button(t("Keep as Draft", "留作草稿")) { resolve(.keepAsDraft) }
+                Button(t("Save As…", "另存为…")) { resolve(.saveAs) }
             } else {
-                Button("载入磁盘版本") { resolve(.reloadDisk) }
-                Button("保留我的修改") { resolve(.keepLocal) }
+                Button(t("Load Disk Version", "载入磁盘版本")) { resolve(.reloadDisk) }
+                Button(t("Keep My Changes", "保留我的修改")) { resolve(.keepLocal) }
             }
         }
         .controlSize(.small)
@@ -44,15 +44,15 @@ struct ConflictBanner: View {
 
     private var title: String {
         switch change {
-        case .modified: return "「\(fileName)」已在别处被修改"
-        case .deleted: return "「\(fileName)」已被删除"
+        case .modified: return t("\(fileName) was changed elsewhere", "「\(fileName)」已在别处被修改")
+        case .deleted: return t("\(fileName) has been deleted", "「\(fileName)」已被删除")
         }
     }
 
     private var detail: String {
         switch change {
-        case .modified: return "自动保存已暂停，磁盘上的版本没有被覆盖。"
-        case .deleted: return "自动保存已暂停。另存为一个新文件，或把内容留作草稿。"
+        case .modified: return t("Autosave is paused; the version on disk was not overwritten.", "自动保存已暂停，磁盘上的版本没有被覆盖。")
+        case .deleted: return t("Autosave is paused. Save the content as a new file, or keep it as a draft.", "自动保存已暂停。另存为一个新文件，或把内容留作草稿。")
         }
     }
 }

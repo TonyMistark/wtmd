@@ -65,10 +65,10 @@ struct ImageAssets {
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         formatter.locale = Locale(identifier: "zh_CN")
         let stamp = formatter.string(from: date)
-        var name = "截图-\(stamp).png"
+        var name = "\(L10n.screenshotPrefix)-\(stamp).png"
         var n = 2
         while FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path) {
-            name = "截图-\(stamp)-\(n).png"
+            name = "\(L10n.screenshotPrefix)-\(stamp)-\(n).png"
             n += 1
         }
         return name
@@ -92,7 +92,7 @@ struct ImageAssets {
             panel.canChooseFiles = false
             panel.canChooseDirectories = true
             panel.canCreateDirectories = true
-            panel.message = "选择图片存放目录（将创建 assets 子目录）"
+            panel.message = t("Choose where images are stored (an assets subfolder will be created)", "选择图片存放目录（将创建 assets 子目录）")
             guard panel.runModal() == .OK, let url = panel.url else { return nil }
             baseDir = url
         }

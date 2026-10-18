@@ -37,9 +37,9 @@ struct wtmdApp: App {
         Settings {
             TabView {
                 ThemeSettingsView()
-                    .tabItem { Label("主题", systemImage: "paintpalette") }
+                    .tabItem { Label(t("Theme", "主题"), systemImage: "paintpalette") }
                 ShortcutSettingsView()
-                    .tabItem { Label("快捷键", systemImage: "keyboard") }
+                    .tabItem { Label(t("Shortcuts", "快捷键"), systemImage: "keyboard") }
             }
             .environmentObject(store.themeManager)
             .environmentObject(writing)
@@ -75,7 +75,7 @@ struct wtmdApp: App {
                 menuItem(.toggleTypewriter)
                 menuItem(.toggleFocus)
                 Divider()
-                Button("命令面板…") { paletteVisible = true }
+                Button(t("Command Palette…", "命令面板…")) { paletteVisible = true }
                     .keyboardShortcut("k", modifiers: .command)
             }
         }
