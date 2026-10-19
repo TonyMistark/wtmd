@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 // MARK: - 应用级的那一份
@@ -21,6 +22,8 @@ final class SharedAppEnvironment: ObservableObject {
     let writingStats: WritingStats
     let recentFiles: RecentFiles
     let conflicts: ConflictArchive
+    /// 谁开着哪一篇。同一篇稿子只该在一扇窗里打开——见 `OpenDocuments`。
+    let openDocuments: OpenDocuments
 
     /// 参数默认 `nil` 而不是直接给实例：默认实参在非隔离上下文里求值，
     /// 而 `WritingStats` 这类类型的主初始化器是 main-actor 隔离的。
@@ -33,7 +36,8 @@ final class SharedAppEnvironment: ObservableObject {
         overrides: ShortcutOverrides? = nil,
         writingStats: WritingStats? = nil,
         recentFiles: RecentFiles? = nil,
-        conflicts: ConflictArchive? = nil
+        conflicts: ConflictArchive? = nil,
+        openDocuments: OpenDocuments? = nil
     ) {
         self.themeManager = themeManager ?? ThemeManager()
         self.writing = writing ?? WritingSettings()
@@ -44,6 +48,7 @@ final class SharedAppEnvironment: ObservableObject {
         self.writingStats = writingStats ?? WritingStats()
         self.recentFiles = recentFiles ?? RecentFiles()
         self.conflicts = conflicts ?? ConflictArchive()
+        self.openDocuments = openDocuments ?? OpenDocuments()
     }
 }
 
@@ -64,6 +69,8 @@ final class WindowModel: ObservableObject, Identifiable {
     let shared: SharedAppEnvironment
     /// ⌘K 面板：每扇窗口一份。A 窗开着面板，不该盖在 B 窗上。
     @Published var paletteVisible = false
+    /// 把 `store.fileURL` 的变化记进应用级的「谁开着哪一篇」。
+    private var documentClaim: AnyCancellable?
 
     /// 每扇窗口带一份自己的会话：主窗口用 `wtmd.session`，其余按窗口 id 各存一条。
     /// 关窗即结束那一条（`WindowCoordinator.finishRecord`），下次启动只摆回还开着的。
@@ -84,7 +91,9 @@ final class WindowModel: ObservableObject, Identifiable {
             conflicts: shared.conflicts,
             writingStats: shared.writingStats,
             themeManager: shared.themeManager,
-            recentFiles: shared.recentFiles
+            recentFiles: shared.recentFiles,
+            windowID: id,
+            openDocuments: shared.openDocuments
         )
         self.workspace = WorkspaceStore(session: session)
         // 树里改名/删除之后，这扇窗口的当前文档跟着磁盘走。每扇窗口一条线，
@@ -101,6 +110,17 @@ final class WindowModel: ObservableObject, Identifiable {
         if let workspaceRoot {
             workspace.open(workspaceRoot)
         }
+
+        // 谁开着哪一篇：跟着 `fileURL` 走。打开、新建、另存为、外部改名跟随、
+        // 文件消失——凡改 `fileURL` 的路径都自动落账，不靠每个入口记得登记。
+        documentClaim = store.$fileURL
+            .removeDuplicates()
+            .sink { [weak self] url in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.shared.openDocuments.update(url, for: self.id)
+                }
+            }
     }
 
     /// 这扇窗里还欠着一篇**没有名字**的字吗？
@@ -146,6 +166,9 @@ final class WindowCoordinator: ObservableObject {
     /// 可注入：测试进程没有显示器，`NSScreen.screens` 会是空的——那会让每一条
     /// 位置记录都被判成「不在屏幕上」，测试就永远测不到「照原样摆回去」。
     var screenFrames: () -> [CGRect] = { NSScreen.screens.map(\.visibleFrame) }
+    /// 已经关掉、但模型还留着的窗（主窗的会话要留给下次启动）。它们不再占着
+    /// 任何一篇稿子——否则副窗打开那篇会被送到一扇看不见的窗口。
+    private var closedWindows: Set<UUID> = []
 
     private final class Binding {
         weak var window: NSWindow?
@@ -174,6 +197,16 @@ final class WindowCoordinator: ObservableObject {
         windows[first.id] = first
         // 名单先抄下来，等开窗通道到手再摆——`openWindow` 只在场景里读得到。
         pendingRestorations = book.entries
+
+        // 「谁开着哪一篇」的两个出口：把占着它的窗口带到前面；以及判断那扇窗
+        // 还够不够得着（主窗 ⌘W 关掉后模型还在，但已经占不住稿子了）。
+        shared.openDocuments.reveal = { [weak self] id, url, request in
+            self?.revealDocument(id, url: url, jumpingTo: request)
+        }
+        shared.openDocuments.isReachable = { [weak self] id in
+            guard let self else { return false }
+            return !self.closedWindows.contains(id)
+        }
     }
 
     func model(for id: UUID) -> WindowModel? { windows[id] }
@@ -186,6 +219,25 @@ final class WindowCoordinator: ObservableObject {
         if let focused { return focused }
         if let key = model(for: NSApplication.shared.keyWindow) { return key }
         return primary
+    }
+
+    // MARK: - 打开文档
+
+    /// 有窗口想打开一篇已经在别处开着的稿子：把占着它的窗口带到前面。
+    ///
+    /// 带 `JumpRequest` 时还要在那扇窗里落到行列（`⌘⇧F` 的命中常常指着一篇
+    /// 已经开着的文档）。窗口关着/最小化时先弄回眼前——「跳过去」得让人看见。
+    private func revealDocument(_ id: UUID, url: URL, jumpingTo request: JumpRequest?) {
+        guard let model = windows[id] else { return }
+        // 登记可能晚了一步（那扇窗刚换了稿）：让它重新打开一次，顺带走一遍
+        // 会话位置与冲突存档。
+        let alreadyThere = model.store.fileURL.map { PathKey.isSame($0, url) } ?? false
+        if request != nil || !alreadyThere {
+            model.store.open(url: url, jumpingTo: request)
+        }
+        guard let target = window(for: id) else { return }
+        if target.isMiniaturized { target.deminiaturize(nil) }
+        target.makeKeyAndOrderFront(nil)
     }
 
     // MARK: - 开窗
@@ -273,12 +325,17 @@ final class WindowCoordinator: ObservableObject {
     /// 主窗口不在此列——它的会话还要留给下次启动，`workspace.close()` 会把
     /// 「上次打开的文件夹」一并抹掉。
     func windowDidClose(_ model: WindowModel) {
+        // 关掉的窗不再占着任何一篇稿子：副窗打开那篇时应该落在副窗，而不是
+        // 被送到一扇看不见的窗口。主窗也在此列——它的模型还留着（会话要留给
+        // 下次启动），可窗口本身已经不在了。
+        closedWindows.insert(model.id)
+        shared.openDocuments.release(model.id)
+        bindings.removeAll { $0.model.id == model.id }
         guard model.id != primary.id else { return }
         model.workspace.close()
         finishRecord(for: model)
         windows[model.id] = nil
         pendingFrames[model.id] = nil
-        bindings.removeAll { $0.model.id == model.id }
     }
 
     /// 关掉一扇窗 = 结束它那一条账。
@@ -312,6 +369,10 @@ final class WindowCoordinator: ObservableObject {
         guard let window else { return }
         bindings.removeAll { $0.window === window }
         bindings.append(Binding(window: window, model: model))
+        // 主窗 ⌘W 关掉又重开时，关窗那一刻放掉的登记在这里补回来；副窗则是
+        // 每次都幂等地写一遍当前这一篇。
+        closedWindows.remove(model.id)
+        shared.openDocuments.update(model.store.fileURL, for: model.id)
     }
 
     func model(for window: NSWindow?) -> WindowModel? {
