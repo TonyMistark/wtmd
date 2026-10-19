@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 @testable import wtmd
@@ -232,4 +233,40 @@ private final class TestClock {
     history.remove(newest)
 
     #expect(history.entries(for: article).compactMap { contents(of: $0.fileURL) } == ["第一版"])
+}
+
+/// 面板靠广播刷新：留下一版要说话，删掉一版也要说话。
+/// 反过来说，**没有留下**的时候不能说话——否则自动保存每 1.2 秒就抖一次面板。
+@Test func everyRealChangeAnnouncesItself() throws {
+    let root = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let clock = TestClock()
+    let history = DocumentHistory(directory: root, clock: { clock.now }, minimumInterval: 300)
+    let article = URL(fileURLWithPath: "/tmp/稿.md")
+
+    var announcements = 0
+    let token = history.objectWillChange.sink { _ in announcements += 1 }
+    defer { token.cancel() }
+
+    #expect(history.capture("第一版", for: article, force: true) != nil)
+    #expect(announcements == 1)
+
+    // 同样的内容不留第二遍，也就不该惊动面板
+    #expect(history.capture("第一版", for: article, force: true) == nil)
+    #expect(announcements == 1)
+
+    // 间隔内的普通写盘同样跳过
+    #expect(history.capture("第二版", for: article) == nil)
+    #expect(announcements == 1)
+
+    #expect(history.capture("第二版", for: article, force: true) != nil)
+    #expect(announcements == 2)
+
+    let newest = try #require(history.entries(for: article).first)
+    history.remove(newest)
+    #expect(announcements == 3)
+
+    history.removeAll(for: article)
+    #expect(announcements == 4)
 }

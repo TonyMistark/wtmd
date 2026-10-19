@@ -1,3 +1,4 @@
+import Combine
 import CryptoKit
 import Foundation
 
@@ -25,9 +26,15 @@ struct HistoryEntry: Identifiable, Equatable {
 ///   那里要记原路径；这里连这个都不必——目录名就是路径哈希，`meta.json` 只给人看）。
 /// - **同一篇只认一份**。目录名取 `PathKey.canonical` 的哈希，`/var` 与
 ///   `/private/var`、符号链接前后两种拼法都落进同一个目录。
-final class DocumentHistory {
+///
+/// 它是**应用级一份**的（历史目录只有一处）。多窗口下每个 `DocumentStore`
+/// 都订阅它：哪扇窗写下一版、删掉一版，别的窗的面板立刻跟上——否则读者会在
+/// 面板里看见一份已经不在磁盘上的旧账。
+final class DocumentHistory: ObservableObject {
     /// 根目录：其下每个子目录是一篇稿子的历史。
     let directory: URL
+    /// 每留下 / 删掉一版就 +1。面板靠它刷新，多窗口靠它广播。
+    @Published private(set) var revision = 0
     /// 留存时间。注入是为了测「间隔到了没有」与「三十天之外」这类边界。
     private let clock: () -> Date
     /// 两次自动留存至少隔这么久。打开与离开是「有意义的时刻」，不受它限制。
@@ -102,6 +109,7 @@ final class DocumentHistory {
         lastCapture[key] = stamp
         writeMeta(for: url, in: folder)
         prune(for: url)
+        revision += 1
         return HistoryEntry(fileURL: target, savedAt: stamp, bytes: Data(text.utf8).count)
     }
 
@@ -109,25 +117,29 @@ final class DocumentHistory {
 
     /// 这一篇的旧版，最新的在前。
     ///
-    /// 从目录本身推导：文件名里就有时间戳，目录列表就是账本。排序在时间相同时
-    /// 再看文件名，保证同一秒里的两版顺序稳定（`capture` 的 `-2` 后缀会排在前面）。
+    /// 从目录本身推导：文件名里就有时间戳，目录列表就是账本。排序的第三把钥匙
+    /// （创建时间）不是多余的：文件名只到秒，而「打开时留一版、紧接着又离开」
+    /// 会在同一秒里落下两版，只比文件名的话谁在上面全看内容哈希。
     func entries(for url: URL) -> [HistoryEntry] {
         let folder = self.folder(for: url)
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else {
             return []
         }
-        return names
-            .compactMap { name -> HistoryEntry? in
-                guard let savedAt = Self.date(fromName: name) else { return nil }
-                let fileURL = folder.appendingPathComponent(name)
-                let size = (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size]) as? Int
-                return HistoryEntry(fileURL: fileURL, savedAt: savedAt, bytes: size ?? 0)
-            }
-            .sorted {
-                $0.savedAt == $1.savedAt
-                    ? $0.fileURL.lastPathComponent > $1.fileURL.lastPathComponent
-                    : $0.savedAt > $1.savedAt
-            }
+        let rows: [(entry: HistoryEntry, created: Date)] = names.compactMap { name in
+            guard let savedAt = Self.date(fromName: name) else { return nil }
+            let fileURL = folder.appendingPathComponent(name)
+            let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
+            let size = attributes?[.size] as? Int
+            let created = (attributes?[.creationDate] as? Date)
+                ?? (attributes?[.modificationDate] as? Date)
+                ?? savedAt
+            return (HistoryEntry(fileURL: fileURL, savedAt: savedAt, bytes: size ?? 0), created)
+        }
+        return rows.sorted {
+            if $0.entry.savedAt != $1.entry.savedAt { return $0.entry.savedAt > $1.entry.savedAt }
+            if $0.created != $1.created { return $0.created > $1.created }
+            return $0.entry.fileURL.lastPathComponent > $1.entry.fileURL.lastPathComponent
+        }.map(\.entry)
     }
 
     func content(of entry: HistoryEntry) -> String? {
@@ -141,12 +153,14 @@ final class DocumentHistory {
 
     func remove(_ entry: HistoryEntry) {
         try? FileManager.default.removeItem(at: entry.fileURL)
+        revision += 1
     }
 
     /// 忘掉这一篇的全部历史（连同目录）。
     func removeAll(for url: URL) {
         try? FileManager.default.removeItem(at: folder(for: url))
         lastCapture[Self.key(for: url)] = nil
+        revision += 1
     }
 
     // MARK: - 位置

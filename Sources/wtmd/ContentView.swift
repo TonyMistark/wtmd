@@ -48,6 +48,18 @@ struct ContentView: View {
                 close: { conflictListVisible = false }
             )
         }
+        // 版本历史：写过的每一版都在这里，翻得回去、取得回来
+        .sheet(isPresented: $store.historyVisible) {
+            HistoryPanel(
+                documentName: store.displayName,
+                entries: store.historyEntries,
+                folder: store.historyFolder,
+                restore: { store.restoreHistory($0) },
+                delete: { store.discardHistory($0) },
+                clearAll: { store.clearHistory() },
+                close: { store.historyVisible = false }
+            )
+        }
         // 每天最多查一次新版本；失败静默，绝不打断写作
         .task { await updates.checkIfDue() }
         // 文档从任何入口打开（⌘O、最近文件、标题栏）后，工作区树跟上高亮
