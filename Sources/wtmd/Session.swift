@@ -53,11 +53,20 @@ final class Session {
     private let defaults: UserDefaults
     private let now: () -> Date
     private var snapshot: Snapshot
+    /// 一次性会话：不读也不写。第二扇窗口用它——它没有自己的记录可以恢复，
+    /// 也不该把主窗口的那一份覆盖掉。
+    private let persist: Bool
 
-    init(defaults: UserDefaults = .standard, now: @escaping () -> Date = Date.init) {
+    init(
+        persist: Bool = true,
+        defaults: UserDefaults = .standard,
+        now: @escaping () -> Date = Date.init
+    ) {
+        self.persist = persist
         self.defaults = defaults
         self.now = now
-        if let data = defaults.data(forKey: Self.key),
+        if persist,
+           let data = defaults.data(forKey: Self.key),
            let decoded = try? JSONDecoder().decode(Snapshot.self, from: data),
            decoded.version == Self.currentVersion {
             snapshot = decoded
@@ -65,6 +74,10 @@ final class Session {
             snapshot = Snapshot()
         }
     }
+
+    /// Whether this record outlives the window. Exposed for tests and for the
+    /// window layer, which decides where a new window's drafts go.
+    var isPersistent: Bool { persist }
 
     // MARK: - 工作区
 
@@ -189,6 +202,7 @@ final class Session {
     }
 
     private func flush() {
+        guard persist else { return }
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         defaults.set(data, forKey: Self.key)
     }

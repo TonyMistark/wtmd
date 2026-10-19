@@ -148,7 +148,8 @@ enum CommandCatalog {
         AppCommand(
             kind: .newDocument, title: t("New Document", "新建文档"), section: .file,
             symbol: "square.and.pencil", shortcut: KeyboardShortcut("n", modifiers: .command),
-            keywords: ["new", "create", "blank"], subtitle: nil
+            // 新建 = 另起一扇窗：搜「window」「窗口」也该找到它。
+            keywords: ["new", "create", "blank", "window", "新窗口"], subtitle: nil
         ),
         AppCommand(
             kind: .openDocument, title: t("Open…", "打开…"), section: .file,
@@ -339,6 +340,8 @@ struct CommandRuntime {
     let workspace: WorkspaceStore
     let writing: WritingSettings
     let updates: UpdateChecker
+    /// 开新窗口的通道。`nil`（测试、离线视图）时「新建」退回本窗口。
+    var windows: WindowCoordinator? = nil
 
     private var themeManager: ThemeManager { store.themeManager }
 
@@ -404,26 +407,18 @@ struct CommandRuntime {
         }
     }
 
-    /// 工作区打开着，「新建」就该在那个文件夹里留下一篇真的文件。
+    /// 新建 = 另起一桌。
     ///
-    /// 只在内存里起一篇未命名草稿，读者还得自己另存一次、再导航到那个文件夹——
-    /// 那一步在 v0.6 之前是必须的，现在文件夹就在手边，不该还要绕。
+    /// ⌘N 以前会把手上这篇换掉：写第二篇时，第一篇就从窗口里消失了。多窗口之后
+    /// 「新建」应当是**再开一扇窗**，手上这篇留在原地——这才对得起「一篇稿子一扇窗」。
+    /// 没有窗口通道时（测试、无人值守的视图）仍退回本窗口新建。
+    ///
+    /// 新窗口接着用当前窗口的文件夹：同一间书房，另一张桌子。文件由读者自己
+    /// 起名保存，侧栏那颗「新建」按钮照旧在原地建文件。
     private func newDocument() {
-        guard workspace.isOpen,
-              let url = workspace.createDocument(in: targetDirectory)
-        else {
-            store.newDocument()
+        if let windows, windows.openNewWindow(inheriting: workspace.root) != nil {
             return
         }
-        store.open(url: url)
-    }
-
-    /// 选中文件就建在它旁边，选中目录就建在里面，什么都没选就建在根上。
-    private var targetDirectory: URL? {
-        guard let root = workspace.root else { return nil }
-        guard let selection = workspace.selection else { return root }
-        return WorkspaceScanner.isDirectory(selection)
-            ? selection
-            : selection.deletingLastPathComponent()
+        store.newDocument()
     }
 }
