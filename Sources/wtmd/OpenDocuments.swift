@@ -52,6 +52,20 @@ final class OpenDocuments {
         return true
     }
 
+    /// 这篇在**另一扇**窗里开着吗？
+    ///
+    /// 与 `owner` 分开写：那个问的是「谁占着」（可能是自己），这个问的是
+    /// 「有没有第二个人」。写盘的检查只关心后者，所以不能先取一个 owner 再比——
+    /// 两扇窗都登记着同一篇时，`owner` 取到哪一个全看字典顺序。
+    func isHeldElsewhere(_ url: URL, than window: UUID) -> Bool {
+        let key = PathKey.canonical(url)
+        return open.contains { entry in
+            entry.key != window
+                && entry.value == key
+                && (isReachable?(entry.key) ?? true)
+        }
+    }
+
     /// 排障与测试：此刻登记着哪几扇窗。字典无语序，比较请用集合。
     var registeredWindows: Set<UUID> { Set(open.keys) }
 }

@@ -205,7 +205,10 @@ final class WindowCoordinator: ObservableObject {
         }
         shared.openDocuments.isReachable = { [weak self] id in
             guard let self else { return false }
-            return !self.closedWindows.contains(id)
+            // 表里记着、但这张窗口表里没有的，是上一次启动留下的旧账（测试进程里
+            // 同一个 `SharedAppEnvironment` 会跨「两次启动」复用）。它们不能再算
+            // 占着稿子——否则新启动的窗会被一扇已经不存在的窗挡在门外。
+            return self.windows[id] != nil && !self.closedWindows.contains(id)
         }
     }
 
@@ -265,7 +268,17 @@ final class WindowCoordinator: ObservableObject {
             if let frame = entry.frame, frame.fits(in: screens) {
                 pendingFrames[entry.id] = frame.rect
             }
-            let model = materialize(id: entry.id, inheriting: nil, startsBlank: false)
+            let session = Session(window: entry.id, defaults: defaults)
+            // 同一篇被两条记录指着的旧账（升级前就开着两扇、或有人改过 defaults）：
+            // 先到先得——主窗在 `init` 里就先登记了，这里是账本里的先后。
+            // 后来的那扇把稿子让出去，否则两扇窗各写一份，谁后落盘谁赢。
+            if let url = session.openFileURL,
+               shared.openDocuments.isHeldElsewhere(url, than: entry.id) {
+                session.setOpenFile(nil)
+            }
+            let model = materialize(
+                id: entry.id, session: session, inheriting: nil, startsBlank: false
+            )
             openWindowHandler(model.id)
         }
     }
@@ -292,8 +305,16 @@ final class WindowCoordinator: ObservableObject {
     ///
     /// `startsBlank` 只给 ⌘N 用：恢复的窗要从自己的记录里起来，不能被一张白纸
     /// 盖掉——那样「恢复」就成了「清空」。
-    private func materialize(id: UUID, inheriting root: URL?, startsBlank: Bool) -> WindowModel {
-        let session = Session(window: id, defaults: defaults)
+    ///
+    /// `session` 可由调用方传入：恢复时先读一遍它记的是哪一篇（要确认那篇没有
+    /// 被别的窗占着），确认之后再把同一份记录交给窗口，不必读第二遍。
+    private func materialize(
+        id: UUID,
+        session passed: Session? = nil,
+        inheriting root: URL?,
+        startsBlank: Bool
+    ) -> WindowModel {
+        let session = passed ?? Session(window: id, defaults: defaults)
         let directory = Self.temporaryDraftDirectory(for: id, root: draftRoot)
         // 恢复一扇什么都没留下的窗，也给白纸：`DocumentStore` 在没有文件也没有
         // 草稿时会摆出欢迎页，而欢迎页只属于「第一次打开这个应用」的那扇主窗。
