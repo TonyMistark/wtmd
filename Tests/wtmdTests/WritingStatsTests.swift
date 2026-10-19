@@ -112,6 +112,50 @@ private func cleanUp(_ defaults: UserDefaults, _ suite: String) {
     #expect(stats.today == 70)
 }
 
+/// 两扇窗交替报数：基线各记各的，谁也不把谁冲掉。
+///
+/// 只记「上一篇」时，A → B → A 的每一次回来都会被当成「换了个地方」，
+/// 那一下的字全部漏掉——两篇对着写的时候正是这样。
+@MainActor
+@Test func twoWindowsKeepTheirOwnBaselines() throws {
+    let clock = Clock(noon)
+    let (stats, defaults, suite) = makeStats(clock: clock)
+    defer { cleanUp(defaults, suite) }
+
+    stats.observe(document: "a", characters: 100)
+    stats.observe(document: "a", characters: 130)     // a +30
+
+    stats.observe(document: "b", characters: 5_000)   // 另一扇窗打开旧稿，不记账
+    stats.observe(document: "b", characters: 5_007)   // b +7
+
+    stats.observe(document: "a", characters: 131)     // a +1（换回来照样记）
+    stats.observe(document: "b", characters: 5_010)   // b +3
+
+    #expect(stats.today == 41)
+}
+
+/// 基线表有上限：一天里真开过的文档不会多到哪儿去，但不能无限长胖。
+@MainActor
+@Test func theBaselineTableDropsTheOldestDocuments() throws {
+    let clock = Clock(noon)
+    let (stats, defaults, suite) = makeStats(clock: clock)
+    defer { cleanUp(defaults, suite) }
+
+    for index in 0..<80 {
+        stats.observe(document: "doc-\(index)", characters: 10)
+    }
+
+    #expect(stats.trackedDocuments == WritingStats.baselineLimit)
+
+    // 最早那一篇已经被请出去了：它再出现只立基线，不补记这 40 字
+    stats.observe(document: "doc-0", characters: 50)
+    #expect(stats.today == 0)
+
+    // 最近那一篇还在：+5 照常入账
+    stats.observe(document: "doc-79", characters: 15)
+    #expect(stats.today == 5)
+}
+
 @MainActor
 @Test func pendingIsNotPersistedUntilSettle() throws {
     let clock = Clock(noon)
