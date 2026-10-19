@@ -70,6 +70,8 @@ struct AppMenus: Commands {
             menuItem(.openFolder)
             menuItem(.save)
             Divider()
+            menuItem(.showHistory)
+            Divider()
             menuItem(.exportHTML)
             menuItem(.exportWord)
             menuItem(.exportPDF)

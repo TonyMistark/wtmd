@@ -149,6 +149,10 @@ final class DocumentStore: ObservableObject {
     @Published private(set) var archivedConflicts: [ConflictArchiveEntry] = []
     /// 刚存下一份副本时的一句提示，几秒后自己消失——存档不能是无声的。
     @Published private(set) var archiveNotice: String?
+    /// 当前这篇的旧版，最新的在前。面板读它；换文档、别窗留版、删版都会刷新。
+    @Published private(set) var historyEntries: [HistoryEntry] = []
+    /// 版本历史面板是否展开。每扇窗口各一份——A 窗翻着旧稿，不该盖在 B 窗上。
+    @Published var historyVisible = false
 
     /// Single source of truth for the welcome screen. Kept on the store (instead
     /// of inline in the view body) so the condition is unit-testable.
@@ -213,6 +217,10 @@ final class DocumentStore: ObservableObject {
     private var writingStatsObservation: AnyCancellable?
     /// 副本库是应用级的：订阅它，别的窗口存档时这扇窗也能看见。
     private var conflictsObservation: AnyCancellable?
+    /// 版本历史也是应用级的：别的窗口留下一版，这扇窗的面板也要跟上。
+    private var historyObservation: AnyCancellable?
+    /// 换了文档就换一份历史清单——旧稿的版本不该出现在新稿的面板里。
+    private var historyFileObservation: AnyCancellable?
     /// 每打开/新建一篇就 +1：它参与 `documentKey`，让「换了文档」永远能被认出来。
     /// 未命名草稿改成空文档时路径没变，只看路径会把清空算成删了几百字。
     private var documentEpoch = 0
@@ -340,6 +348,17 @@ final class DocumentStore: ObservableObject {
         // 否则「还有一份没取回的字」只在存下它的那扇窗里看得见。
         conflictsObservation = conflicts?.objectWillChange.sink { [weak self] in
             self?.refreshArchivedConflicts()
+        }
+        // 历史面板跟着两件事走：这篇换了（`fileURL`），或者历史本身变了
+        // （本窗刚写下一版、别的窗留下一版、读者删掉一版）。
+        refreshHistory()
+        historyFileObservation = $fileURL
+            .removeDuplicates()
+            // `@Published` 在 `willSet` 里发出：闭包里拿到的才是新值，`self.fileURL`
+            // 此刻还是旧的。直接用它，否则「换到另一篇」会读到上一篇的历史。
+            .sink { [weak self] url in self?.refreshHistory(for: url) }
+        historyObservation = history?.objectWillChange.sink { [weak self] in
+            self?.refreshHistory()
         }
     }
 
@@ -812,6 +831,79 @@ final class DocumentStore: ObservableObject {
     func discardArchivedConflict(_ entry: ConflictArchiveEntry) {
         conflicts?.remove(entry)
         refreshArchivedConflicts()
+    }
+
+    // MARK: - 版本历史
+
+    /// 历史所在的文件夹，供面板「在访达中打开」用。
+    var historyFolder: URL? { history?.directory }
+
+    /// 这篇有没有历史可翻。菜单与命令面板据此决定是不是灰着。
+    var canBrowseHistory: Bool { fileURL != nil && !historyEntries.isEmpty }
+
+    /// 打开面板。先刷新一次：读者可能刚在 Finder 里删过历史文件。
+    func showHistory() {
+        refreshHistory()
+        historyVisible = true
+    }
+
+    /// 把某一版装回编辑器。
+    ///
+    /// **先留当前这一版**（`force`）：否则「取回旧版」这个动作本身就会把读者
+    /// 刚写的那一段变成唯一没存过的内容——想反悔时已经没得翻了。
+    ///
+    /// `fileURL` 不动：这是「回到这篇的某一版」，不是另存为一篇。写盘交给自动
+    /// 保存（和普通编辑一样，走磁盘版本核对与多窗占用那三道口），所以恢复之后
+    /// 编辑器立刻是脏的，标题上那个点也在。
+    ///
+    /// `documentEpoch` 前进一代：字数账本按文档记账，一次恢复不是「今天删了几千字」，
+    /// 而应当重新起算。
+    func restoreHistory(_ entry: HistoryEntry) {
+        guard let history, let content = history.content(of: entry) else {
+            historyVisible = false
+            return
+        }
+        if let fileURL {
+            history.capture(text, for: fileURL, force: true)
+        }
+        cancelScheduledSave()
+        text = content
+        hasStartedWriting = true
+        renderGeneration += 1
+        documentEpoch += 1
+        mode = .edit
+        recomputeNow()
+        resetFind()
+        // 装回去的内容要落盘，走的是平时那条自动保存
+        scheduleSave()
+        historyVisible = false
+    }
+
+    /// 删掉某一版。内容没了就没了——面板上问过一次才点得到这里。
+    func discardHistory(_ entry: HistoryEntry) {
+        history?.remove(entry)
+        refreshHistory()
+    }
+
+    /// 忘掉这篇的全部历史（连目录）。
+    func clearHistory() {
+        guard let history, let fileURL else { return }
+        history.removeAll(for: fileURL)
+        refreshHistory()
+        showArchiveNotice(t("Cleared the version history of \(displayName)", "已清除「\(displayName)」的版本历史"))
+    }
+
+    private func refreshHistory() {
+        refreshHistory(for: fileURL)
+    }
+
+    private func refreshHistory(for url: URL?) {
+        guard let history, let url else {
+            if !historyEntries.isEmpty { historyEntries = [] }
+            return
+        }
+        let entries = history.entries(for: url)
+        if entries != historyEntries { historyEntries = entries }
     }
 
     // MARK: - 导出

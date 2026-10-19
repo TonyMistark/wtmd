@@ -43,6 +43,8 @@ enum CommandKind: Hashable {
     case openFolder
     /// Save (or save-as for an untitled document).
     case save
+    /// Browse the versions kept for the current document.
+    case showHistory
     /// Export the preview as a standalone HTML file.
     case exportHTML
     /// Export as Word (.docx).
@@ -86,6 +88,7 @@ enum CommandKind: Hashable {
         case .openDocument: return "file.open"
         case .openFolder: return "file.openFolder"
         case .save: return "file.save"
+        case .showHistory: return "file.history"
         case .exportHTML: return "file.exportHTML"
         case .exportWord: return "file.exportWord"
         case .exportPDF: return "file.exportPDF"
@@ -165,6 +168,12 @@ enum CommandCatalog {
             kind: .save, title: t("Save", "保存"), section: .file,
             symbol: "square.and.arrow.down", shortcut: KeyboardShortcut("s", modifiers: .command),
             keywords: ["save", "write"], subtitle: nil
+        ),
+        AppCommand(
+            kind: .showHistory, title: t("Version History…", "版本历史…"), section: .file,
+            symbol: "clock.arrow.circlepath", shortcut: KeyboardShortcut("y", modifiers: .command),
+            keywords: ["history", "versions", "revisions", "restore", "版本", "历史", "旧版"],
+            subtitle: nil
         ),
         AppCommand(
             kind: .exportHTML, title: t("Export HTML…", "导出 HTML…"), section: .file,
@@ -372,6 +381,10 @@ struct CommandRuntime {
         case .find, .findReplace:
             // 欢迎页没有文本可找
             return !store.showsWelcome
+        case .showHistory:
+            // 没有名字的草稿没有历史（它没有稳定身份）；有名字就让它可点——
+            // 面板自己会说「还没有留下旧版」，比灰着一个不说原因的菜单好。
+            return store.fileURL != nil
         case .openRecent(let url):
             // A recent file may have been moved away. Greying it out beats
             // doing nothing when clicked.
@@ -387,6 +400,7 @@ struct CommandRuntime {
         case .openDocument: store.openPanel()
         case .openFolder: workspace.openPanel()
         case .save: store.save()
+        case .showHistory: store.showHistory()
         case .exportHTML: store.exportHTML()
         case .exportWord: store.exportWord()
         case .exportPDF: store.exportPDF()
