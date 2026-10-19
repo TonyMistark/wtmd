@@ -204,6 +204,40 @@ private final class Desk {
     #expect(!restored.store.showsWelcome)
 }
 
+/// 同一篇被两条记录指着的旧账（升级前就开着两扇窗、或有人手工改过 defaults）：
+/// 启动时只在先到的那扇里打开，后来的那扇退回白纸，并且不再记着这篇。
+@MainActor
+@Test func twoWindowsRecordedWithTheSameFileOnlyOneKeepsIt() throws {
+    let desk = try Desk()
+    defer { desk.cleanup() }
+
+    let folder = try desk.makeFolder(named: "书房")
+    let file = folder.appendingPathComponent("a.md")
+    try "# 同一篇\n\n谁也别写两遍\n".write(to: file, atomically: true, encoding: .utf8)
+
+    let a = UUID()
+    let b = UUID()
+    let book = WindowLedger(defaults: desk.defaults)
+    book.add(a)
+    book.add(b)
+    Session(window: a, defaults: desk.defaults).setOpenFile(file)
+    Session(window: b, defaults: desk.defaults).setOpenFile(file)
+
+    let coordinator = desk.launch()
+    let aHasIt = coordinator.windows[a]?.store.fileURL != nil
+    let bHasIt = coordinator.windows[b]?.store.fileURL != nil
+
+    #expect(aHasIt != bHasIt, "同一篇只能落在其中一扇窗里")
+    let yielded = aHasIt ? b : a
+    let kept = try #require(coordinator.windows[yielded])
+    #expect(kept.store.fileURL == nil)
+    #expect(kept.store.text.isEmpty, "让出去的那扇是白纸，不是把同一篇复制一遍")
+    #expect(
+        Session(window: yielded, defaults: desk.defaults).openFileURL == nil,
+        "让出去的那扇不该继续记着这篇，否则下次启动还要再分一次"
+    )
+}
+
 // MARK: - 关窗即结束
 
 /// 关掉一扇存过盘的窗：账、会话、草稿目录一起结束，重启不再回来。

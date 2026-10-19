@@ -91,6 +91,12 @@ enum ExternalChange: Equatable {
     case modified
     /// 文件已经不在了。
     case deleted
+    /// 同一篇也被本应用的另一个窗口开着。
+    ///
+    /// 正常路径上走不到这里：打开会跳到已有窗口、启动恢复会去重。它是给「两条
+    /// 记录绕过了 UI」留的网——升级前就同时开着两扇窗，或有人手工改了 defaults。
+    /// 两扇窗都在写同一份文件时，谁后落盘谁赢，先落的那一份不会有人知道。
+    case heldElsewhere
 }
 
 /// 读者对 `ExternalChange` 的选择。
@@ -207,6 +213,12 @@ final class DocumentStore: ObservableObject {
     /// 每打开/新建一篇就 +1：它参与 `documentKey`，让「换了文档」永远能被认出来。
     /// 未命名草稿改成空文档时路径没变，只看路径会把清空算成删了几百字。
     private var documentEpoch = 0
+    /// 读者已经见过「这篇也在别窗开着」的提示，决定接着写。之后不再拦——
+    /// 写盘前的 mtime 核对仍然在，另一边保存时会看到冲突横幅。
+    private var acceptedSharedHold = false
+    /// 另存为撞上别窗占着的文件时，怎么告诉读者。测试换成记账的假提示：
+    /// 真的 `NSAlert` 是模态的，会把测试挂在那儿。
+    var reportHeldSaveTarget: ((URL) -> Void)?
 
     static let welcomeMarkdown = """
     # 欢迎使用 wtmd
@@ -561,6 +573,7 @@ final class DocumentStore: ObservableObject {
         fileURL = nil
         savedSnapshot = ""
         knownModificationDate = nil
+        acceptedSharedHold = false
         // The user explicitly asked for a blank document, so the welcome screen
         // must step aside — otherwise the empty text immediately brings it back
         // and the button looks dead.
@@ -633,6 +646,7 @@ final class DocumentStore: ObservableObject {
         fileURL = url
         savedSnapshot = document.content
         knownModificationDate = document.modifiedAt
+        acceptedSharedHold = false
         recentFiles.add(url)
         hasStartedWriting = true
         renderGeneration += 1
@@ -654,8 +668,9 @@ final class DocumentStore: ObservableObject {
         saveTask?.cancel()
         saveTask = nil
         // ⌘S 也是「写盘」，同样不能盖掉别处刚改过的版本：交给横幅让读者选。
-        if let change = detectExternalChange() {
+        if let change = detectExternalChange() ?? detectSharedHold() {
             externalChange = change
+            archiveIfHeldElsewhere(change)
             return
         }
         let targetURL: URL
@@ -672,18 +687,55 @@ final class DocumentStore: ObservableObject {
             }
             guard panel.runModal() == .OK, let url = panel.url else { return }
             targetURL = url
-            fileURL = url
+        }
+        save(to: targetURL)
+    }
+
+    /// 把这一份写到 `url`。单独成一步是因为 `NSSavePanel` 在测试里开不出来，
+    /// 而「落点被另一扇窗占着就不写」这条规矩必须能被验证。
+    ///
+    /// - Returns: 落盘成功为 `true`；落点被占或写入失败为 `false`。
+    @discardableResult
+    func save(to url: URL) -> Bool {
+        guard !isHeldElsewhere(url) else {
+            reportHeldTarget(url)
+            return false
         }
         do {
-            try text.write(to: targetURL, atomically: true, encoding: .utf8)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            if fileURL == nil { fileURL = url }
             savedSnapshot = text
-            knownModificationDate = Self.modificationDate(of: targetURL)
-            recentFiles.add(targetURL)
-            session?.setOpenFile(targetURL)
+            knownModificationDate = Self.modificationDate(of: url)
+            recentFiles.add(url)
+            session?.setOpenFile(url)
             clearDraft()
+            return true
         } catch {
             NSAlert(error: error).runModal()
+            return false
         }
+    }
+
+    /// 这篇在**另一扇**窗里开着吗？
+    func isHeldElsewhere(_ url: URL) -> Bool {
+        openDocuments?.isHeldElsewhere(url, than: windowID) ?? false
+    }
+
+    private func reportHeldTarget(_ url: URL) {
+        if let reportHeldSaveTarget {
+            reportHeldSaveTarget(url)
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = t(
+            "That file is open in another window",
+            "这个文件正在另一扇窗口里打开"
+        )
+        alert.informativeText = t(
+            "Saving here would overwrite what is being written there. Close it in that window first, or choose another name.",
+            "存到这里会盖掉那扇窗里正在写的内容。请先在那里关掉它，或者换一个文件名。"
+        )
+        alert.runModal()
     }
 
     /// 冲突未解决就要退出/关窗：磁盘上那份是别人的版本，不去动它；自己的改动
@@ -702,9 +754,11 @@ final class DocumentStore: ObservableObject {
     /// **不拦切换**：写作工具不该为了保住一段话先开一场对话。存下副本本身就是
     /// 「已经保住了」的证据，取不取回是之后的事。
     private func archiveLocalVersionIfConflicted() {
-        let hadConflict = externalChange != nil
-        if hadConflict { externalChange = nil }
-        guard hadConflict, isDirty, let conflicts else { return }
+        let change = externalChange
+        if change != nil { externalChange = nil }
+        // 「另一扇窗也开着」在发现的那一刻就已经存过一份了（`archiveIfHeldElsewhere`），
+        // 切走时再存一份只会让副本库里多一份一模一样的字。
+        guard let change, change != .heldElsewhere, isDirty, let conflicts else { return }
         guard let entry = conflicts.archive(text, originalURL: fileURL) else { return }
         refreshArchivedConflicts()
         showArchiveNotice(t("Saved a local copy of \(entry.originalName) to the conflict archive", "已把「\(entry.originalName)」的本地版本存入冲突副本"))
@@ -947,10 +1001,13 @@ final class DocumentStore: ObservableObject {
     /// the draft file while it has no path.
     private func persist(_ content: String) {
         if let fileURL {
+            // 已经举过「两扇窗在写同一篇」的牌子：字已存进副本库，别再一遍遍存。
+            if externalChange == .heldElsewhere { return }
             // 只在真正要写盘的那一刻确认磁盘版本：早一点查（比如每次按键）会
             // 在读者犹豫的时候反复报同一个冲突。
-            if let change = detectExternalChange() {
+            if let change = detectExternalChange() ?? detectSharedHold() {
                 externalChange = change
+                archiveIfHeldElsewhere(change)
                 return
             }
             writeFile(content, to: fileURL)
@@ -969,8 +1026,37 @@ final class DocumentStore: ObservableObject {
         return disk == known ? nil : .modified
     }
 
+    /// 这一篇是不是也在本应用的**另一扇**窗里开着？
+    ///
+    /// 写盘前的第二道核对。mtime 那一道只看得见「磁盘变过」，两扇窗各自拿着
+    /// 同一版基线时它一声不响——第一扇写完，第二扇的旧基线就永远对不上了，
+    /// 可那时字已经写完一遍。这一道直接问登记表：同一篇有没有第二个人在写。
+    ///
+    /// 读者已经做过选择（`acceptedSharedHold`）就不再拦，只在第一次把话说明白。
+    private func detectSharedHold() -> ExternalChange? {
+        guard !acceptedSharedHold, let fileURL else { return nil }
+        return isHeldElsewhere(fileURL) ? .heldElsewhere : nil
+    }
+
+    /// 发现「两扇窗在写同一篇」时先把本地这一版存进副本库。
+    ///
+    /// 不写盘是对的（盘上那份是另一扇窗正看着的），但也不能只举一块牌子：
+    /// 读者此刻的字必须有个去处，否则关掉窗口就没了。
+    private func archiveIfHeldElsewhere(_ change: ExternalChange) {
+        guard change == .heldElsewhere, isDirty, let conflicts, let fileURL else { return }
+        guard let entry = conflicts.archive(text, originalURL: fileURL) else { return }
+        refreshArchivedConflicts()
+        showArchiveNotice(t(
+            "Also open in another window — this version was saved to the conflict archive",
+            "「\(entry.originalName)」也在另一扇窗口里开着，这一版已存入冲突副本"
+        ))
+    }
+
     /// 读者选定了冲突的处理方式。决定与副作用都在这里，横幅只管把按钮接过来。
     func resolveExternalChange(_ resolution: ExternalChangeResolution) {
+        // 「也在另一扇窗开着」是问过就算的：读者选了哪一边，都别再拿同一件事
+        // 每敲一次字问一遍。之后由写盘前的 mtime 核对继续兜着。
+        if externalChange == .heldElsewhere { acceptedSharedHold = true }
         switch resolution {
         case .keepLocal:
             guard let fileURL else { return }

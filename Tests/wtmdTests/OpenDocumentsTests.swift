@@ -81,7 +81,8 @@ import Testing
 
 /// 关掉的窗不再占位：主窗 ⌘W 之后，副窗打开那篇应该能落到副窗。
 @MainActor
-@Test func aClosedWindowHoldsNothing() {    let documents = OpenDocuments()
+@Test func aClosedWindowHoldsNothing() {
+    let documents = OpenDocuments()
     let closed = UUID()
     let other = UUID()
     documents.update(URL(fileURLWithPath: "/tmp/a.md"), for: closed)
