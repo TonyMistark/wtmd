@@ -166,6 +166,17 @@ struct ContentView: View {
             }
         }
         .listStyle(.sidebar)
+        // 系统会在工具栏最左侧自动插一个侧栏开关，右侧已有自己的按钮，同一个动作
+        // 两个入口。移除必须挂在侧栏内容上——挂在 NavigationSplitView 外层不生效
+        // （实测：加在外面系统项照旧，加在 sidebar 上才真的消失）。
+        .toolbar(removing: .sidebarToggle)
+    }
+
+    /// 侧栏按钮只有一个，图标不表达开合方向：悬停说清点下去会怎样。
+    private var sidebarHint: String {
+        store.sidebarVisible
+            ? t("Hide the sidebar", "收起侧栏")
+            : t("Show the sidebar", "展开侧栏")
     }
 
 
@@ -521,7 +532,14 @@ struct ContentView: View {
                 store.sidebarVisible.toggle()
             } label: {
                 Label(t("Sidebar", "侧栏"), systemImage: "sidebar.left")
+                    // 工具栏里的 `.help` 到不了 AppKit，提示由锚点写进宿主视图
+                    .background(ToolbarTip(text: sidebarHint))
             }
+            .help(sidebarHint)
+            .accessibilityLabel(t("Sidebar", "侧栏"))
+            .accessibilityValue(store.sidebarVisible
+                ? t("Shown", "已展开")
+                : t("Hidden", "已收起"))
 
             Menu {
                 Button(t("Export HTML…", "导出 HTML…")) { store.exportHTML() }
