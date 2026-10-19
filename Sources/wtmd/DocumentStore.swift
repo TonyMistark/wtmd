@@ -2,7 +2,6 @@ import Combine
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
-import WebKit
 import WTMarkdownKit
 
 enum ViewMode: String, CaseIterable, Identifiable {
@@ -103,6 +102,11 @@ final class DocumentStore: ObservableObject {
 
     let recentFiles = RecentFiles()
     let themeManager = ThemeManager()
+    /// 屏幕上的版式（字号/行距）。App 启动时接上；`nil` 表示用默认值——
+    /// 打印要把读者调好的字带进纸里，但 store 自己不该拥有这份设置。
+    var typesetting: TypesettingSettings?
+    /// 纸上版式（页边距/页码/标题）。同上。
+    var printSettings: PrintSettings?
     /// 每日净增字数的账本。`nil`（测试默认）表示不记账，绝不写真实的 preferences。
     let writingStats: WritingStats?
     /// 跨视图重建的位置账本：`⌘/` 会销毁并重建编辑器/预览，位置得存在视图之外。
@@ -725,15 +729,30 @@ final class DocumentStore: ObservableObject {
         }
     }
 
+    /// 打印 / 存为 PDF：屏幕上调好的字号与行距跟着进纸，版心按页宽归一。
+    ///
+    /// 纸上那一条连续文档按**读者自己的版心宽度**排版（屏幕上多宽，纸上就多宽），
+    /// 再由 `PrintPagination` 按块切开、整条按比例缩到 A4 的正文框里。
     func exportPDF() {
         let result = WTMarkdown.render(text)
+        let layout = printSettings?.layout ?? .standard
         let html = StyleSheet.fullDocument(
             title: fileURL?.deletingPathExtension().lastPathComponent ?? "wtmd",
             body: result.html,
             themeCSS: themeManager.currentThemeCSS,
-            includeScript: false
+            includeScript: false,
+            // 字号与行距要跟屏幕一致——同一份稿子，不该换个介质就换一身字
+            layoutCSS: typesetting?.css ?? "",
+            printLayout: layout,
+            printTitle: displayName.replacingOccurrences(
+                of: "\\.md$", with: "", options: .regularExpression
+            )
         )
-        PrintController.print(html: html, baseURL: fileURL?.deletingLastPathComponent())
+        PrintController.print(
+            html: html,
+            baseURL: fileURL?.deletingLastPathComponent(),
+            layout: layout
+        )
     }
 
     // MARK: - 会话
@@ -1084,94 +1103,5 @@ final class RecentFiles: ObservableObject {
     /// `/var/…` 与 `/private/var/…` 是同一份文件，比较前先归一。
     private static func isSameFile(_ a: URL, _ b: URL) -> Bool {
         PathKey.isSame(a, b)
-    }
-}
-
-// MARK: - 打印 / 存为 PDF
-
-@MainActor
-final class PrintController: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
-    private var continuation: CheckedContinuation<Void, Never>?
-    private var retained: [Any] = []
-    /// 页面是否已报告「图表渲染完成」。
-    private var diagramsReady = false
-
-    /// 等待图表就绪的上限；超时按兜底处理，不阻塞导出。
-    private static let diagramWaitLimit = 5.0
-
-    static func print(html: String, baseURL: URL?) {
-        let controller = PrintController()
-        controller.run(html: html, baseURL: baseURL)
-    }
-
-    private func run(html: String, baseURL: URL?) {
-        let config = WKWebViewConfiguration()
-        config.userContentController.add(self, name: "wtmd")
-        let webView = WKWebView(
-            frame: CGRect(x: 0, y: 0, width: 780, height: 1000),
-            configuration: config
-        )
-        webView.navigationDelegate = self
-        retained = [webView]
-        webView.loadHTMLString(html, baseURL: baseURL)
-
-        Task {
-            await withCheckedContinuation { c in
-                continuation = c
-            }
-            // 有图表：等待 mermaid 异步渲染完成的就绪信号（固定等待会丢图）；
-            // 无图表：维持原有的短暂排版稳定等待。
-            if html.contains("language-mermaid") {
-                await waitForDiagrams()
-            } else {
-                try? await Task.sleep(nanoseconds: 400_000_000)
-            }
-            let info = NSPrintInfo.shared
-            info.topMargin = 36
-            info.bottomMargin = 36
-            info.leftMargin = 40
-            info.rightMargin = 40
-            info.horizontalPagination = .fit
-            info.verticalPagination = .automatic
-            let operation = webView.printOperation(with: info)
-            operation.jobTitle = "wtmd"
-            if let window = NSApp.keyWindow {
-                operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
-            }
-            retained = []
-        }
-    }
-
-    /// 轮询就绪标记：就绪即返回，超时兜底（避免单张图失败时卡住导出）。
-    private func waitForDiagrams() async {
-        let deadline = Date().addingTimeInterval(Self.diagramWaitLimit)
-        while !diagramsReady, Date() < deadline {
-            try? await Task.sleep(nanoseconds: 50_000_000)
-        }
-        // 渲染完成后再留一小段排版稳定时间
-        try? await Task.sleep(nanoseconds: 120_000_000)
-    }
-
-    nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        Task { @MainActor in
-            continuation?.resume()
-            continuation = nil
-        }
-    }
-
-    // MARK: WKScriptMessageHandler
-
-    /// 页面脚本回报「图表已渲染完成」（无图表时也会立即回报）。
-    nonisolated func userContentController(
-        _ userContentController: WKUserContentController,
-        didReceive message: WKScriptMessage
-    ) {
-        Task { @MainActor in
-            guard message.name == "wtmd",
-                  let body = message.body as? [String: Any],
-                  body["event"] as? String == "mermaid-ready"
-            else { return }
-            diagramsReady = true
-        }
     }
 }

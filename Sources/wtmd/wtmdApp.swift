@@ -5,7 +5,8 @@ struct wtmdApp: App {
     @StateObject private var store: DocumentStore
     @StateObject private var workspace: WorkspaceStore
     @StateObject private var writing = WritingSettings()
-    @StateObject private var typesetting = TypesettingSettings()
+    @StateObject private var typesetting: TypesettingSettings
+    @StateObject private var printing: PrintSettings
     @StateObject private var updates = UpdateChecker()
     @StateObject private var overrides = ShortcutOverrides()
     @State private var paletteVisible = false
@@ -24,8 +25,16 @@ struct wtmdApp: App {
         // 树里改名/删除之后，当前文档得跟着磁盘走——两个 store 各自独立，
         // 这条线只走一个协议，谁也不拥有谁。
         workspaceStore.fileEvents = documentStore
+        // 导出 PDF 要同时知道「屏幕上的字号行距」和「纸上的页边距页码」：
+        // 这两个设置归视图层，store 只借来用一次。
+        let typesettingSettings = TypesettingSettings()
+        let printSettings = PrintSettings()
+        documentStore.typesetting = typesettingSettings
+        documentStore.printSettings = printSettings
         _store = StateObject(wrappedValue: documentStore)
         _workspace = StateObject(wrappedValue: workspaceStore)
+        _typesetting = StateObject(wrappedValue: typesettingSettings)
+        _printing = StateObject(wrappedValue: printSettings)
     }
 
     var body: some Scene {
@@ -50,6 +59,7 @@ struct wtmdApp: App {
             .environmentObject(store.themeManager)
             .environmentObject(writing)
             .environmentObject(typesetting)
+            .environmentObject(printing)
             .environmentObject(overrides)
         }
         .commands {

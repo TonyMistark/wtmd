@@ -247,6 +247,7 @@ struct ThemeSettingsView: View {
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var writing: WritingSettings
     @EnvironmentObject var typesetting: TypesettingSettings
+    @EnvironmentObject var printing: PrintSettings
 
     var body: some View {
         Form {
@@ -331,9 +332,26 @@ struct ThemeSettingsView: View {
                     Button(t("Restore Defaults", "恢复默认")) { typesetting.reset() }
                 }
             }
+            Section(t("Printing", "打印")) {
+                layoutSlider(
+                    title: t("Page margin", "页边距"),
+                    value: String(format: "%.0f mm", printing.marginMM),
+                    binding: $printing.marginMM,
+                    range: PrintLayout.marginRange,
+                    step: 1
+                )
+                Toggle(t("Page numbers", "页码"), isOn: $printing.pageNumbers)
+                Toggle(t("Document title on the first page", "第一页印文档名"), isOn: $printing.showTitle)
+                Text(t(
+                    "Applies to Print / Save as PDF. Text size and line height follow the reading layout above; the measure narrows to the page width.",
+                    "作用于「打印 / 存为 PDF」。字号与行距沿用上面的阅读版式，版心按页宽归一。"
+                ))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
-        .frame(width: 460, height: 680)
+        .frame(width: 460, height: 760)
     }
 
     /// 一行「标题 + 滑块 + 当前值」：三个版式值长得一样，就不各写一遍。

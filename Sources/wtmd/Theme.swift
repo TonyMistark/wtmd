@@ -597,21 +597,86 @@ enum StyleSheet {
         }
     }
 
+    /// 纸上版式层。
+    ///
+    /// 这里只管「纸上的正文该长什么样」——屏幕上的留白、阴影、版心居中都不该跟到纸上。
+    /// 页边距**不写进 CSS**：纸上的四周边距由切片时的 A4 正文框给出，
+    /// CSS 里再留一层 padding 只会叠成双层边距。
+    ///
+    /// 字号与行距同样不在这里重复声明：它们由版式层（`--wtmd-*` 变量）带进打印文档，
+    /// 屏幕上调成什么样，纸上就是什么样。
+    static func printCSS(_ layout: PrintLayout) -> String {
+        """
+        html, body { margin: 0; padding: 0; background: #ffffff; }
+        #wtmd-content { max-width: none; width: 100%; margin: 0; padding: 0; }
+        .wtmd-print-title {
+          font-family: var(--font-heading, var(--font-body));
+          font-size: 1.5em;
+          font-weight: 650;
+          line-height: 1.3;
+          margin: 0 0 1.6em;
+          padding-bottom: 0.4em;
+          border-bottom: 1px solid var(--border);
+        }
+
+        """
+    }
+
+    /// 打印就绪探测：图表、公式、图片都画完了没有。
+    ///
+    /// 打印前轮询它——`didFinish` 只说明 DOM 到了，mermaid 与 KaTeX 还在异步渲染，
+    /// 那时截图会把空框印到纸上。只在打印文档里注入，预览不背这段。
+    static let printReadyScript = """
+    function __wtmdPrintReady() {
+      var wraps = document.querySelectorAll('.mermaid-wrap');
+      for (var i = 0; i < wraps.length; i++) {
+        var drawn = wraps[i].querySelector('svg');
+        if (!drawn && !wraps[i].classList.contains('mermaid-failed')) { return false; }
+      }
+      var maths = document.querySelectorAll('.wtmd-math');
+      for (var j = 0; j < maths.length; j++) {
+        if (!maths[j].hasAttribute('data-rendered')) { return false; }
+      }
+      var images = document.images;
+      for (var k = 0; k < images.length; k++) {
+        if (!images[k].complete) { return false; }
+      }
+      return true;
+    }
+
+    """
+
     /// 完整预览文档：排版骨架 + 主题变量层 + 内嵌前端资源 + 正文（+ 可选交互脚本）。
     /// 高亮脚本始终内联（预览/HTML 导出/PDF 三端一致）；mermaid 与 KaTeX 体积大，
     /// 仅在文档确实含对应语法时注入（懒加载）；交互脚本仅预览需要。
+    ///
+    /// - Parameters:
+    ///   - printLayout: 非 nil 时追加纸上版式层（打印/PDF 专用）
+    ///   - printTitle: 首行标题文本（只在 `printLayout.showTitle` 时真的印出来）
     static func fullDocument(
         title: String,
         body: String,
         themeCSS: String,
         includeScript: Bool,
-        layoutCSS: String = ""
+        layoutCSS: String = "",
+        printLayout: PrintLayout? = nil,
+        printTitle: String? = nil
     ) -> String {
         let scriptTag = includeScript ? "<script>\n\(script)\n</script>\n" : ""
         // 版式层独立成一块：切主题只改 #wtmd-theme，读者的字号行距不受牵连
         let layoutTag = layoutCSS.isEmpty
             ? ""
             : "<style id=\"wtmd-layout\">\n\(layoutCSS)\n</style>\n"
+        // 纸上版式再独立一层：同一份 HTML 既能看也能印，两层互不覆盖
+        let printTag = printLayout.map { "<style id=\"wtmd-print\">\n\(printCSS($0))\n</style>\n" } ?? ""
+        // 就绪探测只服务打印：预览里有自己的滚动回报，不背这段
+        let readyTag = printLayout == nil ? "" : "<script>\n\(printReadyScript)</script>\n"
+        let titleTag: String
+        if let printLayout, printLayout.showTitle, let printTitle, !printTitle.isEmpty {
+            titleTag = "<div class=\"wtmd-print-title\">\(escapeHTML(printTitle))</div>\n"
+        } else {
+            titleTag = ""
+        }
         let highlight = highlightScript
         let highlightTag = highlight.isEmpty ? "" : "<script>\n\(highlight)\n</script>\n"
         let mermaid = body.contains("language-mermaid") ? mermaidScript : ""
@@ -628,16 +693,23 @@ enum StyleSheet {
         <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>\(title)</title>
+        <title>\(escapeHTML(title))</title>
         <style id="wtmd-base">\(baseCSS)</style>
         <style id="wtmd-theme">\(themeCSS)</style>
-        \(layoutTag)\(katexStyleTag)\(mermaidTag)\(highlightTag)\(katexTag)\(scriptTag)</head>
+        \(layoutTag)\(printTag)\(readyTag)\(katexStyleTag)\(mermaidTag)\(highlightTag)\(katexTag)\(scriptTag)</head>
         <body>
-        <div id="wtmd-content">
+        \(titleTag)<div id="wtmd-content">
         \(body)
         </div>
         </body>
         </html>
         """
+    }
+
+    /// 文档名进 `<title>` 与首行标题时的转义。标题是用户起的文件名，可能带 `<` 或 `&`。
+    static func escapeHTML(_ text: String) -> String {
+        text.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
     }
 }
