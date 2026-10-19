@@ -29,6 +29,11 @@ enum ViewMode: String, CaseIterable, Identifiable {
         }
     }
 
+    /// 三个符号的原始尺寸并不一样（16×16 / 14×16 / 18×14，且随系统版本略有出入——
+    /// macOS 15 上分栏符号量出来是 19 宽）：统一收进同一个格子，切换时按钮不会忽宽忽窄，
+    /// 旁边的工具栏项也不会跟着挪位置。格子留一点余量，别让新版系统裁掉一笔。
+    static let iconSize = CGSize(width: 20, height: 18)
+
     /// 单击依次经过的下一种视图：思绪 → 成文 → 对照 → 回到思绪。
     ///
     /// The ring is `allCases` own order, so reordering it means moving the
