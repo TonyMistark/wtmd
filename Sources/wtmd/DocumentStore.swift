@@ -29,6 +29,10 @@ enum ViewMode: String, CaseIterable, Identifiable {
         }
     }
 
+    /// 三个符号的原始尺寸并不一样（16×16 / 14×16 / 18×14）：统一收进同一个格子，
+    /// 切换时按钮不会忽宽忽窄，旁边的工具栏项也不会跟着挪位置。
+    static let iconSize = CGSize(width: 18, height: 16)
+
     /// 单击依次经过的下一种视图：思绪 → 成文 → 对照 → 回到思绪。
     ///
     /// The ring is `allCases` own order, so reordering it means moving the

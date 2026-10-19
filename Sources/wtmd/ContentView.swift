@@ -470,7 +470,12 @@ struct ContentView: View {
             Button {
                 store.cycleMode()
             } label: {
-                Label(store.mode.label, systemImage: store.mode.symbol)
+                // 图标收进固定格子：三个符号原始尺寸不同，不收就会在切换时把
+                // 按钮和旁边的工具栏项一起推来推去。
+                Image(systemName: store.mode.symbol)
+                    .frame(width: ViewMode.iconSize.width, height: ViewMode.iconSize.height)
+                    // 工具栏里的 `.help` 到不了 AppKit，toolTip 由这个锚点写进宿主视图
+                    .background(ToolbarTip(text: store.mode.cycleHint))
             }
             .help(store.mode.cycleHint)
             .accessibilityLabel(t("View mode", "视图模式"))
