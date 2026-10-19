@@ -25,6 +25,16 @@ import Testing
     #expect(rig.container.toolTip == "成文 · 只读成文。点击切到对照")
 }
 
+/// 悬停点常落在按钮内部的子视图上：整棵子树都得带同一句话。
+@MainActor
+@Test func everyViewInsideTheButtonCarriesTheTip() {
+    let rig = makeToolbar(with: "提示")
+
+    rig.anchor.attach()
+
+    #expect(rig.icon.toolTip == "提示")
+}
+
 /// 预览面板、快照测试之类的地方会单独摆一个按钮：没有工具栏时安静地什么都不做。
 @MainActor
 @Test func withoutAToolbarTheAnchorStaysQuiet() {
@@ -55,6 +65,8 @@ import Testing
 private struct ToolbarRig {
     let window: NSWindow
     let container: NSView
+    /// 站在「图标」位置的子视图：悬停点实际落在这里。
+    let icon: NSView
     let anchor: ToolbarTip.Anchor
     let supplier: TestToolbarSupplier
 }
@@ -64,12 +76,15 @@ private func makeToolbar(with text: String) -> ToolbarRig {
     _ = NSApplication.shared
 
     let item = NSToolbarItem(itemIdentifier: NSToolbarItem.Identifier("wtmd.test.mode"))
-    let container = NSView(frame: NSRect(x: 0, y: 0, width: 18, height: 16))
+    let container = NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 18))
     item.view = container
+
+    let icon = NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 18))
+    container.addSubview(icon)
 
     let anchor = ToolbarTip.Anchor()
     anchor.text = text
-    container.addSubview(anchor)
+    icon.addSubview(anchor)
 
     let toolbar = NSToolbar(identifier: "wtmd.test.toolbar")
     let supplier = TestToolbarSupplier(item: item)
@@ -87,7 +102,7 @@ private func makeToolbar(with text: String) -> ToolbarRig {
     // 这里手动补上这条连接——要验的是「认不认得出项自己的视图」，不是工具栏布局。
     window.contentView?.addSubview(container)
 
-    return ToolbarRig(window: window, container: container, anchor: anchor, supplier: supplier)
+    return ToolbarRig(window: window, container: container, icon: icon, anchor: anchor, supplier: supplier)
 }
 
 /// `NSToolbar` 只认 delegate 给的项。

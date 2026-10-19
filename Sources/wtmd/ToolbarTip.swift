@@ -35,16 +35,24 @@ struct ToolbarTip: NSViewRepresentable {
         }
 
         /// 把 toolTip 挂到工具栏项自己的视图上：悬停整块按钮都会命中。
+        ///
+        /// AppKit 的 tooltip 是逐视图登记的，悬停点往往落在按钮内部的某个子视图上；
+        /// 宿主与其整棵子树都写上同一句，才不会出现「图标上有、边上没有」。
         func attach() {
             guard let items = window?.toolbar?.items else { return }
             var ancestor: NSView? = superview
             while let current = ancestor {
                 if items.contains(where: { $0.view === current }) {
-                    current.toolTip = text
+                    stamp(current)
                     return
                 }
                 ancestor = current.superview
             }
+        }
+
+        private func stamp(_ view: NSView) {
+            view.toolTip = text
+            for subview in view.subviews { stamp(subview) }
         }
     }
 }
