@@ -48,7 +48,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
         switch self {
         case .edit:
             detail = t(
-                "only the source, just you and the text. Click for \(next.label).",
+                "just you and the text. Click for \(next.label).",
                 "只有源码，专心写。点击切到\(next.label)"
             )
         case .preview:
