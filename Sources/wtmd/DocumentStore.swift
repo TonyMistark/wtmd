@@ -150,8 +150,9 @@ final class DocumentStore: ObservableObject {
         text.isEmpty && fileURL == nil && !hasStartedWriting
     }
 
-    let recentFiles = RecentFiles()
-    let themeManager = ThemeManager()
+    let recentFiles: RecentFiles
+    /// 主题是应用的，不是窗口的：所有窗口共用一份，切主题时一起变。
+    let themeManager: ThemeManager
     /// 屏幕上的版式（字号/行距）。App 启动时接上；`nil` 表示用默认值——
     /// 打印要把读者调好的字带进纸里，但 store 自己不该拥有这份设置。
     var typesetting: TypesettingSettings?
@@ -251,7 +252,9 @@ final class DocumentStore: ObservableObject {
         autoSaveDelay: UInt64 = 1_200_000_000,
         session: Session? = nil,
         conflicts: ConflictArchive? = nil,
-        writingStats: WritingStats? = nil
+        writingStats: WritingStats? = nil,
+        themeManager: ThemeManager? = nil,
+        recentFiles: RecentFiles? = nil
     ) {
         let directory = draftDirectory ?? Self.defaultDraftDirectory
         self.draftDirectory = directory
@@ -259,6 +262,8 @@ final class DocumentStore: ObservableObject {
         self.session = session
         self.conflicts = conflicts
         self.writingStats = writingStats
+        self.themeManager = themeManager ?? ThemeManager()
+        self.recentFiles = recentFiles ?? RecentFiles()
         self.archivedConflicts = conflicts?.entries() ?? []
 
         // 上次打开的那篇优先于草稿：读者按下 ⌘Tab 回来，期待看到的是刚才在写的东西，
@@ -874,7 +879,9 @@ final class DocumentStore: ObservableObject {
 
     /// Draft storage root. Defaults to Application Support; injectable so tests
     /// can run against a temp directory instead of the user's real draft.
-    private static var defaultDraftDirectory: URL {
+    /// 默认草稿目录，也是「未命名文档」脚本的家。窗口层要在这里给第二扇窗口
+    /// 划一个子目录——两份 `draft.md` 写在一起，谁最后落盘谁赢。
+    static var defaultDraftDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = base.appendingPathComponent("wtmd", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -890,6 +897,9 @@ final class DocumentStore: ObservableObject {
     }
 
     private static func writeDraft(_ content: String, at directory: URL) {
+        // 目录可能还不存在：第二扇窗口的草稿有自己的子目录，第一次落盘时它还在
+        // 半路上。写不进去的后果是这份草稿根本不存在——静默丢字，最难发现。
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try? content.write(to: draftURL(in: directory), atomically: true, encoding: .utf8)
     }
 

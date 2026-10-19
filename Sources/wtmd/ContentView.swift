@@ -12,6 +12,8 @@ struct ContentView: View {
     @EnvironmentObject var overrides: ShortcutOverrides
     /// Owned by the app so the menu bar can open the palette too.
     @Binding var paletteVisible: Bool
+    /// 窗口表：⌘N 要从这里开新窗口。为 nil 时退回本窗口新建（测试、离线视图）。
+    var coordinator: WindowCoordinator? = nil
 
     /// 冲突副本清单是否展开。
     @State private var conflictListVisible = false
@@ -110,7 +112,10 @@ struct ContentView: View {
     /// The single runtime behind the toolbar, the menus and the palette, so a
     /// command behaves identically wherever it is invoked from.
     private var commandRuntime: CommandRuntime {
-        CommandRuntime(store: store, workspace: workspace, writing: writing, updates: updates)
+        CommandRuntime(
+            store: store, workspace: workspace, writing: writing, updates: updates,
+            windows: coordinator
+        )
     }
 
     private func isEnabled(_ kind: CommandKind) -> Bool {

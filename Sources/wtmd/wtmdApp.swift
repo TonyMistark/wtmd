@@ -2,53 +2,34 @@ import SwiftUI
 
 @main
 struct wtmdApp: App {
-    @StateObject private var store: DocumentStore
-    @StateObject private var workspace: WorkspaceStore
-    @StateObject private var writing = WritingSettings()
-    @StateObject private var typesetting: TypesettingSettings
-    @StateObject private var printing: PrintSettings
-    @StateObject private var updates = UpdateChecker()
-    @StateObject private var overrides = ShortcutOverrides()
-    @State private var paletteVisible = false
+    /// 应用级的一份：设置、账本、最近文件。
+    @StateObject private var shared: SharedAppEnvironment
+    /// 窗口表：谁是主窗口，命令该落在谁身上，下一扇窗口从哪儿开。
+    @StateObject private var coordinator: WindowCoordinator
 
-    /// One session record shared by the document and the folder around it: both
-    /// write to the same blob, and a restore has to bring them back together.
     init() {
-        let session = Session()
-        // 冲突副本落在 Application Support/wtmd/conflicts：切文档时救下来的本地版本
-        let documentStore = DocumentStore(
-            session: session,
-            conflicts: ConflictArchive(),
-            writingStats: WritingStats()
-        )
-        let workspaceStore = WorkspaceStore(session: session)
-        // 树里改名/删除之后，当前文档得跟着磁盘走——两个 store 各自独立，
-        // 这条线只走一个协议，谁也不拥有谁。
-        workspaceStore.fileEvents = documentStore
-        // 导出 PDF 要同时知道「屏幕上的字号行距」和「纸上的页边距页码」：
-        // 这两个设置归视图层，store 只借来用一次。
-        let typesettingSettings = TypesettingSettings()
-        let printSettings = PrintSettings()
-        documentStore.typesetting = typesettingSettings
-        documentStore.printSettings = printSettings
-        _store = StateObject(wrappedValue: documentStore)
-        _workspace = StateObject(wrappedValue: workspaceStore)
-        _typesetting = StateObject(wrappedValue: typesettingSettings)
-        _printing = StateObject(wrappedValue: printSettings)
+        let shared = SharedAppEnvironment()
+        let coordinator = WindowCoordinator(shared: shared)
+        _shared = StateObject(wrappedValue: shared)
+        _coordinator = StateObject(wrappedValue: coordinator)
     }
 
     var body: some Scene {
-        WindowGroup {
-            ContentView(paletteVisible: $paletteVisible)
-                .environmentObject(store)
-                .environmentObject(workspace)
-                .environmentObject(writing)
-                .environmentObject(typesetting)
-                .environmentObject(updates)
-                .environmentObject(overrides)
-                .environmentObject(store.themeManager)
-                .frame(minWidth: 760, minHeight: 500)
+        WindowGroup(id: WindowScene.main) {
+            WindowRoot(model: coordinator.primary, coordinator: coordinator)
         }
+        .commands {
+            AppMenus(shared: shared, coordinator: coordinator)
+        }
+
+        // 第二扇窗口：按 id 开，内容从窗口表里取。表里没有（系统恢复下来的旧窗口）
+        // 就什么都不给——它没有会话可恢复，空白比错乱好。
+        WindowGroup(id: WindowScene.extra, for: UUID.self) { id in
+            if let id = id.wrappedValue, let model = coordinator.model(for: id) {
+                WindowRoot(model: model, coordinator: coordinator)
+            }
+        }
+
         Settings {
             TabView {
                 ThemeSettingsView()
@@ -56,58 +37,72 @@ struct wtmdApp: App {
                 ShortcutSettingsView()
                     .tabItem { Label(t("Shortcuts", "快捷键"), systemImage: "keyboard") }
             }
-            .environmentObject(store.themeManager)
-            .environmentObject(writing)
-            .environmentObject(typesetting)
-            .environmentObject(printing)
-            .environmentObject(overrides)
+            .environmentObject(shared.themeManager)
+            .environmentObject(shared.writing)
+            .environmentObject(shared.typesetting)
+            .environmentObject(shared.printing)
+            .environmentObject(shared.overrides)
         }
-        .commands {
-            CommandGroup(after: .appInfo) {
-                menuItem(.checkForUpdates)
-                Divider()
-            }
-            CommandGroup(replacing: .newItem) {
-                menuItem(.newDocument)
-            }
-            CommandGroup(replacing: .saveItem) {
-                menuItem(.openDocument)
-                menuItem(.openFolder)
-                menuItem(.save)
-                Divider()
-                menuItem(.exportHTML)
-                menuItem(.exportWord)
-                menuItem(.exportPDF)
-            }
-            CommandGroup(after: .pasteboard) {
-                menuItem(.find)
-                menuItem(.findReplace)
-                Divider()
-                menuItem(.searchWorkspace)
-            }
-            CommandGroup(after: .sidebar) {
-                Divider()
-                menuItem(.toggleSplit)
-                Divider()
-                menuItem(.toggleTypewriter)
-                menuItem(.toggleFocus)
-                Divider()
-                Button(t("Command Palette…", "命令面板…")) { paletteVisible = true }
-                    .keyboardShortcut("k", modifiers: .command)
-            }
+    }
+}
+
+/// 菜单只声明结构（槽位与分隔线），标题、快捷键、可用性、动作全部来自
+/// `CommandCatalog` / `CommandRuntime`——菜单与 ⌘K 面板因此不可能走岔。
+struct AppMenus: Commands {
+    let shared: SharedAppEnvironment
+    let coordinator: WindowCoordinator
+
+    /// 前台窗口。取不到（欢迎页、刚启动还没有焦点）时回退主窗口。
+    @FocusedValue(\.windowModel) private var focused
+
+    private var active: WindowModel { coordinator.activeModel(focused: focused) }
+
+    var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            menuItem(.checkForUpdates)
+            Divider()
+        }
+        CommandGroup(replacing: .newItem) {
+            menuItem(.newDocument)
+        }
+        CommandGroup(replacing: .saveItem) {
+            menuItem(.openDocument)
+            menuItem(.openFolder)
+            menuItem(.save)
+            Divider()
+            menuItem(.exportHTML)
+            menuItem(.exportWord)
+            menuItem(.exportPDF)
+        }
+        CommandGroup(after: .pasteboard) {
+            menuItem(.find)
+            menuItem(.findReplace)
+            Divider()
+            menuItem(.searchWorkspace)
+        }
+        CommandGroup(after: .sidebar) {
+            Divider()
+            menuItem(.toggleSplit)
+            Divider()
+            menuItem(.toggleTypewriter)
+            menuItem(.toggleFocus)
+            Divider()
+            Button(t("Command Palette…", "命令面板…")) { active.paletteVisible = true }
+                .keyboardShortcut("k", modifiers: .command)
         }
     }
 
-    /// Menu items take their title, shortcut, availability and action from
-    /// `CommandCatalog` — the same definitions the palette uses, so the two can
-    /// never drift apart. The menus only declare structure: slots and dividers.
     @ViewBuilder
     private func menuItem(_ kind: CommandKind) -> some View {
         if let command = CommandCatalog.command(
-            for: kind, themes: store.themeManager.themes, overrides: overrides.overrides
+            for: kind, themes: shared.themeManager.themes, overrides: shared.overrides.overrides
         ) {
             let runtime = CommandRuntime(
-                store: store, workspace: workspace, writing: writing, updates: updates
+                store: active.store,
+                workspace: active.workspace,
+                writing: shared.writing,
+                updates: shared.updates,
+                windows: coordinator
             )
             if let isOn = runtime.isOn(command) {
                 Toggle(command.title, isOn: Binding(get: { isOn }, set: { _ in runtime.run(command) }))
