@@ -232,7 +232,8 @@ private struct DocumentRig {
         shared = SharedAppEnvironment(
             writingStats: WritingStats(defaults: defaults),
             recentFiles: RecentFiles(userDefaults: defaults),
-            conflicts: ConflictArchive(directory: root.appendingPathComponent("conflicts"))
+            conflicts: ConflictArchive(directory: root.appendingPathComponent("conflicts")),
+            history: DocumentHistory(directory: root.appendingPathComponent("history"))
         )
         coordinator = WindowCoordinator(
             shared: shared,

@@ -22,6 +22,9 @@ final class SharedAppEnvironment: ObservableObject {
     let writingStats: WritingStats
     let recentFiles: RecentFiles
     let conflicts: ConflictArchive
+    /// 版本历史：写过的每一版都留一份。应用级一份——历史目录只有一处，
+    /// 哪扇窗写下的版本，别的窗也翻得到（beta 的面板要用）。
+    let history: DocumentHistory
     /// 谁开着哪一篇。同一篇稿子只该在一扇窗里打开——见 `OpenDocuments`。
     let openDocuments: OpenDocuments
 
@@ -37,6 +40,7 @@ final class SharedAppEnvironment: ObservableObject {
         writingStats: WritingStats? = nil,
         recentFiles: RecentFiles? = nil,
         conflicts: ConflictArchive? = nil,
+        history: DocumentHistory? = nil,
         openDocuments: OpenDocuments? = nil
     ) {
         self.themeManager = themeManager ?? ThemeManager()
@@ -48,6 +52,7 @@ final class SharedAppEnvironment: ObservableObject {
         self.writingStats = writingStats ?? WritingStats()
         self.recentFiles = recentFiles ?? RecentFiles()
         self.conflicts = conflicts ?? ConflictArchive()
+        self.history = history ?? DocumentHistory()
         self.openDocuments = openDocuments ?? OpenDocuments()
     }
 }
@@ -89,6 +94,7 @@ final class WindowModel: ObservableObject, Identifiable {
             draftDirectory: draftDirectory,
             session: session,
             conflicts: shared.conflicts,
+            history: shared.history,
             writingStats: shared.writingStats,
             themeManager: shared.themeManager,
             recentFiles: shared.recentFiles,

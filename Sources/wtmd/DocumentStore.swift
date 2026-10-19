@@ -189,6 +189,9 @@ final class DocumentStore: ObservableObject {
     /// 冲突副本的存放处。`nil`（测试默认）表示不存档，绝不污染真实的
     /// `~/Library/Application Support/wtmd/conflicts`。
     private let conflicts: ConflictArchive?
+    /// 版本历史的存放处。`nil`（测试默认）表示不留历史，绝不写真实的
+    /// `~/Library/Application Support/wtmd/history`。
+    private let history: DocumentHistory?
     /// 这扇窗的身份。应用级的「谁开着哪一篇」靠它区分窗口。
     private let windowID: UUID
     /// 应用级的「谁开着哪一篇」。`nil`（测试默认）表示不设防：同一个进程里
@@ -271,6 +274,7 @@ final class DocumentStore: ObservableObject {
         autoSaveDelay: UInt64 = 1_200_000_000,
         session: Session? = nil,
         conflicts: ConflictArchive? = nil,
+        history: DocumentHistory? = nil,
         writingStats: WritingStats? = nil,
         themeManager: ThemeManager? = nil,
         recentFiles: RecentFiles? = nil,
@@ -282,6 +286,7 @@ final class DocumentStore: ObservableObject {
         self.autoSaveDelay = autoSaveDelay
         self.session = session
         self.conflicts = conflicts
+        self.history = history
         self.writingStats = writingStats
         self.themeManager = themeManager ?? ThemeManager()
         self.recentFiles = recentFiles ?? RecentFiles()
@@ -646,6 +651,9 @@ final class DocumentStore: ObservableObject {
         fileURL = url
         savedSnapshot = document.content
         knownModificationDate = document.modifiedAt
+        // 「打开时的样子」本身就是一版：今天的删改通常是相对它而言的。
+        // 内容与最新一版相同就什么也不做（`capture` 自己去重）。
+        history?.capture(document.content, for: url, force: true)
         acceptedSharedHold = false
         recentFiles.add(url)
         hasStartedWriting = true
@@ -701,19 +709,17 @@ final class DocumentStore: ObservableObject {
             reportHeldTarget(url)
             return false
         }
-        do {
-            try text.write(to: url, atomically: true, encoding: .utf8)
-            if fileURL == nil { fileURL = url }
-            savedSnapshot = text
-            knownModificationDate = Self.modificationDate(of: url)
-            recentFiles.add(url)
-            session?.setOpenFile(url)
-            clearDraft()
-            return true
-        } catch {
+        // 落盘只有 `writeFile` 一条路：正文、基线、版本历史都在那里一次做完。
+        // 两条路各写一遍，迟早有一条忘了顺手做的事。
+        if let error = writeFile(text, to: url) {
             NSAlert(error: error).runModal()
             return false
         }
+        if fileURL == nil { fileURL = url }
+        recentFiles.add(url)
+        session?.setOpenFile(url)
+        clearDraft()
+        return true
     }
 
     /// 这篇在**另一扇**窗里开着吗？
@@ -999,7 +1005,7 @@ final class DocumentStore: ObservableObject {
 
     /// Writes content to wherever this document belongs: its file on disk, or
     /// the draft file while it has no path.
-    private func persist(_ content: String) {
+    private func persist(_ content: String, forceHistory: Bool = false) {
         if let fileURL {
             // 已经举过「两扇窗在写同一篇」的牌子：字已存进副本库，别再一遍遍存。
             if externalChange == .heldElsewhere { return }
@@ -1010,7 +1016,7 @@ final class DocumentStore: ObservableObject {
                 archiveIfHeldElsewhere(change)
                 return
             }
-            writeFile(content, to: fileURL)
+            writeFile(content, to: fileURL, forceHistory: forceHistory)
         } else {
             Self.writeDraft(content, at: draftDirectory)
         }
@@ -1063,7 +1069,7 @@ final class DocumentStore: ObservableObject {
             externalChange = nil
             // `writeFile` 成功后会顺手把基线刷成本次写入的 mtime；失败就说明
             // 磁盘那边还是别的版本（只读卷、路径被占），冲突得重新亮出来。
-            if !writeFile(text, to: fileURL) {
+            if writeFile(text, to: fileURL) != nil {
                 externalChange = detectExternalChange() ?? .modified
             }
         case .reloadDisk:
@@ -1104,13 +1110,18 @@ final class DocumentStore: ObservableObject {
     }
 
     @discardableResult
-    private func writeFile(_ content: String, to url: URL) -> Bool {
-        guard (try? content.write(to: url, atomically: true, encoding: .utf8)) != nil else {
-            return false
+    private func writeFile(_ content: String, to url: URL, forceHistory: Bool = false) -> Error? {
+        do {
+            try content.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            return error
         }
         savedSnapshot = content
         knownModificationDate = Self.modificationDate(of: url)
-        return true
+        // 写进去的这一版顺手留个历史。按间隔去重，所以「每 1.2 秒自动保存」
+        // 不会把五十版的窗口在十分钟内填满；`forceHistory` 留给「离开这一篇」。
+        history?.capture(content, for: url, force: forceHistory)
+        return nil
     }
 
     /// Persists pending edits immediately, cancelling the debounce. Called
@@ -1122,7 +1133,9 @@ final class DocumentStore: ObservableObject {
         // 结算不依赖「有没有脏改动」：没保存但改过又改回去，净增也该落账
         settleWritingStats()
         guard isDirty else { return }
-        persist(text)
+        // 离开这一篇（切文档 / 关窗 / 退出）时把最后的样子留一版：间隔是给
+        // 「一直开着写」用的，不该把「这次写到哪儿」也一起吃掉的。
+        persist(text, forceHistory: true)
     }
 
     /// A weak, `Sendable` handle to the store for notification callbacks: the
