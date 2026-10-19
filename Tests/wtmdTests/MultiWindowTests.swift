@@ -249,7 +249,9 @@ private struct WindowRig {
                 draftDirectory: root.appendingPathComponent("primary", isDirectory: true),
                 startsBlank: true
             ),
-            draftRoot: root
+            draftRoot: root,
+            // 账本和每扇窗的会话都写在这个临时 suite 里：测试不该碰真实记录。
+            defaults: defaults
         )
     }
 

@@ -47,26 +47,50 @@ final class Session {
     /// limit when someone opens a folder of hundreds of notes once.
     static let positionLimit = 20
 
-    private static let key = "wtmd.session"
+    private static let defaultKey = "wtmd.session"
     private static let currentVersion = 1
 
     private let defaults: UserDefaults
     private let now: () -> Date
     private var snapshot: Snapshot
-    /// 一次性会话：不读也不写。第二扇窗口用它——它没有自己的记录可以恢复，
-    /// 也不该把主窗口的那一份覆盖掉。
+    /// 一次性会话：不读也不写。窗口关掉就结束的那一档用它——它没有自己的记录
+    /// 可以恢复，也不该把别人的那一份覆盖掉。
     private let persist: Bool
+    /// 这份记录存在哪个键下。主窗口沿用 `wtmd.session`（读旧版的记录不必迁移）；
+    /// 第二扇及以后的窗口按窗口 id 各存一条，彼此碰不到。
+    private let key: String
+    /// `endRecord()` 之后这条记录就死了：任何 setter 都不许把它写活。
+    private var ended = false
 
-    init(
+    convenience init(
         persist: Bool = true,
         defaults: UserDefaults = .standard,
         now: @escaping () -> Date = Date.init
     ) {
+        self.init(key: Self.defaultKey, persist: persist, defaults: defaults, now: now)
+    }
+
+    /// 一扇窗口自己的记录：同一份 defaults 里各占一个键。
+    convenience init(
+        window: UUID,
+        defaults: UserDefaults = .standard,
+        now: @escaping () -> Date = Date.init
+    ) {
+        self.init(key: Self.key(for: window), persist: true, defaults: defaults, now: now)
+    }
+
+    private init(
+        key: String,
+        persist: Bool,
+        defaults: UserDefaults,
+        now: @escaping () -> Date
+    ) {
+        self.key = key
         self.persist = persist
         self.defaults = defaults
         self.now = now
         if persist,
-           let data = defaults.data(forKey: Self.key),
+           let data = defaults.data(forKey: key),
            let decoded = try? JSONDecoder().decode(Snapshot.self, from: data),
            decoded.version == Self.currentVersion {
             snapshot = decoded
@@ -78,6 +102,21 @@ final class Session {
     /// Whether this record outlives the window. Exposed for tests and for the
     /// window layer, which decides where a new window's drafts go.
     var isPersistent: Bool { persist }
+
+    /// 这扇窗口关掉了：把它的记录从磁盘上抹掉，并封口。
+    ///
+    /// 封口不是洁癖：窗口关闭时 `DocumentStore` 的退出观察者还会顺手记一次位置，
+    /// 不封口的话刚删掉的键立刻又被写回来，下次启动就多出一扇「幽灵窗」。
+    func endRecord() {
+        defaults.removeObject(forKey: key)
+        snapshot = Snapshot()
+        ended = true
+    }
+
+    /// 按窗口 id 取记录键。测试要对它断言「关窗之后真的没了」。
+    static func key(for window: UUID) -> String {
+        "wtmd.session.window.\(window.uuidString)"
+    }
 
     // MARK: - 工作区
 
@@ -202,8 +241,8 @@ final class Session {
     }
 
     private func flush() {
-        guard persist else { return }
+        guard persist, !ended else { return }
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
-        defaults.set(data, forKey: Self.key)
+        defaults.set(data, forKey: key)
     }
 }
