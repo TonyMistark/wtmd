@@ -465,20 +465,17 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
-            Picker(
-                t("Mode", "模式"),
-                selection: Binding(
-                    get: { store.mode },
-                    set: { store.setMode($0) }
-                )
-            ) {
-                Label(ViewMode.edit.label, systemImage: "character.cursor.ibeam").tag(ViewMode.edit)
-                Label(ViewMode.preview.label, systemImage: "doc.richtext").tag(ViewMode.preview)
-                Label(ViewMode.split.label, systemImage: "rectangle.split.2x1").tag(ViewMode.split)
+            // 三种视图是同一个位置的状态，不是三个并列的功能：一个按钮转一圈，
+            // 图标说明现在在哪，悬停说明点下去去哪。
+            Button {
+                store.cycleMode()
+            } label: {
+                Label(store.mode.label, systemImage: store.mode.symbol)
             }
-            .pickerStyle(.segmented)
-            .frame(width: 240)
-            .help(t("Source / Preview / Split (⌘/ toggles, ⌘⇧\\ switches)", "思绪 / 成文 / 对照（⌘/ 切思绪⇄成文，⌘⇧\\ 切对照）"))
+            .help(store.mode.cycleHint)
+            .accessibilityLabel(t("View mode", "视图模式"))
+            .accessibilityValue(store.mode.label)
+            .accessibilityHint(store.mode.cycleHint)
         }
 
         ToolbarItemGroup(placement: .primaryAction) {

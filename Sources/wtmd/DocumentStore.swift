@@ -19,6 +19,51 @@ enum ViewMode: String, CaseIterable, Identifiable {
         case .split: return t("Split", "对照")
         }
     }
+
+    /// 工具栏那个按钮的图标。三种视图共用一个按钮，图标就是「现在在哪」。
+    var symbol: String {
+        switch self {
+        case .edit: return "character.cursor.ibeam"
+        case .preview: return "doc.richtext"
+        case .split: return "rectangle.split.2x1"
+        }
+    }
+
+    /// 单击依次经过的下一种视图：思绪 → 成文 → 对照 → 回到思绪。
+    ///
+    /// The ring is `allCases` own order, so reordering it means moving the
+    /// `case` lines — no second list to keep in sync.
+    var next: ViewMode {
+        let all = Self.allCases
+        guard let index = all.firstIndex(of: self) else { return .edit }
+        return all[(index + 1) % all.count]
+    }
+
+    /// 悬停提示：先说现在在哪（这个视图是干什么的），再说点下去去哪。
+    ///
+    /// Always opens with `label`, so the tooltip answers "where am I" first —
+    /// the question a single cycling button makes people ask.
+    var cycleHint: String {
+        let detail: String
+        switch self {
+        case .edit:
+            detail = t(
+                "only the source, just you and the text. Click for \(next.label).",
+                "只有源码，专心写。点击切到\(next.label)"
+            )
+        case .preview:
+            detail = t(
+                "the finished page, no editing. Click for \(next.label).",
+                "只读成文。点击切到\(next.label)"
+            )
+        case .split:
+            detail = t(
+                "type on the left, the page follows on the right. Click for \(next.label).",
+                "左边写，右边跟着成文。点击回到\(next.label)"
+            )
+        }
+        return "\(label) · \(detail)"
+    }
 }
 
 struct JumpRequest: Equatable {
@@ -342,6 +387,11 @@ final class DocumentStore: ObservableObject {
     /// `⌘⇧\`：进入 / 离开对照。
     func toggleSplit() {
         setMode(mode == .split ? .edit : .split)
+    }
+
+    /// 工具栏上那一个按钮：视图不是三选一，是同一个位置的一圈状态。
+    func cycleMode() {
+        setMode(mode.next)
     }
 
     /// 编辑模式下当前光标所在章节 slug（用于大纲高亮）。对照模式下光标在源码里，
