@@ -183,6 +183,11 @@ final class DocumentStore: ObservableObject {
     /// 冲突副本的存放处。`nil`（测试默认）表示不存档，绝不污染真实的
     /// `~/Library/Application Support/wtmd/conflicts`。
     private let conflicts: ConflictArchive?
+    /// 这扇窗的身份。应用级的「谁开着哪一篇」靠它区分窗口。
+    private let windowID: UUID
+    /// 应用级的「谁开着哪一篇」。`nil`（测试默认）表示不设防：同一个进程里
+    /// 每扇窗都自己开自己的，谁也不问别人。
+    private let openDocuments: OpenDocuments?
     /// The file's modification date as of the last read or write. A mismatch
     /// against the disk later means someone else touched the file.
     private(set) var knownModificationDate: Date?
@@ -256,7 +261,9 @@ final class DocumentStore: ObservableObject {
         conflicts: ConflictArchive? = nil,
         writingStats: WritingStats? = nil,
         themeManager: ThemeManager? = nil,
-        recentFiles: RecentFiles? = nil
+        recentFiles: RecentFiles? = nil,
+        windowID: UUID = UUID(),
+        openDocuments: OpenDocuments? = nil
     ) {
         let directory = draftDirectory ?? Self.defaultDraftDirectory
         self.draftDirectory = directory
@@ -266,6 +273,8 @@ final class DocumentStore: ObservableObject {
         self.writingStats = writingStats
         self.themeManager = themeManager ?? ThemeManager()
         self.recentFiles = recentFiles ?? RecentFiles()
+        self.windowID = windowID
+        self.openDocuments = openDocuments
         self.archivedConflicts = conflicts?.entries() ?? []
 
         // 上次打开的那篇优先于草稿：读者按下 ⌘Tab 回来，期待看到的是刚才在写的东西，
@@ -604,6 +613,11 @@ final class DocumentStore: ObservableObject {
             // 同一篇：不重载，只把光标送到命中处
             if mode == .preview { mode = .edit }
             editorJump = request
+            return
+        }
+        // 这篇已经在另一扇窗里开着：跳过去，而不是在这里再开一份。两份各写各的，
+        // 谁后落盘谁赢，另一边刚敲的字就没了。读盘之前就拦，连预览都不重建。
+        if openDocuments?.handOver(url, jumpingTo: request, from: windowID) == true {
             return
         }
         guard let document = Self.readDocument(at: url) else { return }
