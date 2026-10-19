@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// 一份冲突发生时留下的本地版本。
@@ -21,10 +22,16 @@ struct ConflictArchiveEntry: Identifiable, Equatable {
 /// 目录里放的是**普通 Markdown 文件**加一份 `manifest.json`：副本要能被人直接用
 /// 别的编辑器打开（所以是纯正文），而「原来叫什么、什么时候存的」这些信息塞进正文
 /// 会污染内容，只能另存一本账。账丢了也不至于丢内容——文件还在，只是没人认领。
-final class ConflictArchive {
+///
+/// 它是**应用级一份**的：`conflicts/` 目录只有一处。多窗口下每个
+/// `DocumentStore` 都订阅 `objectWillChange`，任何一扇窗存下副本，其余窗口的
+/// 状态栏入口立刻跟上——否则「另一扇窗里还有一份没取回的字」会一直看不见。
+final class ConflictArchive: ObservableObject {
     let directory: URL
     /// 存档时间。注入是为了让「同一秒存两次」这种边界可测。
     private let clock: () -> Date
+    /// 每改动一次 +1。多窗口靠它广播「副本列表变了」。
+    @Published private(set) var revision = 0
 
     private var manifestURL: URL { directory.appendingPathComponent(Self.manifestName) }
 
@@ -62,6 +69,7 @@ final class ConflictArchive {
         var records = records()
         records.append(Record(file: name, originalPath: originalURL?.path, savedAt: stamp))
         save(records)
+        revision += 1
 
         return ConflictArchiveEntry(
             fileURL: target,
@@ -99,6 +107,7 @@ final class ConflictArchive {
         try? FileManager.default.removeItem(at: entry.fileURL)
         let name = entry.fileURL.lastPathComponent
         save(records().filter { $0.file != name })
+        revision += 1
     }
 
     func removeAll() {
@@ -106,6 +115,7 @@ final class ConflictArchive {
             try? FileManager.default.removeItem(at: directory.appendingPathComponent(record.file))
         }
         save([])
+        revision += 1
     }
 
     // MARK: - 账本

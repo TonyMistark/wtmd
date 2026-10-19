@@ -197,6 +197,8 @@ final class DocumentStore: ObservableObject {
     private var archiveNoticeTask: Task<Void, Never>?
     /// 把账本的变化转成 store 的变化——状态栏挂在 ContentView 上，只认 store。
     private var writingStatsObservation: AnyCancellable?
+    /// 副本库是应用级的：订阅它，别的窗口存档时这扇窗也能看见。
+    private var conflictsObservation: AnyCancellable?
     /// 每打开/新建一篇就 +1：它参与 `documentKey`，让「换了文档」永远能被认出来。
     /// 未命名草稿改成空文档时路径没变，只看路径会把清空算成删了几百字。
     private var documentEpoch = 0
@@ -307,6 +309,11 @@ final class DocumentStore: ObservableObject {
         }
         writingStatsObservation = writingStats?.objectWillChange.sink { [weak self] in
             self?.objectWillChange.send()
+        }
+        // 副本库是应用级一份：别的窗口存下/取走副本时，这扇窗的列表也要跟上，
+        // 否则「还有一份没取回的字」只在存下它的那扇窗里看得见。
+        conflictsObservation = conflicts?.objectWillChange.sink { [weak self] in
+            self?.refreshArchivedConflicts()
         }
     }
 

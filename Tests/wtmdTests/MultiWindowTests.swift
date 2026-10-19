@@ -144,6 +144,30 @@ import Testing
     #expect(first.store.writingStats === rig.shared.writingStats)
 }
 
+/// 副本库是应用级一份：一扇窗存下的副本，另一扇窗立刻也能看见；
+/// 取回之后两边一起消失。否则「还有一份没取回的字」只在存下它的那扇窗里看得见。
+@MainActor
+@Test func aConflictCopyArchivedInOneWindowAppearsInTheOther() throws {
+    let rig = try WindowRig()
+    defer { rig.cleanup() }
+
+    let first = rig.newWindow()
+    let second = rig.newWindow()
+    #expect(first.store.archivedConflicts.isEmpty)
+
+    let entry = try #require(rig.shared.conflicts.archive(
+        "# 我改的那一版\n", originalURL: URL(fileURLWithPath: "/tmp/书房/第三稿.md")
+    ))
+
+    #expect(first.store.archivedConflicts.map(\.id) == [entry.fileURL])
+    #expect(second.store.archivedConflicts.map(\.id) == [entry.fileURL])
+
+    rig.shared.conflicts.remove(entry)
+
+    #expect(first.store.archivedConflicts.isEmpty)
+    #expect(second.store.archivedConflicts.isEmpty)
+}
+
 // MARK: - 命令落在哪扇窗
 
 @MainActor
