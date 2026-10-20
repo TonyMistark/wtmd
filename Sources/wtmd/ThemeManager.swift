@@ -245,9 +245,6 @@ final class ThemeManager: ObservableObject {
 
 struct ThemeSettingsView: View {
     @EnvironmentObject var themeManager: ThemeManager
-    @EnvironmentObject var writing: WritingSettings
-    @EnvironmentObject var typesetting: TypesettingSettings
-    @EnvironmentObject var printing: PrintSettings
 
     var body: some View {
         Form {
@@ -268,118 +265,9 @@ struct ThemeSettingsView: View {
                 Spacer()
                 Button(t("Rescan", "重新扫描")) { themeManager.reload() }
             }
-
-            Section(t("Writing", "写作")) {
-                Toggle(t("Typewriter Mode", "打字机模式"), isOn: $writing.typewriter)
-                Toggle(t("Focus Mode", "专注模式"), isOn: $writing.focusMode)
-                Toggle(t("Daily character goal", "每日字数目标"), isOn: goalEnabled)
-                if writing.dailyGoal > 0 {
-                    Stepper(value: $writing.dailyGoal, in: 100...10_000, step: 100) {
-                        Text(t("\(writing.dailyGoal.formatted()) characters a day", "每天 \(writing.dailyGoal.formatted()) 字"))
-                            .monospacedDigit()
-                    }
-                }
-                Text(t(
-                    "Typewriter keeps the caret line centred; focus dims everything outside the current paragraph. Both can be on at once.",
-                    "打字机让光标行停在屏幕中部；专注把当前段落之外的内容退成浅灰。两者可同时开启。"
-                ))
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                Text(t(
-                    "The goal counts net characters: deleting takes them back off. It shows up in the status bar only once a goal is set.",
-                    "目标算的是净增：删字会扣回去。设了目标之后，状态栏才会出现今日进度。"
-                ))
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            }
-
-            Section(t("Reading Layout", "阅读版式")) {
-                layoutSlider(
-                    title: t("Measure", "版心宽度"),
-                    value: "\(typesetting.measure) px",
-                    binding: Binding(
-                        get: { Double(typesetting.measure) },
-                        set: { typesetting.measure = Int($0) }
-                    ),
-                    range: 480...1_100,
-                    step: 20
-                )
-                layoutSlider(
-                    title: t("Text size", "正文字号"),
-                    value: "\(typesetting.fontSize) px",
-                    binding: Binding(
-                        get: { Double(typesetting.fontSize) },
-                        set: { typesetting.fontSize = Int($0) }
-                    ),
-                    range: 14...22,
-                    step: 1
-                )
-                layoutSlider(
-                    title: t("Line height", "行距"),
-                    value: String(format: "%.2f", typesetting.lineHeight),
-                    binding: $typesetting.lineHeight,
-                    range: 1.4...2.2,
-                    step: 0.05
-                )
-                HStack {
-                    Text(t(
-                        "Preview only: colours and fonts still come from the theme.",
-                        "只影响预览；颜色与字体仍由主题决定。"
-                    ))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    Spacer()
-                    Button(t("Restore Defaults", "恢复默认")) { typesetting.reset() }
-                }
-            }
-            Section(t("Printing", "打印")) {
-                layoutSlider(
-                    title: t("Page margin", "页边距"),
-                    value: String(format: "%.0f mm", printing.marginMM),
-                    binding: $printing.marginMM,
-                    range: PrintLayout.marginRange,
-                    step: 1
-                )
-                Toggle(t("Page numbers", "页码"), isOn: $printing.pageNumbers)
-                Toggle(t("Document title on the first page", "第一页印文档名"), isOn: $printing.showTitle)
-                Text(t(
-                    "Applies to Print / Save as PDF. Text size and line height follow the reading layout above; the measure narrows to the page width.",
-                    "作用于「打印 / 存为 PDF」。字号与行距沿用上面的阅读版式，版心按页宽归一。"
-                ))
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            }
         }
         .formStyle(.grouped)
-        .frame(width: 460, height: 760)
-    }
-
-    /// 一行「标题 + 滑块 + 当前值」：三个版式值长得一样，就不各写一遍。
-    private func layoutSlider(
-        title: String,
-        value: String,
-        binding: Binding<Double>,
-        range: ClosedRange<Double>,
-        step: Double
-    ) -> some View {
-        LabeledContent(title) {
-            HStack(spacing: 10) {
-                Slider(value: binding, in: range, step: step)
-                    .frame(width: 160)
-                Text(value)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .frame(width: 56, alignment: .trailing)
-            }
-        }
-    }
-
-    /// 开关与数字写在同一个值上：0 就是关。省掉「开了但没填」这种半吊子状态。
-    private var goalEnabled: Binding<Bool> {
-        Binding(
-            get: { writing.dailyGoal > 0 },
-            set: { writing.dailyGoal = $0 ? 800 : 0 }
-        )
+        .frame(width: SettingsPage.width, height: SettingsPage.height)
     }
 
     private var themeSelection: Binding<String> {

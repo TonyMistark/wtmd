@@ -34,7 +34,7 @@ struct ControlCenterTests {
         #expect(writing.rows.map(\.action) == [
             .command(.showCalendar),
             .command(.showHistory),
-            .settings(.theme),
+            .settings(.writing),
         ])
     }
 
@@ -98,11 +98,31 @@ struct ControlCenterTests {
         #expect(command?.section == .app)
     }
 
-    @Test("设置的两页名字写死在 rawValue 里——改了会让老用户的选择丢掉")
+    @Test("设置的页码写死在 rawValue 里——改了会让老用户的选择丢掉")
     func settingsTabRawValuesAreStable() {
         #expect(SettingsTab.theme.rawValue == "theme")
+        #expect(SettingsTab.writing.rawValue == "writing")
+        #expect(SettingsTab.layout.rawValue == "layout")
+        #expect(SettingsTab.printing.rawValue == "printing")
         #expect(SettingsTab.shortcuts.rawValue == "shortcuts")
         #expect(SettingsTab.storageKey == "wtmd.settings.tab")
+    }
+
+    /// 三行曾经一起指向「主题」页——窗口是开了，可那三块设置在页面下半截，
+    /// 点完停在最上面，看起来就像没反应。各自指向各自的页，才不会白点。
+    @Test("每日目标、阅读版式、打印设置各进各的页")
+    func settingsRowsPointAtTheirOwnPage() {
+        let goal = rows().first { $0.id == "settings:writing#goal" }
+        #expect(goal?.action == .settings(.writing))
+
+        let layout = rows().first { $0.id == "settings:layout#layout" }
+        #expect(layout?.action == .settings(.layout))
+
+        let printing = rows().first { $0.id == "settings:printing#printing" }
+        #expect(printing?.action == .settings(.printing))
+
+        let shortcuts = rows().first { $0.id == "settings:shortcuts#shortcuts" }
+        #expect(shortcuts?.action == .settings(.shortcuts))
     }
 
     // MARK: 可用性
@@ -258,8 +278,12 @@ struct ControlCenterAssemblyTests {
     @Test func theSettingsSheetRemembersItsTab() throws {
         let source = try String(contentsOf: Self.appURL, encoding: .utf8)
         #expect(source.contains("TabView(selection: $tab)"))
-        #expect(source.contains(".tag(SettingsTab.theme.rawValue)"))
-        #expect(source.contains(".tag(SettingsTab.shortcuts.rawValue)"))
+        for tab in SettingsTab.allCases {
+            #expect(
+                source.contains(".tag(SettingsTab.\(tab.rawValue).rawValue)"),
+                "设置窗口里没有 \(tab.rawValue) 这一页"
+            )
+        }
     }
 
     /// 「点了没反应」的根因：命令层拿不到视图环境，只能靠根视图把 opener 挂进去。

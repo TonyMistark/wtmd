@@ -4,11 +4,16 @@ import SwiftUI
 
 // MARK: - 设置标签页
 
-/// 设置窗口的两页。功能中心要能直达其中一页，所以这一层得有个名字。
+/// 设置窗口的五页。功能中心要能直达其中一页，所以这一层得有个名字。
 ///
 /// 存的是 `rawValue`：设置窗口和功能中心共用一个 `@AppStorage` 键，谁改都算数。
+/// 一页一件事——原来「写作 / 版式 / 打印」三块挤在主题页下半截，点完落在
+/// 最上面，看起来就像没反应。
 enum SettingsTab: String, CaseIterable, Identifiable {
     case theme
+    case writing
+    case layout
+    case printing
     case shortcuts
 
     var id: String { rawValue }
@@ -16,6 +21,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .theme: return t("Theme", "主题")
+        case .writing: return t("Writing", "写作")
+        case .layout: return t("Layout", "版式")
+        case .printing: return t("Printing", "打印")
         case .shortcuts: return t("Shortcuts", "快捷键")
         }
     }
@@ -23,6 +31,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .theme: return "paintpalette"
+        case .writing: return "character.cursor.ibeam"
+        case .layout: return "text.alignleft"
+        case .printing: return "printer"
         case .shortcuts: return "keyboard"
         }
     }
@@ -169,7 +180,7 @@ enum ControlCenterCatalog {
                     subtitle: historySubtitle(count: context.historyCount), isEnabled: historyOn
                 ),
                 settings(
-                    .theme, key: "goal", title: t("Daily Goal…", "每日目标…"),
+                    .writing, key: "goal", title: t("Daily Goal…", "每日目标…"),
                     symbol: "target", subtitle: goalSubtitle(context.goal)
                 ),
             ]
@@ -190,12 +201,12 @@ enum ControlCenterCatalog {
                     symbol: "paintpalette", shortcut: nil, isEnabled: true
                 ),
                 settings(
-                    .theme, key: "layout", title: t("Reading Layout…", "阅读版式…"),
+                    .layout, key: "layout", title: t("Reading Layout…", "阅读版式…"),
                     symbol: "text.alignleft",
                     subtitle: layoutSubtitle(measure: context.measure, fontSize: context.fontSize)
                 ),
                 settings(
-                    .theme, key: "printing", title: t("Printing…", "打印设置…"),
+                    .printing, key: "printing", title: t("Printing…", "打印设置…"),
                     symbol: "printer",
                     subtitle: printingSubtitle(
                         marginMM: context.marginMM, pageNumbers: context.pageNumbers

@@ -49,8 +49,8 @@ struct wtmdApp: App {
     }
 }
 
-/// 设置窗口。选中的是哪一页也记在 defaults 里——功能中心的「阅读版式」「快捷键」
-/// 要先翻到对应页再开窗，靠的就是这一个键。
+/// 设置窗口。选中的是哪一页也记在 defaults 里——功能中心里的「每日目标」
+/// 「阅读版式」「打印设置」要落在对应的那一页，靠的就是这一个键。
 struct SettingsSheet: View {
     @AppStorage(SettingsTab.storageKey) private var tab = SettingsTab.theme.rawValue
 
@@ -59,6 +59,15 @@ struct SettingsSheet: View {
             ThemeSettingsView()
                 .tabItem { Label(SettingsTab.theme.title, systemImage: SettingsTab.theme.symbol) }
                 .tag(SettingsTab.theme.rawValue)
+            WritingSettingsView()
+                .tabItem { Label(SettingsTab.writing.title, systemImage: SettingsTab.writing.symbol) }
+                .tag(SettingsTab.writing.rawValue)
+            LayoutSettingsView()
+                .tabItem { Label(SettingsTab.layout.title, systemImage: SettingsTab.layout.symbol) }
+                .tag(SettingsTab.layout.rawValue)
+            PrintingSettingsView()
+                .tabItem { Label(SettingsTab.printing.title, systemImage: SettingsTab.printing.symbol) }
+                .tag(SettingsTab.printing.rawValue)
             ShortcutSettingsView()
                 .tabItem { Label(SettingsTab.shortcuts.title, systemImage: SettingsTab.shortcuts.symbol) }
                 .tag(SettingsTab.shortcuts.rawValue)
