@@ -64,7 +64,7 @@ import Testing
 @Test func typingOnTheFirstLineKeepsTheCaretAndTheViewport() {
     let harness = EditorHarness(text: longDocument(), typewriter: true)
     harness.textView.setSelectedRange(NSRange(location: 0, length: 0))
-    harness.coordinator.recenter(animated: false)
+    harness.coordinator.recenter()
 
     harness.type("\n", at: 0)
 

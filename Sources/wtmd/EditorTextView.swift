@@ -79,7 +79,7 @@ struct EditorTextView: NSViewRepresentable {
             coordinator.appliedTypewriterMode = typewriterMode
             coordinator.clipView.centersCaret = typewriterMode
             if typewriterMode {
-                coordinator.recenter(animated: false)
+                coordinator.recenter()
             } else {
                 // 收起那半屏留白：否则关掉开关后文档末尾会浮在半空
                 coordinator.settleIntoScrollRange()
@@ -130,8 +130,6 @@ struct EditorTextView: NSViewRepresentable {
         /// 本次代数的回填是否已完成。排期之前记下的一切都是「刚建出来的零点」，
         /// 写进账本就等于把刚存的位置立刻抹掉。
         private var positionRestored = false
-        /// 回填期间不播放居中动画：建视图的这一拍窗口还没稳定，动画代理会踩空。
-        private var isRestoring = false
         /// 已经铺过的查找状态，用来只在真正变化时重铺。
         var appliedFindMatches: [NSRange] = []
         var appliedFindCurrent: NSRange?
@@ -386,9 +384,6 @@ struct EditorTextView: NSViewRepresentable {
             positionRestored = true
             guard let snapshot else { return }
 
-            isRestoring = true
-            defer { isRestoring = false }
-
             let content = NSString(string: textView.string)
             let location = min(max(0, snapshot.selection.location), content.length)
             let length = min(max(0, snapshot.selection.length), content.length - location)
@@ -396,7 +391,7 @@ struct EditorTextView: NSViewRepresentable {
 
             if parent.typewriterMode {
                 // 打字机模式自己会把光标行拉到中部，再回填原始偏移只会打架
-                recenter(animated: false)
+                recenter()
             } else {
                 if let container = textView.textContainer {
                     textView.layoutManager?.ensureLayout(for: container)
@@ -554,8 +549,23 @@ struct EditorTextView: NSViewRepresentable {
         ///
         /// 只对光标那一行做布局（`ensureLayout(forCharacterRange:)`）——整篇
         /// `ensureLayout` 在长文档上每次按键都做不起。
-        func recenter(animated: Bool = true) {
+        ///
+        /// **不做动画**（v0.14.1）：曾经用 `clipView.animator()` 在 `NSAnimationContext`
+        /// 里滑过去，结果点一下编辑器就必崩（issue #135）。栈是
+        /// `-[NSTextView mouseDown:]` → 选区通知 → 这里 → `-[NSClipView setBoundsOrigin:]`
+        /// → `NSViewHierarchyInvalidateVisibleRect` → `SIGSEGV`：动画代理改 bounds 时，
+        /// AppKit 遍历可见矩形的那棵树已经不一致了（自绘 clip view + 边滚边布局，
+        /// 关掉 `allowsImplicitAnimation` 也一样崩）。同一个调用栈里直接
+        /// `scroll(to:)` 是安全的——真窗口探针在 `EditorRecenterTests` 里守着这件事。
+        func recenter() {
             guard parent.typewriterMode else { return }
+            // 视图可能已经被 SwiftUI 从窗口上摘掉（换文档、切视图模式都在重建这棵树）：
+            // 这时候动 bounds 没有任何意义，只会碰到一棵脱钩的树——而「可见矩形失效时
+            // 那棵树已经对不上」正是 issue #135 崩溃的入口。
+            guard clipView.superview === scrollView,
+                  scrollView.documentView === textView,
+                  scrollView.window != nil
+            else { return }
             guard let layoutManager = textView.layoutManager,
                   let container = textView.textContainer
             else { return }
@@ -578,24 +588,7 @@ struct EditorTextView: NSViewRepresentable {
             )
             guard abs(clipView.bounds.origin.y - target) > 0.5 else { return }
 
-            // 只有真正在屏幕上滚动的视图才做动画：离屏/未显示的窗口上跑动画代理，
-            // 会在窗口先一步销毁时留下悬空的图层引用（AppKit 下一帧踩空）。
-            let canAnimate = animated
-                && !isRestoring
-                && clipView.window?.isVisible == true
-                && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-
-            if canAnimate {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.08
-                    context.allowsImplicitAnimation = true
-                    clipView.animator().setBoundsOrigin(
-                        NSPoint(x: clipView.bounds.origin.x, y: target)
-                    )
-                }
-            } else {
-                clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: target))
-            }
+            clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: target))
             scrollView.reflectScrolledClipView(clipView)
         }
 
