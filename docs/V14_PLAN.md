@@ -1,6 +1,6 @@
 # v0.14 — 崩了也说清楚
 
-**状态**：已发布（v0.14.0，2026-10-20）｜ 前置：v0.13.0 已发布（2026-10-20，详见 [V13_PLAN.md](V13_PLAN.md)）
+**状态**：已发布（v0.14.1，2026-10-20）｜ 前置：v0.13.0 已发布（2026-10-20，详见 [V13_PLAN.md](V13_PLAN.md)）
 
 ## 一句话
 
@@ -129,3 +129,22 @@ v0.14 补的是这一条：**崩溃现场留在本机，下次打开时有人把
 - tag `v0.14.0` → DMG → GitHub Release。
 - 存留策略：`crashes/` 最多 20 份、90 天；`.seen` 侧标只表示「已展示过」，
   文件仍在，随时可以再复制出来发给作者。
+
+## 补丁（v0.14.1，2026-10-20）
+
+发布两小时后收到第一份真实崩溃报告（issue #135）：**开着打字机模式，点一下编辑器必崩。**
+
+- 栈：`-[NSTextView mouseDown:]` → 选区通知 → `textViewDidChangeSelection` →
+  `recenter(animated:)` → `NSAnimationContext.runAnimationGroup` →
+  `clipView.animator().setBoundsOrigin` → `NSViewHierarchyInvalidateVisibleRect` → `SIGSEGV`。
+- 定位：真窗口探针（后来的 `EditorRecenterTests`）稳定复现。只去掉
+  `allowsImplicitAnimation` 仍崩；把动画组挪到下一拍不崩但居中完全失效（offset 停在 14）；
+  直接 `scroll(to:)` 既不崩也居中正确。所以问题不在「在事件栈里滚动」，在
+  **`animator()` 改 clip view bounds 本身**——自绘 clip view（要能滚过内容末尾半屏）
+  与 AppKit 的可见矩形失效逻辑对不上。
+- 修法：`recenter()` 去掉动画，直接滚动；去掉只服务动画的 `animated` 参数与 `isRestoring`；
+  补一条「视图不在窗口上就不碰滚动位置」的结构保护。
+- 测试 721 → **725**（`EditorRecenterTests` 4 条，串行真窗口）；反向验证三组全红
+  （把动画加回来时进程直接 SIGSEGV，与读者报告一致）。
+- 教训：**动画代理只碰「不会引起布局连锁」的属性**。滚动位置会牵动可见矩形、
+  牵动文档视图布局，在这种自绘滚动结构里不能交给 `animator()`。
