@@ -266,8 +266,8 @@ final class WindowCoordinator: ObservableObject {
             model.store.open(url: url, jumpingTo: request)
         }
         guard let target = window(for: id) else { return }
-        if target.isMiniaturized { target.deminiaturize(nil) }
-        target.makeKeyAndOrderFront(nil)
+        // 连带激活应用：只把窗口在自己的层里往前提，人看到的还是别的 app。
+        AppActivation.bringToFront(target)
     }
 
     // MARK: - 开窗

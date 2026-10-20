@@ -3,6 +3,8 @@ import SwiftUI
 
 @main
 struct wtmdApp: App {
+    /// 点 Dock 图标那一下得有人接：SwiftUI 自己的实现只认「上一次那扇窗」。
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     /// 应用级的一份：设置、账本、最近文件。
     @StateObject private var shared: SharedAppEnvironment
     /// 窗口表：谁是主窗口，命令该落在谁身上，下一扇窗口从哪儿开。
