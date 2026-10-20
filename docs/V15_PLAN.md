@@ -116,3 +116,47 @@ v0.15 把「应用级」的东西收到一处：**工具栏右侧一颗「功能
   新增的是「找得到」：11 行，三组，行尾写状态。
 - 两次视觉验证各两轮（面板 `NSHostingView` 渲染 + 真窗 `CGWindowListCreateImage`），
   途中推翻过一版 `Menu` 主题行（label 不吃宽度、彩色符号、丢副标题）。
+
+## 补丁（v0.15.1，2026-10-20）
+
+发布当天读者报了两个问题：**面板里点「设置…」没反应**（`⌘,` 却正常），
+以及**「关于」也该收进面板**（[#142](https://github.com/TonyMistark/wtmd/issues/142)）。
+
+### 点了没反应
+
+- 症状：功能中心点「设置…」什么都不发生；`⌘,` 能开。
+- 根因：`SettingsWindow.open(_:)` 用的是 `NSApp.sendAction(Selector(("showSettingsWindow:")))`。
+  这条 selector 在 SwiftUI 生命周期里并不可靠——**动作发出去了，没人接**。
+  `⌘,` 之所以好使，是因为那是 SwiftUI 给 Settings 场景配的默认命令，
+  跟我们的代码没有关系；之前没暴露，是因为从来没人从代码里开过设置。
+- 修法：改用官方的 `@Environment(\.openSettings)`。命令层与面板拿不到环境值，
+  所以由 `ContentView` 出现时把动作挂到 `SettingsWindow.install(_:)`，
+  菜单、⌘K、面板三处共用同一个入口；AppKit 那条路留作没有环境时的回退。
+- 顺带一处：面板的「阅读版式」「每日目标」「打印设置」原本是 `close()` 之后
+  同步开窗。浮层正在拆的时候环境动作找不到落点——和 `.command` 一条规矩，
+  改成下一拍。
+
+### 关于也收进来
+
+- 新命令 `app.about`（`CommandKind.about`）：打开系统标准 About 面板，
+  图标、名字、版本由 AppKit 从 Info.plist 取，credits 写一句这是什么 +
+  可点的仓库地址。
+- 面板「应用与帮助」第一行是它；App 菜单的「关于 wtmd」换成同一条命令
+  （`CommandGroup(replacing: .appInfo)`）——三处同源，⌘K 也搜得到。
+- 「应用与帮助」从五行变六行：关于、设置、快捷键、检查更新、报告问题、
+  崩溃报告文件夹。
+
+### 测试
+
+748 → **757**（+9：`SettingsWindowTests` 4 条 + 结构 2 条 + 装配 3 条）。
+
+- `SettingsWindowTests`：opener 被调用且标签页写进 defaults；不指定页时用记住的那页；
+  记住的值坏掉时落回主题页；没有 opener 时不崩（测试进程里 `NSApp` 是隐式解包的
+  可选——原来那行 `NSApp.activate` 直接在这里炸了，顺手修掉）。
+- 反向验证三组全红：去掉 opener 分支（三条测试红）、面板删掉关于行（两条红）、
+  删掉根视图的 `install`（装配断言红）。
+
+### 教训
+
+**「点了没反应」比报错难查，因为它不留痕。** 从代码里开系统窗口，别赌 AppKit 的
+私有 selector —— SwiftUI 提供了环境动作就用环境动作，拿不到就由根视图转交。

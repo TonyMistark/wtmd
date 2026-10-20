@@ -78,6 +78,10 @@ struct AppMenus: Commands {
     private var active: WindowModel { coordinator.activeModel(focused: focused) }
 
     var body: some Commands {
+        // 系统的「关于 wtmd」换成我们自己的那一条：与 ⌘K、功能中心同源。
+        CommandGroup(replacing: .appInfo) {
+            menuItem(.about)
+        }
         CommandGroup(after: .appInfo) {
             menuItem(.checkForUpdates)
             Divider()

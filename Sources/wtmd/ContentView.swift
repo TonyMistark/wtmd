@@ -11,6 +11,9 @@ struct ContentView: View {
     @EnvironmentObject var printing: PrintSettings
     @EnvironmentObject var updates: UpdateChecker
     @EnvironmentObject var overrides: ShortcutOverrides
+    /// 设置窗口只能从 SwiftUI 的环境里打开：AppKit 的 `showSettingsWindow:`
+    /// 在命令层并不可靠（面板点「设置…」没反应就是这么来的）。
+    @Environment(\.openSettings) private var openSettings
     /// Owned by the app so the menu bar can open the palette too.
     @Binding var paletteVisible: Bool
     /// 窗口表：⌘N 要从这里开新窗口。为 nil 时退回本窗口新建（测试、离线视图）。
@@ -105,7 +108,12 @@ struct ContentView: View {
         .onChange(of: workspace.root) { _, newValue in
             store.preferredSaveDirectory = newValue
         }
-        .onAppear { store.preferredSaveDirectory = workspace.root }
+        .onAppear {
+            store.preferredSaveDirectory = workspace.root
+            // 把「开设置」这件事交给命令层：菜单、⌘K、功能中心走的是同一条路，
+            // 它们都拿不到视图环境，只有这里能。
+            SettingsWindow.install { openSettings() }
+        }
         .overlay {
             ZStack {
                 // ⌘/ 切换模式（快捷键可以被改派，跟着生效值走）

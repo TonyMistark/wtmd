@@ -69,6 +69,27 @@ struct ControlCenterTests {
         }
     }
 
+    @Test("「应用与帮助」六行：关于、设置、快捷键、检查更新、报告问题、崩溃报告文件夹")
+    func appSectionOrder() {
+        let app = ControlCenterCatalog.sections(ControlCenterContext(), commands: commands)[2]
+        #expect(app.rows.map(\.action) == [
+            .command(.about),
+            .command(.openSettings),
+            .settings(.shortcuts),
+            .command(.checkForUpdates),
+            .command(.reportProblem),
+            .crashFolder,
+        ])
+    }
+
+    @Test("「关于 wtmd」是一条命令：菜单、⌘K、面板三处指向同一个面板")
+    func aboutIsACommand() {
+        let about = row(.about)
+        #expect(about?.title == "关于 wtmd")
+        #expect(about?.symbol == "info.circle")
+        #expect(CommandCatalog.command(for: .about)?.section == .app)
+    }
+
     @Test("设置…进了命令表：⌘K 也能搜到它")
     func settingsIsACommand() {
         let command = CommandCatalog.command(for: .openSettings)
@@ -241,11 +262,32 @@ struct ControlCenterAssemblyTests {
         #expect(source.contains(".tag(SettingsTab.shortcuts.rawValue)"))
     }
 
+    /// 「点了没反应」的根因：命令层拿不到视图环境，只能靠根视图把 opener 挂进去。
+    /// 这一行被谁顺手删掉，设置就从「点了没反应」退回老样子。
+    @Test func theWindowInstallsTheSettingsOpener() throws {
+        let source = try String(contentsOf: Self.contentViewURL, encoding: .utf8)
+        #expect(source.contains("@Environment(\\.openSettings)"), "没有取 openSettings 环境动作")
+        #expect(source.contains("SettingsWindow.install"), "没有把 opener 挂给命令层")
+    }
+
+    /// 浮层还在拆的时候开窗，环境动作会找不到落点：必须下一拍。
+    @Test func thePanelDefersOpeningSettings() throws {
+        let source = try String(contentsOf: Self.panelURL, encoding: .utf8)
+        #expect(source.contains("Task { @MainActor in SettingsWindow.open(tab) }"))
+    }
+
+    @Test func theAppMenuOwnsTheAboutItem() throws {
+        let source = try String(contentsOf: Self.appURL, encoding: .utf8)
+        #expect(source.contains("CommandGroup(replacing: .appInfo)"), "App 菜单还是系统默认的关于")
+        #expect(source.contains("menuItem(.about)"))
+    }
+
     // MARK: 辅助
 
     static let contentViewURL = sourceURL("ContentView.swift")
     static let windowRootURL = sourceURL("WindowRoot.swift")
     static let appURL = sourceURL("wtmdApp.swift")
+    static let panelURL = sourceURL("ControlCenterPanel.swift")
 
     private static func sourceURL(_ name: String) -> URL {
         URL(fileURLWithPath: #filePath)

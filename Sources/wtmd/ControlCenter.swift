@@ -34,9 +34,21 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 /// 打开设置窗口，必要时先把它翻到某一页。
 ///
 /// SwiftUI 没有「打开设置并选中第 N 个标签页」的公开 API：`SettingsLink` 只会打开
-/// 窗口。能直达的路径只有一条——先把选择写进 `@AppStorage`，再让 AppKit 打开窗口。
+/// 窗口。能直达的路径只有一条——先把选择写进 `@AppStorage`，再打开窗口。
+///
+/// 打开的那一下得靠视图环境里的 `openSettings`：AppKit 的
+/// `showSettingsWindow:` 在 SwiftUI 生命周期下并不可靠（命令发出去没人接，
+/// 点了就是没反应）。可命令层与面板都拿不到环境值，所以由根视图出现时把
+/// 动作挂在这里，三处共用同一个入口。
 @MainActor
 enum SettingsWindow {
+    /// 由根视图注入。`nil` 时回退到 AppKit 的动作，给没有窗口的环境用。
+    private static var opener: (() -> Void)?
+
+    static func install(_ opener: (() -> Void)?) {
+        self.opener = opener
+    }
+
     /// 打开上次停留的那一页。
     static func open() {
         guard let raw = UserDefaults.standard.string(forKey: SettingsTab.storageKey),
@@ -50,12 +62,18 @@ enum SettingsWindow {
 
     static func open(_ tab: SettingsTab) {
         UserDefaults.standard.set(tab.rawValue, forKey: SettingsTab.storageKey)
-        // macOS 13 起是 showSettingsWindow:，之前叫 showPreferencesWindow:。
-        // 两条都试：点了没反应比多试一次难查得多。
-        if !NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+        if let opener {
+            opener()
+        } else if let app = NSApp {
+            // macOS 13 起是 showSettingsWindow:，之前叫 showPreferencesWindow:。
+            // 两条都试：点了没反应比多试一次难查得多。
+            if !app.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
+                app.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+            }
         }
-        NSApp.activate(ignoringOtherApps: true)
+        // 测试进程里没有 NSApp（`NSApp` 是隐式解包的可选）——这里不是错，
+        // 只是没窗口可激活。
+        NSApp?.activate(ignoringOtherApps: true)
     }
 }
 
@@ -196,6 +214,7 @@ enum ControlCenterCatalog {
         return ControlCenterSection(
             title: t("App & Help", "应用与帮助"),
             rows: [
+                command(.about, in: commands, subtitle: nil),
                 command(.openSettings, in: commands, subtitle: nil),
                 settings(
                     .shortcuts, key: "shortcuts", title: t("Keyboard Shortcuts…", "快捷键…"),
