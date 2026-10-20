@@ -148,6 +148,8 @@ struct PreviewView: NSViewRepresentable {
             self.webView = webView
 
             super.init()
+            // 预览的右键菜单是 WebKit 自己弹的，撤掉空白处那份只剩「重新载入」的。
+            PreviewContextMenu.install()
             userContent.add(self, name: "wtmd")
             webView.navigationDelegate = self
         }
