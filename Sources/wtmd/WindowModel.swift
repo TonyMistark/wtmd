@@ -30,6 +30,8 @@ final class SharedAppEnvironment: ObservableObject {
     /// 崩溃报告的账房：收现场、列清单、交给读者。应用级一份——报告属于这台
     /// 机器，不属于某一扇窗。
     let crashes: CrashStore
+    /// 昵称与头像：只存本地，属于这个人而不属于某一扇窗。
+    let profile: ProfileStore
 
     /// 参数默认 `nil` 而不是直接给实例：默认实参在非隔离上下文里求值，
     /// 而 `WritingStats` 这类类型的主初始化器是 main-actor 隔离的。
@@ -45,7 +47,8 @@ final class SharedAppEnvironment: ObservableObject {
         conflicts: ConflictArchive? = nil,
         history: DocumentHistory? = nil,
         openDocuments: OpenDocuments? = nil,
-        crashes: CrashStore? = nil
+        crashes: CrashStore? = nil,
+        profile: ProfileStore? = nil
     ) {
         self.themeManager = themeManager ?? ThemeManager()
         self.writing = writing ?? WritingSettings()
@@ -59,6 +62,7 @@ final class SharedAppEnvironment: ObservableObject {
         self.history = history ?? DocumentHistory()
         self.openDocuments = openDocuments ?? OpenDocuments()
         self.crashes = crashes ?? CrashStore()
+        self.profile = profile ?? ProfileStore()
     }
 }
 
