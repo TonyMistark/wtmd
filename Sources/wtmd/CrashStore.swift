@@ -68,11 +68,18 @@ final class CrashStore: ObservableObject {
     /// 半成品（`.inflight-*.raw`）可能是：崩溃当场写下的、或者只写了个头
     /// （强退、断电，进程来不及写）。后一种同样值得说一声：读者看到的是
     /// 「窗口突然没了」，原因不明比知道「没抓到现场」更难受。
-    func harvest() {
+    /// - Parameter isLiveOwner: 这份现场是不是「另一位 wtmd 正在写」。默认问系统，
+    ///   测试换成一个闭包就能把「并排跑」与「上次死掉」两种情形都演出来。
+    func harvest(isLiveOwner: (URL) -> Bool = CrashStore.ownerIsRunning) {
         let files = (try? fileManager.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: [.creationDateKey], options: []
         )) ?? []
-        let inflight = files.filter { $0.lastPathComponent.hasPrefix(".inflight-") }
+        // 另一份 wtmd 正在用这个目录时，它的现场文件不是「上次的遗物」——
+        // `swift run` 出来的开发版没有 bundle id，可以和正式版并排跑；
+        // 把活着的那个收成「没正常退出」是纯误报。
+        let inflight = files.filter {
+            $0.lastPathComponent.hasPrefix(".inflight-") && !isLiveOwner($0)
+        }
         guard !inflight.isEmpty else {
             reload()
             prune()
@@ -251,6 +258,47 @@ final class CrashStore: ObservableObject {
                 raw: raw, breadcrumbs: breadcrumbs, capturedAt: capturedAt
             )
         )
+    }
+
+    // MARK: - 现场属于谁
+
+    /// 现场文件名是 `.inflight-<pid>-<启动时刻>.raw`，写它的进程号就在里面。
+    nonisolated static func ownerPID(of url: URL) -> pid_t? {
+        let parts = url.lastPathComponent.split(separator: "-")
+        guard parts.count >= 3, parts[0] == ".inflight" else { return nil }
+        return pid_t(parts[1])
+    }
+
+    /// 写这份现场的进程还活着，而且跑的就是同一个可执行文件？那它是一次
+    /// **正在进行中**的运行，不是上次留下的残骸。
+    ///
+    /// 光看进程号不够：号码会被别的程序复用，那样会把真正的崩溃报告压掉。
+    nonisolated static func ownerIsRunning(_ url: URL) -> Bool {
+        guard let pid = ownerPID(of: url) else { return false }
+        return isLiveSibling(
+            pid: pid,
+            runningPath: executablePath(of: pid),
+            ownPath: executablePath(of: getpid())
+        )
+    }
+
+    /// 判据本身是纯函数：进程号活着、不是自己、而且跑的是同一个可执行文件。
+    ///
+    /// 最后一个条件不能省：进程号会被别的程序复用，只比号的话，
+    /// 一份真正的崩溃报告会被当成「人家还在跑」扔掉。
+    nonisolated static func isLiveSibling(pid: pid_t, runningPath: String?, ownPath: String?) -> Bool {
+        guard pid > 0, pid != getpid(), let runningPath, let ownPath else { return false }
+        return PathKey.canonical(URL(fileURLWithPath: runningPath))
+            == PathKey.canonical(URL(fileURLWithPath: ownPath))
+    }
+
+    /// 进程正在跑的可执行文件。进程已经不在了就 nil。
+    nonisolated private static func executablePath(of pid: pid_t) -> String? {
+        // `PROC_PIDPATHINFO_MAXSIZE` 在 Swift 里不可见（宏里有 4*MAXPATHLEN）。
+        var buffer = [CChar](repeating: 0, count: Int(PATH_MAX) * 4)
+        let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        guard length > 0 else { return nil }
+        return PathKey.canonical(URL(fileURLWithPath: String(cString: buffer)))
     }
 
     /// 读上一次留下的轨迹。文件读不到就空着——报告少一段，照样有用。

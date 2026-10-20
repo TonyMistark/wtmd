@@ -145,8 +145,9 @@ struct CrashReport: Identifiable, Equatable {
             )
         case .terminated:
             return t(
-                "No crash detail was captured — the app was quit forcibly or the Mac shut down.",
-                "这次没抓到现场：可能是强制退出、重启或断电。"
+                "No crash detail was captured — the app was stopped from outside "
+                    + "(force quit, `kill`, a restart or a power cut).",
+                "这次没抓到现场：可能是强制退出、`kill`、重启或断电。"
             )
         case .feedback:
             return t("Written from inside the app.", "在应用里写下的一份说明。")
@@ -202,7 +203,9 @@ struct CrashReport: Identifiable, Equatable {
         case .feedback:
             return t("[Feedback] ", "[反馈] ") + (documentName ?? "")
         case .terminated:
-            return t("[Crash] wtmd did not shut down normally · v", "[崩溃] wtmd 没有正常退出 · v")
+            // 没有栈、没有信号——这不是崩溃，是有人把进程结束了。标题不该
+            // 让人以为是应用自己出了问题。
+            return t("[Exit] wtmd ended without a clean quit · v", "[退出] wtmd 没有正常退出 · v")
                 + appVersion
         default:
             return t("[Crash] ", "[崩溃] ") + (signal ?? kind.rawValue) + " · v" + appVersion

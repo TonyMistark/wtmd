@@ -18,7 +18,7 @@ private func makeTempDirectory() throws -> URL {
 @discardableResult
 private func writeInflight(
     in directory: URL,
-    name: String = ".inflight-999-1790000000.raw",
+    name: String = ".inflight-999999-1790000000.raw",
     signal: String = "SIGSEGV",
     frames: Bool = true
 ) throws -> URL {
@@ -83,10 +83,49 @@ func harvestHandlesForceQuit() throws {
     #expect(report.explanation.contains("没抓到现场"))
 }
 
+/// 现场文件名里带着写它的进程号——收割前得先看那个人还在不在。
+@MainActor
+@Test("另一位 wtmd 还在写：它的现场不算上次的遗物")
+func harvestSkipsLiveSibling() throws {
+    let root = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let live = try writeInflight(
+        in: root, name: ".inflight-4312-1790000000.raw", frames: false
+    )
+
+    let store = CrashStore(directory: root)
+    // 真正跑起来的那一份还活着（`swift run` 的开发版与正式版可以并排跑）
+    store.harvest(isLiveOwner: { _ in true })
+
+    #expect(store.reports.isEmpty)
+    // 不动别人的现场：人家还在写，删了就没有下一次了
+    #expect(FileManager.default.fileExists(atPath: live.path))
+}
+
+@Test("活着、但不是同一个可执行文件：那是进程号被复用了，照样收")
+func reusedPIDIsNotASibling() {
+    let own = "/Applications/wtmd.app/Contents/MacOS/wtmd"
+    #expect(CrashStore.isLiveSibling(pid: 4312, runningPath: own, ownPath: own))
+    // 号码一样、程序不一样 —— 上一次的 wtmd 早就没了
+    #expect(!CrashStore.isLiveSibling(pid: 4312, runningPath: "/usr/bin/vim", ownPath: own))
+    // 进程已经不在了（问不到路径）
+    #expect(!CrashStore.isLiveSibling(pid: 4312, runningPath: nil, ownPath: own))
+    // 自己不算「另一位」：自己的现场是上一轮同号进程留下的
+    #expect(!CrashStore.isLiveSibling(pid: getpid(), runningPath: own, ownPath: own))
+}
+
+@Test("现场文件名里读得出进程号")
+func ownerPIDComesFromTheName() {
+    let root = URL(fileURLWithPath: "/tmp")
+    #expect(CrashStore.ownerPID(of: root.appendingPathComponent(".inflight-4312-1790000000.raw")) == 4312)
+    // 不是这个形状的一律认不出，不猜
+    #expect(CrashStore.ownerPID(of: root.appendingPathComponent(".inflight-x.raw")) == nil)
+    #expect(CrashStore.ownerPID(of: root.appendingPathComponent("20261020-1.wtmdcrash")) == nil)
+}
+
 @MainActor
 @Test("没有半成品时什么都不做，也不炸")
-func harvestOnCleanDirectoryIsQuiet() throws {
-    let root = try makeTempDirectory()
+func harvestOnCleanDirectoryIsQuiet() throws {    let root = try makeTempDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
 
     let store = CrashStore(directory: root)

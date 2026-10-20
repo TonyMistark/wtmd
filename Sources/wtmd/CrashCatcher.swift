@@ -20,6 +20,10 @@ enum CrashCatcher {
     /// 现场文件。名字带 pid 与启动时刻，避免 pid 复用把上一次的现场覆盖掉。
     nonisolated(unsafe) private static var inflightFD: Int32 = -1
     nonisolated(unsafe) private static var inflightURL: URL?
+    /// 现场文件的 C 路径。处理器里只能 `unlink`（异步信号安全），
+    /// 而「URL → C 字符串」这种转换不能在里面做，所以安装时先填好。
+    nonisolated(unsafe) private static var inflightPath =
+        [CChar](repeating: 0, count: Int(PATH_MAX))
     /// 抓栈的缓冲区预分配：处理器里不能新建数组。
     nonisolated(unsafe) private static var frames =
         [UnsafeMutableRawPointer?](repeating: nil, count: 96)
@@ -48,6 +52,7 @@ enum CrashCatcher {
         }
         inflightFD = fd
         inflightURL = url
+        keepPath(of: url)
 
         // 头部写一次：主二进制的加载地址（ASLR 之后的）——没有它，栈里的地址
         // 换个进程就对不上符号，`atos` 也就无从下手。
@@ -58,6 +63,12 @@ enum CrashCatcher {
 
         for number in [SIGSEGV, SIGABRT, SIGBUS, SIGILL, SIGFPE, SIGTRAP] {
             signal(number, crashSignalHandler)
+        }
+        // 另外三个信号**不是崩溃**：有人让它停。`killall wtmd`、终端里的 Ctrl-C、
+        // 注销重启时系统发的 SIGTERM 都走这里。它们不跑 `atexit`，现场文件会
+        // 留在盘上——下次启动就会把「别人喊停」报成「上次没有正常退出」（#143）。
+        for number in [SIGTERM, SIGINT, SIGHUP] {
+            signal(number, stopSignalHandler)
         }
         NSSetUncaughtExceptionHandler { exception in
             CrashCatcher.write(exception: exception)
@@ -82,6 +93,37 @@ enum CrashCatcher {
         if let url = inflightURL {
             try? FileManager.default.removeItem(at: url)
             inflightURL = nil
+        }
+        forgetPath()
+    }
+
+    /// 把现场文件的路径存成 C 字符串，供处理器里的 `unlink` 用。
+    private static func keepPath(of url: URL) {
+        url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return }
+            let length = min(Int(PATH_MAX) - 1, Int(strlen(path)))
+            inflightPath.withUnsafeMutableBufferPointer { buffer in
+                guard let base = buffer.baseAddress else { return }
+                memcpy(base, path, length)
+                base[length] = 0
+            }
+        }
+    }
+
+    /// 抹掉路径。空路径意味着「这一份已经删过了」，处理器据此跳过。
+    private static func forgetPath() {
+        inflightPath.withUnsafeMutableBufferPointer { buffer in
+            buffer.baseAddress?.pointee = 0
+        }
+    }
+
+    /// 有人从外面喊停时只做这一件事：把现场文件删掉。**不当崩溃**。
+    ///
+    /// 只碰 `unlink` 与缓冲区——处理器里不能再多做事。
+    static func discardInFlight() {
+        inflightPath.withUnsafeBufferPointer { buffer in
+            guard let base = buffer.baseAddress, base.pointee != 0 else { return }
+            _ = unlink(base)
         }
     }
 
@@ -198,6 +240,14 @@ enum CrashCatcher {
 /// C 里注册的那个函数：只转一手，全部逻辑在 `CrashCatcher`。
 private func crashSignalHandler(_ sig: Int32) {
     CrashCatcher.write(signal: sig)
+}
+
+/// 「请停下」的那三个信号：删掉现场，然后把处理权交还系统——进程照样当场结束，
+/// 只是下次启动不会再把它当成崩溃。
+private func stopSignalHandler(_ sig: Int32) {
+    CrashCatcher.discardInFlight()
+    signal(sig, SIG_DFL)
+    raise(sig)
 }
 
 // MARK: - 轨迹

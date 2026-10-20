@@ -115,6 +115,16 @@ func titleAndSummaryReadLikeASentence() {
     #expect(report.summaryLine.contains("3 扇窗口"))
 }
 
+@Test("没抓到现场的这份不冒充崩溃：标题说「退出」，解释里点名 kill")
+func terminatedReportIsNotACrash() {
+    let report = sampleReport(kind: .terminated, signal: nil)
+    #expect(report.suggestedIssueTitle.contains("[退出]"))
+    // 没有栈、没有信号，说成崩溃会让人去查一个不存在的缺陷（#143）
+    #expect(!report.suggestedIssueTitle.contains("[崩溃]"))
+    #expect(report.explanation.contains("没抓到现场"))
+    #expect(report.explanation.contains("kill"))
+}
+
 @Test("只开一扇窗时不提窗口数——那是默认情况")
 func singleWindowStaysQuiet() {
     #expect(!sampleReport(windows: 1).summaryLine.contains("窗口"))
