@@ -15,10 +15,14 @@ private func render() throws -> (bitmap: NSBitmapImageRep, points: CGSize) {
     // 预置一条改派，让「恢复默认」按钮也出现在画面里
     overrides.assign(RecordedShortcut(key: "g", modifiers: ["command"]), for: .exportWord)
 
-    let view = ShortcutSettingsView().environmentObject(overrides)
+    // 设置窗口的右栏：整页铺满详情区，所以按详情区的宽度量。
+    let detailWidth = SettingsLayout.width - SettingsLayout.sidebarWidth - 1
+    let view = ShortcutSettingsView()
+        .environmentObject(overrides)
+        .frame(width: detailWidth, height: SettingsLayout.height)
     let hosting = NSHostingView(rootView: view)
     let window = NSWindow(
-        contentRect: NSRect(x: -20000, y: -20000, width: 480, height: 520),
+        contentRect: NSRect(x: -20000, y: -20000, width: detailWidth, height: SettingsLayout.height),
         styleMask: [.titled],
         backing: .buffered,
         defer: false
@@ -38,7 +42,7 @@ private func render() throws -> (bitmap: NSBitmapImageRep, points: CGSize) {
 
 @Test @MainActor func theShortcutSettingsRenderAsATable() throws {
     let (bitmap, points) = try render()
-    #expect(points.width == 480)
+    #expect(points.width == SettingsLayout.width - SettingsLayout.sidebarWidth - 1)
     #expect(points.height > 200)
     // 足够多的颜色：正文、辅助文字、按钮、改派后的强调色
     var seen = Set<UInt32>()

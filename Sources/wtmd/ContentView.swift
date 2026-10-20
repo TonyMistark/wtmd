@@ -11,6 +11,8 @@ struct ContentView: View {
     @EnvironmentObject var printing: PrintSettings
     @EnvironmentObject var updates: UpdateChecker
     @EnvironmentObject var overrides: ShortcutOverrides
+    /// 工具栏那颗头像：有昵称就写上，没有就只画一枚圆。
+    @EnvironmentObject var profile: ProfileStore
     /// 设置窗口只能从 SwiftUI 的环境里打开：AppKit 的 `showSettingsWindow:`
     /// 在命令层并不可靠（面板点「设置…」没反应就是这么来的）。
     @Environment(\.openSettings) private var openSettings
@@ -21,19 +23,9 @@ struct ContentView: View {
 
     /// 冲突副本清单是否展开。
     @State private var conflictListVisible = false
-    /// 功能中心是否摊开。它是窗口内的一层浮面，不是 sheet——点一下就收，
-    /// 不打断正在写的那一段。
-    @State private var controlCenterVisible: Bool
-
-    init(
-        paletteVisible: Binding<Bool>,
-        coordinator: WindowCoordinator? = nil,
-        controlCenterInitiallyVisible: Bool = false
-    ) {
+    init(paletteVisible: Binding<Bool>, coordinator: WindowCoordinator? = nil) {
         _paletteVisible = paletteVisible
         self.coordinator = coordinator
-        // 测试与探针的口子：从「已经摊开」的状态开始，不必模拟一次工具栏点击。
-        _controlCenterVisible = State(initialValue: controlCenterInitiallyVisible)
     }
     /// 分栏两侧的联动账本：谁动了、动到第几行、另一边该跟到哪。
     @StateObject private var splitSync = SplitSyncController()
@@ -110,7 +102,7 @@ struct ContentView: View {
         }
         .onAppear {
             store.preferredSaveDirectory = workspace.root
-            // 把「开设置」这件事交给命令层：菜单、⌘K、功能中心走的是同一条路，
+            // 把「开设置」这件事交给命令层：菜单、⌘K、设置窗口走的是同一条路，
             // 它们都拿不到视图环境，只有这里能。
             SettingsWindow.install { openSettings() }
         }
@@ -159,42 +151,6 @@ struct ContentView: View {
                 }
             }
             .animation(.easeOut(duration: 0.12), value: paletteVisible)
-        }
-        // 功能中心：从工具栏那个按钮下面摊开的一层。点击别处就收。
-        .overlay(alignment: .topTrailing) {
-            if controlCenterVisible {
-                controlCenterLayer
-            }
-        }
-        .animation(.easeOut(duration: 0.14), value: controlCenterVisible)
-    }
-
-    // MARK: - 功能中心
-
-    private var controlCenterLayer: some View {
-        ZStack(alignment: .topTrailing) {
-            // 一块几乎透明的挡板，接住「点别处」这一下。用 0.001 而不是 clear：
-            // 完全透明的东西收不到点击。
-            Color.black.opacity(0.001)
-                .ignoresSafeArea()
-                .onTapGesture { controlCenterVisible = false }
-
-            ControlCenterPanel(coordinator: coordinator) {
-                controlCenterVisible = false
-            }
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(nsColor: .windowBackgroundColor))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.primary.opacity(0.14), lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.22), radius: 20, y: 8)
-            .padding(.top, 6)
-            .padding(.trailing, 12)
-            .transition(.opacity.combined(with: .offset(y: -8)))
         }
     }
 
@@ -640,26 +596,32 @@ struct ContentView: View {
             }
             .disabled(!isEnabled(.save))
 
-            // 一处门：日历、历史、主题、版式、设置、更新、报告问题都在里面。
-            // 主题菜单原先在工具栏上，现在收进去了——那是一条入口，不是一条命令。
+            // 一处门：写作、外观、应用与帮助全在设置窗口里，从这枚头像进去。
+            // 头像就是「我是谁」——设了图片就画图片，没设就画昵称首字。
             Button {
-                controlCenterVisible.toggle()
+                SettingsWindow.open(.profile)
             } label: {
-                Label(t("Control Center", "功能中心"), systemImage: "slider.horizontal.3")
-                    .background(ToolbarTip(text: controlCenterHint))
+                HStack(spacing: 6) {
+                    ProfileAvatar(image: profile.avatar, initial: profile.initial, size: 20)
+                    if profile.hasNickname {
+                        Text(profile.nickname)
+                            .font(.system(size: 12))
+                            .lineLimit(1)
+                    }
+                }
+                .background(ToolbarTip(text: settingsHint))
             }
-            .help(controlCenterHint)
-            .accessibilityLabel(t("Control Center", "功能中心"))
-            .accessibilityValue(controlCenterVisible
-                ? t("Open", "已展开")
-                : t("Closed", "已收起"))
+            .buttonStyle(.plain)
+            .help(settingsHint)
+            .accessibilityLabel(t("Settings", "设置"))
+            .accessibilityValue(profile.displayName)
         }
     }
 
-    private var controlCenterHint: String {
+    private var settingsHint: String {
         t(
-            "Writing calendar, version history, theme, layout, settings — everything in one panel",
-            "写作日历、版本历史、主题、版式、设置——都收在这一块里"
+            "Settings — profile, writing, appearance, updates",
+            "设置——个人信息、写作、外观、更新"
         )
     }
 }

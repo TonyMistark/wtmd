@@ -267,7 +267,7 @@ struct ThemeSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: SettingsPage.width, height: SettingsPage.height)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var themeSelection: Binding<String> {

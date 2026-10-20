@@ -464,36 +464,10 @@ struct CommandRuntime {
         case .rescanThemes: themeManager.reload()
         case .checkForUpdates: Task { await updates.check(force: true) }
         case .openSettings: SettingsWindow.open()
-        case .about: showAboutPanel()
+        case .about: AboutPanel.show()
         case .reportProblem: store.reportProblem()
         case .openRecent(let url): store.open(url: url)
         }
-    }
-
-    /// 系统标准「关于」面板：图标、名字、版本由 AppKit 从 Info.plist 取，
-    /// 这里只补一句这是什么、代码在哪。链接点得动，指向真正的仓库。
-    private func showAboutPanel() {
-        let repository = "https://github.com/TonyMistark/wtmd"
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-
-        let credits = NSMutableAttributedString(
-            string: t(
-                "A local-first Markdown writing and reading tool for macOS.\n",
-                "本地优先的 macOS Markdown 写作与阅读工具。\n"
-            ) + "github.com/TonyMistark/wtmd",
-            attributes: [
-                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
-                .foregroundColor: NSColor.secondaryLabelColor,
-                .paragraphStyle: paragraph,
-            ]
-        )
-        credits.addAttribute(
-            .link, value: repository,
-            range: (credits.string as NSString).range(of: "github.com/TonyMistark/wtmd")
-        )
-        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// 新建 = 另起一桌。

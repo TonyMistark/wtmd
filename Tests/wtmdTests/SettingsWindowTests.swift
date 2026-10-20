@@ -54,8 +54,8 @@ struct SettingsWindowTests {
         }
     }
 
-    @Test("记下来的值坏了（或第一次打开）就落到主题页，不崩")
-    func openWithAGarbageTabFallsBackToTheme() {
+    @Test("记下来的值坏了（或第一次打开）就落到个人信息页，不崩")
+    func openWithAGarbageTabFallsBackToProfile() {
         withRestoredDefaults {
             UserDefaults.standard.set("no-such-tab", forKey: Self.storageKey)
             var opened = 0
@@ -64,7 +64,7 @@ struct SettingsWindowTests {
             SettingsWindow.open()
 
             #expect(opened == 1)
-            #expect(UserDefaults.standard.string(forKey: Self.storageKey) == "theme")
+            #expect(UserDefaults.standard.string(forKey: Self.storageKey) == "profile")
         }
     }
 

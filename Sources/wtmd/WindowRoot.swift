@@ -26,6 +26,7 @@ struct WindowRoot: View {
             .environmentObject(model.shared.updates)
             .environmentObject(model.shared.overrides)
             .environmentObject(model.shared.themeManager)
+            .environmentObject(model.shared.profile)
             // 菜单命令靠这个值找到「该对谁下手」。
             .focusedSceneValue(\.windowModel, model)
             .background {
