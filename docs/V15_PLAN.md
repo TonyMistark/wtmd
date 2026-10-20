@@ -164,3 +164,38 @@ v0.15 把「应用级」的东西收到一处：**工具栏右侧一颗「功能
 - issue [#142](https://github.com/TonyMistark/wtmd/issues/142) → PR
   [#144](https://github.com/TonyMistark/wtmd/pull/144)（CI 双绿一次过）→ tag `v0.15.1`。
   README 徽章 → v0.15.1、测试计数 → 757。
+
+## 补丁（v0.15.2，2026-10-20）
+
+读者接着报：**「每日目标」「阅读版式」「打印设置」点了也看不到效果**（[#146](https://github.com/TonyMistark/wtmd/issues/146)）。
+
+这次窗口其实开了——问题是这三块设置本来就挤在「主题」页的下半截，点完停在最上面，
+不往下滚什么都看不见。「设置…」和「每日目标…」打开的是同一页，看起来自然像没反应。
+
+## 修法：一页一件事
+
+设置窗口从两页拆成五页：
+
+- **主题** — 选主题、来源 / 作者 / 外观、打开主题文件夹、重新扫描
+- **写作** — 打字机、专注、每日字数目标（`SettingsTab.writing`）
+- **版式** — 版心宽度、正文字号、行距、恢复默认（`SettingsTab.layout`）
+- **打印** — 页边距、页码、第一页印文档名（`SettingsTab.printing`）
+- **快捷键** — 原样不动
+
+功能中心的三行各自指向对应的那一页，「设置…」仍打开上次停留的那一页。
+五页统一尺寸（480×520，`SettingsPage`），切页不跳窗；拆页只搬控件，
+默认值与行为一个都没动。
+
+## 测试
+
+757 → **758**。
+
+- `settingsRowsPointAtTheirOwnPage`：三行（连同快捷键）各进各的页——谁再把它
+  们改回 `.theme` 这条就红
+- `settingsTabRawValuesAreStable` 补上新页的 rawValue（`wtmd.settings.tab` 键不动，
+  老用户的选择照旧）
+- 装配断言改为遍历 `SettingsTab.allCases`：设置窗口少任何一页都红
+- 真机探针（临时，已删）：`SettingsWindow.open(.layout)` → defaults `tab=layout`，
+  窗口 title `Layout`；`.printing` 同理——「点了落对页」这次有窗口级证据
+- 反向验证两组全红：三行退回 `.theme`、窗口删掉写作页
+- `NSHostingView` 渲染核对版式页：三个滑块 + 恢复默认，留白干净
