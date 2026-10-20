@@ -19,6 +19,11 @@ BIN=".build/release/$APP_NAME"
 
 echo "── 2/5 组装 $APP_NAME.app…"
 APP="$OUT_DIR/$APP_NAME.app"
+mkdir -p "$OUT_DIR"
+# 输出目录打个「别索引」标记：.app 放在家目录下时 Spotlight 会把它当成一份装好的
+# 应用，于是「Apps」里除了 /Applications 里那一个，还多出一个构建产物。
+# make-dmg.sh 已经改成在临时目录里拼装，这里只是防止有人单独跑本脚本时又踩一次。
+: > "$OUT_DIR/.metadata_never_index"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
