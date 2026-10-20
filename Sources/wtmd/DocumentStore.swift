@@ -155,6 +155,10 @@ final class DocumentStore: ObservableObject {
     @Published var historyVisible = false
     /// 写作日历面板是否展开。同上，每扇窗口各一份。
     @Published var calendarVisible = false
+    /// 崩溃报告面板是否展开。只有主窗会主动打开它（启动时发现上次崩了）。
+    @Published var crashVisible = false
+    /// 面板当前展示哪一份。`nil` 表示「最新的那份还没看过的」。
+    private(set) var crashFocusID: String?
 
     /// Single source of truth for the welcome screen. Kept on the store (instead
     /// of inline in the view body) so the condition is unit-testable.
@@ -198,6 +202,9 @@ final class DocumentStore: ObservableObject {
     /// 版本历史的存放处。`nil`（测试默认）表示不留历史，绝不写真实的
     /// `~/Library/Application Support/wtmd/history`。
     private let history: DocumentHistory?
+    /// 崩溃报告的账房。`nil`（测试默认）表示不碰真实的
+    /// `~/Library/Application Support/wtmd/crashes`。
+    private let crashes: CrashStore?
     /// 这扇窗的身份。应用级的「谁开着哪一篇」靠它区分窗口。
     private let windowID: UUID
     /// 应用级的「谁开着哪一篇」。`nil`（测试默认）表示不设防：同一个进程里
@@ -285,6 +292,7 @@ final class DocumentStore: ObservableObject {
         session: Session? = nil,
         conflicts: ConflictArchive? = nil,
         history: DocumentHistory? = nil,
+        crashes: CrashStore? = nil,
         writingStats: WritingStats? = nil,
         themeManager: ThemeManager? = nil,
         recentFiles: RecentFiles? = nil,
@@ -297,6 +305,7 @@ final class DocumentStore: ObservableObject {
         self.session = session
         self.conflicts = conflicts
         self.history = history
+        self.crashes = crashes
         self.writingStats = writingStats
         self.themeManager = themeManager ?? ThemeManager()
         self.recentFiles = recentFiles ?? RecentFiles()
@@ -672,6 +681,8 @@ final class DocumentStore: ObservableObject {
         fileURL = url
         savedSnapshot = document.content
         knownModificationDate = document.modifiedAt
+        // 崩溃报告里的「手上是哪一篇」：只记文件名，不记内容。
+        CrashBreadcrumbs.note("doc \(url.lastPathComponent)")
         // 「打开时的样子」本身就是一版：今天的删改通常是相对它而言的。
         // 内容与最新一版相同就什么也不做（`capture` 自己去重）。
         history?.capture(document.content, for: url, force: true)
@@ -899,6 +910,74 @@ final class DocumentStore: ObservableObject {
         history.removeAll(for: fileURL)
         refreshHistory()
         showArchiveNotice(t("Cleared the version history of \(displayName)", "已清除「\(displayName)」的版本历史"))
+    }
+
+    // MARK: - 崩溃报告
+
+    /// 上次崩了：把面板打开。启动时由窗口协调器调用，其余入口是菜单里的
+    /// 「报告问题」。
+    func showCrashPrompt(id: String? = nil) {
+        crashFocusID = id
+        crashVisible = true
+    }
+
+    /// 面板展示的那一份：优先当前聚焦的，否则最新一份没看过的。
+    var crashReport: CrashReport? {
+        guard let crashes else { return nil }
+        if let crashFocusID, let focused = crashes.report(id: crashFocusID) { return focused }
+        return crashes.pending.first
+    }
+
+    /// 同一个文件夹里还有几份没处理。连着崩的时候只展示最新的那份。
+    var crashExtraCount: Int {
+        guard let crashes else { return 0 }
+        let pending = crashes.pending
+        guard let shown = crashReport, pending.contains(where: { $0.id == shown.id }) else {
+            return pending.count
+        }
+        return pending.count - 1
+    }
+
+    var crashFolder: URL? { crashes?.directory }
+
+    func copyCrashReport(_ report: CrashReport) {
+        crashes?.copyToPasteboard(report)
+    }
+
+    func revealCrashReport(_ report: CrashReport) {
+        crashes?.reveal(report)
+    }
+
+    /// 「在 GitHub 上报告」：打开预填页面，然后翻到下一份（没有就关掉面板）。
+    /// 浏览器没打开就**不关**——报告还在，读者可以复制了自己贴。
+    func openCrashIssue(_ report: CrashReport) {
+        guard let crashes, crashes.openIssue(for: report) else { return }
+        // 连着崩过几次的话，这一份说完还有下一份——一扇窗里挨个说完，不用重开。
+        if let next = crashes.pending.first(where: { $0.id != report.id }) {
+            crashFocusID = next.id
+        } else {
+            crashVisible = false
+            crashFocusID = nil
+        }
+    }
+
+    /// 「忽略」：记成看过了，下次启动不再问。文件仍留在磁盘上。
+    func dismissCrashPrompt() {
+        crashes?.markAllSeen()
+        crashVisible = false
+        crashFocusID = nil
+    }
+
+    /// 菜单里的「报告问题…」：不带崩溃现场，只有版本、系统与当前文档名。
+    ///
+    /// 先摊开面板、不直接拉浏览器：让人看一眼要发出去的是什么，再按那个按钮。
+    /// 「发不发」这件事，不该由一个菜单项替他决定。
+    func reportProblem() {
+        guard let crashes else { return }
+        let report = crashes.recordFeedback(
+            note: "", documentName: fileURL == nil ? nil : displayName
+        )
+        showCrashPrompt(id: report.id)
     }
 
     private func refreshHistory() {

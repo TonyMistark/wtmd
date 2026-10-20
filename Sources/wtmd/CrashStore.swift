@@ -1,0 +1,265 @@
+import AppKit
+import Combine
+import Foundation
+
+/// 崩溃报告的账房：收现场、列清单、标「看过了」、交给人。
+///
+/// 目录本身就是账本——一份报告一个 `.wtmdcrash` 文件，旁边的 `.seen` 是
+/// 「这份已经给读者看过了」。不另存索引：报告可能被读者在访达里直接删掉、
+/// 拷走、发给别人，索引一旦比文件多活一天就会对不上。
+///
+/// 除了 `harvest()`（启动时把上次的半成品整理成报告），这里**不联网**、
+/// 不上传、不读文档内容。要不要发出去由读者按那个按钮决定。
+@MainActor
+final class CrashStore: ObservableObject {
+    let directory: URL
+    /// 全部报告，新的在前。
+    @Published private(set) var reports: [CrashReport] = []
+    /// 每次变动 +1。面板与状态栏靠它刷新（`@Published` 的数组比较也不便宜）。
+    @Published private(set) var revision = 0
+    private var seen: Set<String> = []
+    private let fileManager: FileManager
+    private let clock: () -> Date
+    /// 最多留几份。超过就删最旧的——报告是给人看的，不是日志归档。
+    let maxReports: Int
+    /// 超过这么久的自动清掉。
+    let maxAge: TimeInterval
+
+    init(
+        directory: URL? = nil,
+        clock: @escaping () -> Date = Date.init,
+        fileManager: FileManager = .default,
+        maxReports: Int = 20,
+        maxAge: TimeInterval = 90 * 86_400
+    ) {
+        self.directory = directory ?? Self.defaultDirectory
+        self.clock = clock
+        self.fileManager = fileManager
+        self.maxReports = maxReports
+        self.maxAge = maxAge
+    }
+
+    static var defaultDirectory: URL {
+        let base = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory())
+                .appendingPathComponent("Library/Application Support", isDirectory: true)
+        return base
+            .appendingPathComponent("wtmd", isDirectory: true)
+            .appendingPathComponent("crashes", isDirectory: true)
+    }
+
+    // MARK: - 读
+
+    /// 还没给读者看过的那些（新的在前）。
+    var pending: [CrashReport] { reports.filter { !seen.contains($0.id) } }
+
+    var hasPending: Bool { !pending.isEmpty }
+
+    func text(of report: CrashReport) -> String { report.markdown }
+
+    func report(id: String) -> CrashReport? { reports.first { $0.id == id } }
+
+    // MARK: - 收
+
+    /// 把上一次留下的现场整理成报告。**必须在装信号处理器之前调用**——
+    /// 装的时候会清空轨迹文件，那是给这一次用的。
+    ///
+    /// 半成品（`.inflight-*.raw`）可能是：崩溃当场写下的、或者只写了个头
+    /// （强退、断电，进程来不及写）。后一种同样值得说一声：读者看到的是
+    /// 「窗口突然没了」，原因不明比知道「没抓到现场」更难受。
+    func harvest() {
+        let files = (try? fileManager.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.creationDateKey], options: []
+        )) ?? []
+        let inflight = files.filter { $0.lastPathComponent.hasPrefix(".inflight-") }
+        guard !inflight.isEmpty else {
+            reload()
+            prune()
+            return
+        }
+
+        for url in inflight {
+            let createdAt = (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate)
+                ?? clock()
+            let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            let raw = CrashRaw.parse(text)
+            let breadcrumbs = Self.breadcrumbs(in: directory)
+            let report = Self.report(from: raw, breadcrumbs: breadcrumbs, capturedAt: createdAt)
+            write(report)
+            try? fileManager.removeItem(at: url)
+        }
+        reload()
+        prune()
+    }
+
+    /// 读目录，重建清单。
+    func reload() {
+        let files = (try? fileManager.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.creationDateKey], options: []
+        )) ?? []
+        var loaded: [CrashReport] = []
+        var seenIDs: Set<String> = []
+        for url in files {
+            let name = url.lastPathComponent
+            if name.hasSuffix(".seen") {
+                seenIDs.insert(String(name.dropLast(".seen".count)))
+                continue
+            }
+            guard name.hasSuffix(".wtmdcrash"),
+                  let text = try? String(contentsOf: url, encoding: .utf8),
+                  let report = CrashReport.parse(text, fileURL: url)
+            else { continue }
+            loaded.append(report)
+        }
+        reports = loaded.sorted { $0.capturedAt > $1.capturedAt }
+        seen = seenIDs
+        revision += 1
+    }
+
+    // MARK: - 看过了 / 删掉
+
+    func markSeen(_ id: String) {
+        markAllSeen([id])
+    }
+
+    func markAllSeen(_ ids: [String]? = nil) {
+        let targets = ids ?? reports.map(\.id)
+        for id in targets where !seen.contains(id) {
+            let url = directory.appendingPathComponent("\(id).seen")
+            try? Data().write(to: url)
+            seen.insert(id)
+        }
+        revision += 1
+    }
+
+    /// 删一份报告（连同「看过了」的标记）。
+    func remove(_ id: String) {
+        for suffix in [".wtmdcrash", ".seen"] {
+            try? fileManager.removeItem(at: directory.appendingPathComponent(id + suffix))
+        }
+        reload()
+    }
+
+    func clearAll() {
+        for report in reports {
+            try? fileManager.removeItem(
+                at: directory.appendingPathComponent("\(report.id).wtmdcrash")
+            )
+            try? fileManager.removeItem(at: directory.appendingPathComponent("\(report.id).seen"))
+        }
+        reload()
+    }
+
+    /// 只留最近的若干份、且不过期。删文件不动内存清单——调用方要么接着
+    /// `reload()`，要么在 `harvest()` 的尾巴上被统一刷新。
+    func prune() {
+        let cutoff = clock().addingTimeInterval(-maxAge)
+        var kept = 0
+        for report in reports {
+            let tooOld = report.capturedAt < cutoff
+            let tooMany = kept >= maxReports
+            if tooOld || tooMany {
+                try? fileManager.removeItem(
+                    at: directory.appendingPathComponent("\(report.id).wtmdcrash")
+                )
+                try? fileManager.removeItem(
+                    at: directory.appendingPathComponent("\(report.id).seen")
+                )
+            } else {
+                kept += 1
+            }
+        }
+        if kept != reports.count { reload() }
+    }
+
+    // MARK: - 手动反馈
+
+    /// 读者点「报告问题」：留一份带环境的说明，好发给人看。
+    ///
+    /// 这是**主动**生成的报告，不需要下次启动再问一遍，所以直接标成看过了。
+    @discardableResult
+    func recordFeedback(note: String, documentName: String?) -> CrashReport {
+        let report = CrashReport.make(
+            kind: .feedback,
+            documentName: documentName,
+            body: CrashReport.feedbackBody(note: note, documentName: documentName)
+        )
+        write(report)
+        markSeen(report.id)
+        reload()
+        return report
+    }
+
+    // MARK: - 交出去
+
+    /// 预填好的 GitHub 新建 issue 页面。打不开浏览器也算正常（没网、被策略拦），
+    /// 调用方退回「复制报告」即可。
+    func issueURL(for report: CrashReport) -> URL? {
+        GitHubIssue.newIssueURL(title: report.suggestedIssueTitle, body: report.markdown)
+    }
+
+    @discardableResult
+    func openIssue(for report: CrashReport) -> Bool {
+        guard let url = issueURL(for: report) else { return false }
+        // 浏览器没打开（没网、被策略拦）就不算「已经说过」——面板留着，
+        // 读者还能复制报告、自己找地方贴。
+        guard NSWorkspace.shared.open(url) else { return false }
+        markSeen(report.id)
+        return true
+    }
+
+    func copyToPasteboard(_ report: CrashReport) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(report.markdown, forType: .string)
+    }
+
+    func reveal(_ report: CrashReport) {
+        if let url = report.fileURL {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } else {
+            NSWorkspace.shared.open(directory)
+        }
+    }
+
+    // MARK: - 写
+
+    private func write(_ report: CrashReport) {
+        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("\(report.id).wtmdcrash")
+        try? report.markdown.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    // MARK: - 现场 → 报告
+
+    /// 把原始材料补成人能读的一份：版本、系统、轨迹都在这一步补齐。
+    static func report(
+        from raw: CrashRaw,
+        breadcrumbs: [String],
+        capturedAt: Date
+    ) -> CrashReport {
+        // 有帧才算「抓到了现场」；只有头的是强退/断电。
+        let kind: CrashReport.Kind = raw.frames.isEmpty ? .terminated : raw.kind
+        return CrashReport.make(
+            capturedAt: capturedAt,
+            kind: kind,
+            signal: kind == .terminated ? nil : raw.signal,
+            windowCount: CrashReport.windowCount(in: breadcrumbs),
+            documentName: CrashReport.documentName(in: breadcrumbs),
+            body: CrashReport.crashBody(
+                raw: raw, breadcrumbs: breadcrumbs, capturedAt: capturedAt
+            )
+        )
+    }
+
+    /// 读上一次留下的轨迹。文件读不到就空着——报告少一段，照样有用。
+    static func breadcrumbs(in directory: URL, limit: Int = 40) -> [String] {
+        let url = directory.appendingPathComponent("breadcrumbs.log")
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        let lines = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return Array(lines.suffix(limit))
+    }
+}

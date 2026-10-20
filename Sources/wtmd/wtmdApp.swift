@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -9,6 +10,13 @@ struct wtmdApp: App {
 
     init() {
         let shared = SharedAppEnvironment()
+        // 顺序不能反：先把上次留下的半成品整理成报告（它要读上一次的轨迹），
+        // 再装信号处理器——装的时候会清空轨迹文件，那本子是给这一次用的。
+        shared.crashes.harvest()
+        CrashBreadcrumbs.install(directory: shared.crashes.directory)
+        CrashCatcher.install(directory: shared.crashes.directory)
+        CrashBreadcrumbs.note("launch wtmd \(CrashEnvironment.appVersion)")
+
         let coordinator = WindowCoordinator(shared: shared)
         _shared = StateObject(wrappedValue: shared)
         _coordinator = StateObject(wrappedValue: coordinator)
@@ -92,6 +100,15 @@ struct AppMenus: Commands {
             Divider()
             Button(t("Command Palette…", "命令面板…")) { active.paletteVisible = true }
                 .keyboardShortcut("k", modifiers: .command)
+        }
+        // 帮助菜单默认只有一项打不开的「wtmd 帮助」。换成真正有用的那个：
+        // 崩了、或者哪里不对，从这里把话说到 GitHub 上去。
+        CommandGroup(replacing: .help) {
+            menuItem(.reportProblem)
+            Divider()
+            Button(t("Crash Reports Folder", "崩溃报告文件夹")) {
+                NSWorkspace.shared.open(shared.crashes.directory)
+            }
         }
     }
 

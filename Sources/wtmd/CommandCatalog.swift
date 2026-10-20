@@ -79,6 +79,8 @@ enum CommandKind: Hashable {
     case rescanThemes
     /// Ask GitHub for the latest release, ignoring the daily throttle.
     case checkForUpdates
+    /// Open a pre-filled GitHub issue with versions and system details.
+    case reportProblem
     /// Open a file from the recent list.
     case openRecent(URL)
 
@@ -108,6 +110,7 @@ enum CommandKind: Hashable {
         case .openThemesFolder: return "theme.openFolder"
         case .rescanThemes: return "theme.rescan"
         case .checkForUpdates: return "app.checkForUpdates"
+        case .reportProblem: return "app.reportProblem"
         case .openRecent(let url): return "recent.\(url.absoluteString)"
         }
     }
@@ -264,6 +267,15 @@ enum CommandCatalog {
             kind: .checkForUpdates, title: t("Check for Updates…", "检查更新…"), section: .app,
             symbol: "arrow.triangle.2.circlepath", shortcut: nil,
             keywords: ["update", "upgrade", "version", "release", "github"], subtitle: nil
+        ),
+        AppCommand(
+            kind: .reportProblem, title: t("Report a Problem…", "报告问题…"), section: .app,
+            symbol: "exclamationmark.bubble", shortcut: nil,
+            keywords: [
+                "report", "problem", "bug", "crash", "issue", "feedback",
+                "反馈", "问题", "崩溃", "报告", "报错",
+            ],
+            subtitle: nil
         ),
     ]
 
@@ -428,6 +440,7 @@ struct CommandRuntime {
         case .openThemesFolder: themeManager.openThemesFolder()
         case .rescanThemes: themeManager.reload()
         case .checkForUpdates: Task { await updates.check(force: true) }
+        case .reportProblem: store.reportProblem()
         case .openRecent(let url): store.open(url: url)
         }
     }
