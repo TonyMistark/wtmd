@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -81,6 +82,8 @@ enum CommandKind: Hashable {
     case checkForUpdates
     /// Open the settings window on the page it was last on.
     case openSettings
+    /// 系统标准「关于」面板：版本、图标、一行说明。
+    case about
     /// Open a pre-filled GitHub issue with versions and system details.
     case reportProblem
     /// Open a file from the recent list.
@@ -113,6 +116,7 @@ enum CommandKind: Hashable {
         case .rescanThemes: return "theme.rescan"
         case .checkForUpdates: return "app.checkForUpdates"
         case .openSettings: return "app.settings"
+        case .about: return "app.about"
         case .reportProblem: return "app.reportProblem"
         case .openRecent(let url): return "recent.\(url.absoluteString)"
         }
@@ -265,6 +269,14 @@ enum CommandCatalog {
             kind: .rescanThemes, title: t("Rescan Themes", "重新扫描主题"), section: .theme,
             symbol: "arrow.clockwise", shortcut: nil,
             keywords: ["theme", "rescan", "reload", "refresh"], subtitle: nil
+        ),
+        AppCommand(
+            // 关于本来只在 App 菜单里（系统默认项）。登记进来，⌘K 与功能中心
+            // 就都能到——同一个面板不该有三套说法。
+            kind: .about, title: t("About wtmd", "关于 wtmd"), section: .app,
+            symbol: "info.circle", shortcut: nil,
+            keywords: ["about", "version", "credits", "关于", "版本", "说明"],
+            subtitle: nil
         ),
         AppCommand(
             // 设置窗口本来只有 ⌘, 这一条路，且藏在 App 菜单里。登记进来，
@@ -452,9 +464,36 @@ struct CommandRuntime {
         case .rescanThemes: themeManager.reload()
         case .checkForUpdates: Task { await updates.check(force: true) }
         case .openSettings: SettingsWindow.open()
+        case .about: showAboutPanel()
         case .reportProblem: store.reportProblem()
         case .openRecent(let url): store.open(url: url)
         }
+    }
+
+    /// 系统标准「关于」面板：图标、名字、版本由 AppKit 从 Info.plist 取，
+    /// 这里只补一句这是什么、代码在哪。链接点得动，指向真正的仓库。
+    private func showAboutPanel() {
+        let repository = "https://github.com/TonyMistark/wtmd"
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+
+        let credits = NSMutableAttributedString(
+            string: t(
+                "A local-first Markdown writing and reading tool for macOS.\n",
+                "本地优先的 macOS Markdown 写作与阅读工具。\n"
+            ) + "github.com/TonyMistark/wtmd",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .paragraphStyle: paragraph,
+            ]
+        )
+        credits.addAttribute(
+            .link, value: repository,
+            range: (credits.string as NSString).range(of: "github.com/TonyMistark/wtmd")
+        )
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// 新建 = 另起一桌。

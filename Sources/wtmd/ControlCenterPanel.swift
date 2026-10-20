@@ -148,8 +148,10 @@ struct ControlCenterPanel: View {
             Task { @MainActor in runtime.run(command) }
 
         case .settings(let tab):
+            // 和 `.command` 同一条规矩：浮层正在拆的时候开窗，视图环境还没稳下来，
+            // 环境动作会找不到落点——下一拍再来。
             close()
-            SettingsWindow.open(tab)
+            Task { @MainActor in SettingsWindow.open(tab) }
 
         case .crashFolder:
             guard let folder = store.crashFolder else { return }
