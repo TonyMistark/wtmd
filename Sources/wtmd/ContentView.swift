@@ -8,6 +8,7 @@ struct ContentView: View {
     @EnvironmentObject var themeManager: ThemeManager
     @EnvironmentObject var writing: WritingSettings
     @EnvironmentObject var typesetting: TypesettingSettings
+    @EnvironmentObject var printing: PrintSettings
     @EnvironmentObject var updates: UpdateChecker
     @EnvironmentObject var overrides: ShortcutOverrides
     /// Owned by the app so the menu bar can open the palette too.
@@ -17,6 +18,20 @@ struct ContentView: View {
 
     /// 冲突副本清单是否展开。
     @State private var conflictListVisible = false
+    /// 功能中心是否摊开。它是窗口内的一层浮面，不是 sheet——点一下就收，
+    /// 不打断正在写的那一段。
+    @State private var controlCenterVisible: Bool
+
+    init(
+        paletteVisible: Binding<Bool>,
+        coordinator: WindowCoordinator? = nil,
+        controlCenterInitiallyVisible: Bool = false
+    ) {
+        _paletteVisible = paletteVisible
+        self.coordinator = coordinator
+        // 测试与探针的口子：从「已经摊开」的状态开始，不必模拟一次工具栏点击。
+        _controlCenterVisible = State(initialValue: controlCenterInitiallyVisible)
+    }
     /// 分栏两侧的联动账本：谁动了、动到第几行、另一边该跟到哪。
     @StateObject private var splitSync = SplitSyncController()
 
@@ -136,7 +151,44 @@ struct ContentView: View {
                 }
             }
             .animation(.easeOut(duration: 0.12), value: paletteVisible)
-        }    }
+        }
+        // 功能中心：从工具栏那个按钮下面摊开的一层。点击别处就收。
+        .overlay(alignment: .topTrailing) {
+            if controlCenterVisible {
+                controlCenterLayer
+            }
+        }
+        .animation(.easeOut(duration: 0.14), value: controlCenterVisible)
+    }
+
+    // MARK: - 功能中心
+
+    private var controlCenterLayer: some View {
+        ZStack(alignment: .topTrailing) {
+            // 一块几乎透明的挡板，接住「点别处」这一下。用 0.001 而不是 clear：
+            // 完全透明的东西收不到点击。
+            Color.black.opacity(0.001)
+                .ignoresSafeArea()
+                .onTapGesture { controlCenterVisible = false }
+
+            ControlCenterPanel(coordinator: coordinator) {
+                controlCenterVisible = false
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(nsColor: .windowBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.primary.opacity(0.14), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .shadow(color: .black.opacity(0.22), radius: 20, y: 8)
+            .padding(.top, 6)
+            .padding(.trailing, 12)
+            .transition(.opacity.combined(with: .offset(y: -8)))
+        }
+    }
 
     // MARK: - 命令
 
@@ -553,27 +605,6 @@ struct ContentView: View {
             }
             .help(t("Open a folder as the workspace (⌘⇧O)", "把文件夹作为工作区打开（⌘⇧O）"))
 
-            // 主题：成文的外观（源码模式高亮仍走系统语义色，不受主题影响）
-            Menu {
-                ForEach(themeManager.themes) { theme in
-                    Button {
-                        themeManager.select(theme.id)
-                    } label: {
-                        if theme.id == themeManager.currentThemeID {
-                            Label(theme.name, systemImage: "checkmark")
-                        } else {
-                            Text(theme.name)
-                        }
-                    }
-                }
-                Divider()
-                Button(t("Open Themes Folder…", "打开主题文件夹…")) { themeManager.openThemesFolder() }
-                Button(t("Rescan Themes", "重新扫描主题")) { themeManager.reload() }
-            } label: {
-                Label(t("Theme", "主题"), systemImage: "paintpalette")
-            }
-            .help(t("Choose the preview theme (drop a .wttheme folder into the themes directory to install)", "选择成文主题（拖入 .wttheme 文件夹到主题目录即安装）"))
-
             Button {
                 store.sidebarVisible.toggle()
             } label: {
@@ -600,7 +631,28 @@ struct ContentView: View {
                 Label(t("Save", "保存"), systemImage: "square.and.arrow.down")
             }
             .disabled(!isEnabled(.save))
+
+            // 一处门：日历、历史、主题、版式、设置、更新、报告问题都在里面。
+            // 主题菜单原先在工具栏上，现在收进去了——那是一条入口，不是一条命令。
+            Button {
+                controlCenterVisible.toggle()
+            } label: {
+                Label(t("Control Center", "功能中心"), systemImage: "slider.horizontal.3")
+                    .background(ToolbarTip(text: controlCenterHint))
+            }
+            .help(controlCenterHint)
+            .accessibilityLabel(t("Control Center", "功能中心"))
+            .accessibilityValue(controlCenterVisible
+                ? t("Open", "已展开")
+                : t("Closed", "已收起"))
         }
+    }
+
+    private var controlCenterHint: String {
+        t(
+            "Writing calendar, version history, theme, layout, settings — everything in one panel",
+            "写作日历、版本历史、主题、版式、设置——都收在这一块里"
+        )
     }
 }
 

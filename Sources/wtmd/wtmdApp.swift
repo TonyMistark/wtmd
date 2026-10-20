@@ -39,17 +39,29 @@ struct wtmdApp: App {
         }
 
         Settings {
-            TabView {
-                ThemeSettingsView()
-                    .tabItem { Label(t("Theme", "主题"), systemImage: "paintpalette") }
-                ShortcutSettingsView()
-                    .tabItem { Label(t("Shortcuts", "快捷键"), systemImage: "keyboard") }
-            }
-            .environmentObject(shared.themeManager)
-            .environmentObject(shared.writing)
-            .environmentObject(shared.typesetting)
-            .environmentObject(shared.printing)
-            .environmentObject(shared.overrides)
+            SettingsSheet()
+                .environmentObject(shared.themeManager)
+                .environmentObject(shared.writing)
+                .environmentObject(shared.typesetting)
+                .environmentObject(shared.printing)
+                .environmentObject(shared.overrides)
+        }
+    }
+}
+
+/// 设置窗口。选中的是哪一页也记在 defaults 里——功能中心的「阅读版式」「快捷键」
+/// 要先翻到对应页再开窗，靠的就是这一个键。
+struct SettingsSheet: View {
+    @AppStorage(SettingsTab.storageKey) private var tab = SettingsTab.theme.rawValue
+
+    var body: some View {
+        TabView(selection: $tab) {
+            ThemeSettingsView()
+                .tabItem { Label(SettingsTab.theme.title, systemImage: SettingsTab.theme.symbol) }
+                .tag(SettingsTab.theme.rawValue)
+            ShortcutSettingsView()
+                .tabItem { Label(SettingsTab.shortcuts.title, systemImage: SettingsTab.shortcuts.symbol) }
+                .tag(SettingsTab.shortcuts.rawValue)
         }
     }
 }

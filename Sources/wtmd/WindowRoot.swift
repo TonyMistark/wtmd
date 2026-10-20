@@ -22,6 +22,7 @@ struct WindowRoot: View {
             .environmentObject(model.workspace)
             .environmentObject(model.shared.writing)
             .environmentObject(model.shared.typesetting)
+            .environmentObject(model.shared.printing)
             .environmentObject(model.shared.updates)
             .environmentObject(model.shared.overrides)
             .environmentObject(model.shared.themeManager)
