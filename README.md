@@ -4,7 +4,7 @@
 
 一个开源、本地优先的 macOS Markdown 写作与阅读工具。思绪落下的一刻，成文已然成型。
 
-![Status](https://img.shields.io/badge/status-v0.13.0-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
+![Status](https://img.shields.io/badge/status-v0.14.0-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
 
 ## 特性
 
@@ -29,9 +29,10 @@
 - **分栏对照联动** — 分栏里点到哪一段，另一边跟到同一段：写的时候预览跟着光标走，读的时候源码跟着滚动走（不动光标、不抢焦点）
 - **大纲导航** — 侧栏自动生成标题层级，点击跳转，滚动时同步高亮当前章节
 - **文件管理** — 最近文件、未命名草稿自动保存（重启不丢）、⌘⇧O 打开文件夹；重开应用回到上次的工作区、上次那篇、上次那一段；外部改动冲突未解决时切走，本地版本自动存成副本，状态栏一键取回
+- **崩了也说清楚** — 进程被信号打死时，本机当场记下信号、调用栈与最近 40 行操作轨迹（启动/开窗/关窗/打开文档），下次打开用一页说明白发生了什么，可「复制报告」「在访达中显示」，或一键打开已填好标题与正文的 GitHub 新建 issue 页面。报告只存在 `~/Library/Application Support/wtmd/crashes/`，**不含任何正文**、不联网；正常退出不会留下误报
 - **更新提示** — 启动时每天最多查一次 GitHub Release，有新版本就在状态栏给一个可点的徽标；只读版本号，不上报任何数据，离线或失败时完全静默
 - **导出** — 独立 HTML 文件（内联主题）、Word（.docx，标题/列表/表格/代码/图片都保留结构）、打印/存为 PDF（页边距、页码、首行标题可调，字号行距跟屏幕走，段落不拦腰截断）
-- **零第三方依赖** — Markdown 解析器完全自研（`WTMarkdownKit`），691 项单元测试覆盖，GitHub Actions 双系统 CI
+- **零第三方依赖** — Markdown 解析器完全自研（`WTMarkdownKit`），721 项单元测试覆盖，GitHub Actions 双系统 CI
 
 ## 安装
 
@@ -108,6 +109,7 @@ result.outline // [OutlineItem(level: 1, text: "标题", slug: "标题", line: 0
 - v0.11 — **已发布（v0.11.0）**：一篇稿，一张桌子——同一篇只在一扇窗打开、另存为不覆盖别窗、启动恢复去重、写盘兜底转冲突副本（[详见规划](docs/V11_PLAN.md)）
 - v0.12 — **已发布（v0.12.0）**：写过的东西都在——本地版本历史自动留存（打开/写盘/离开三时刻）、版本历史面板（⌘Y）、一键装回（[详见规划](docs/V12_PLAN.md)）
 - v0.13 — **已发布（v0.13.0）**：写了多少，自己看得见——写作日历（一年热力格、连续天数、本月/今年/最高单日）、负增长日空心标记（[详见规划](docs/V13_PLAN.md)）
+- v0.14 — **已发布（v0.14.0）**：崩了也说清楚——信号级崩溃现场采集（信号 + 调用栈 + 操作轨迹）、下次启动说明与一键上报、GitHub issue 预填链接（[详见规划](docs/V14_PLAN.md)）
 
 ## 参与贡献
 
