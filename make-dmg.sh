@@ -18,8 +18,23 @@ cd "$(dirname "$0")"
 VERSION="${WTMD_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')}"
 VERSION="${VERSION:-0.2.0}"
 DMG="dist/wtmd-$VERSION.dmg"
-STAGING="dist/dmg-staging"
-RW_DMG="dist/wtmd-rw.dmg"
+
+# 组装过程放临时目录：`dist/` 只留一个 dmg。
+# 把 wtmd.app 直接建在 dist/ 下时，Spotlight 会把
+# ~/projects/wtmd/dist/wtmd.app 也收进「应用」，于是「Apps」里出现两个 wtmd
+# ——一个是 /Applications 里装的，一个是仓库里的构建产物。构建产物不该出现在
+# 任何「应用」列表里，所以这里连落脚点都挪到 Spotlight 不看的临时目录。
+STAGING="$(mktemp -d "${TMPDIR:-/tmp}/wtmd-dmg.XXXXXX")"
+trap 'rm -rf "$STAGING"' EXIT
+APP="$STAGING/app/wtmd.app"
+IMAGE="$STAGING/image"
+RW_DMG="$STAGING/wtmd-rw.dmg"
+
+mkdir -p dist
+# 兜底：即使以后有人往 dist/ 里丢了个 .app，这个标记也会让 Spotlight 整棵跳过。
+: > dist/.metadata_never_index
+# 老版本留下的中间目录（也曾经被索引成「应用」）。
+rm -rf dist/dmg-staging dist/wtmd.app
 
 # DMG 窗口布局（内容区，单位 pt）。这些常量必须与
 # Assets/gen_dmg_background.swift 顶部的 iconSize / appCenterX /
@@ -40,17 +55,16 @@ swift Assets/gen_dmg_background.swift Assets >/dev/null
 [[ -f Assets/dmg-background.tiff ]] || { echo "   ✗ 背景图未生成"; exit 1; }
 
 echo "── 2/6 构建 wtmd.app…"
-WTMD_SIGN_IDENTITY="$APP_SIGN_IDENTITY" ./make-app.sh dist
+WTMD_SIGN_IDENTITY="$APP_SIGN_IDENTITY" ./make-app.sh "$STAGING/app"
 
 echo "── 3/6 组装 DMG 内容…"
-rm -rf "$STAGING" "$RW_DMG"
-mkdir -p "$STAGING/.background"
-cp -R dist/wtmd.app "$STAGING/"
-ln -s /Applications "$STAGING/Applications"
-cp Assets/dmg-background.tiff "$STAGING/.background/"
+mkdir -p "$IMAGE/.background"
+cp -R "$APP" "$IMAGE/"
+ln -s /Applications "$IMAGE/Applications"
+cp Assets/dmg-background.tiff "$IMAGE/.background/"
 
 hdiutil create -volname "wtmd" \
-    -srcfolder "$STAGING" \
+    -srcfolder "$IMAGE" \
     -fs HFS+ \
     -ov -format UDRW \
     "$RW_DMG" >/dev/null
@@ -96,6 +110,7 @@ hdiutil verify "$DMG" >/dev/null && echo "   hdiutil verify 通过"
 
 echo ""
 echo "✓ 完成：$DMG"
+echo "  dist/ 里只有这一个文件（.app 是临时目录里拼的，装完就没了）。"
 echo ""
 echo "⚠ 分发提示：本仓库无 Developer ID 证书，产物为 ad-hoc 签名、未公证。"
 echo "  新机器首次打开会被 Gatekeeper 拦截（macOS 15+ 已无法用「右键 → 打开」绕过）："
