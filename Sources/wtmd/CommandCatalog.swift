@@ -45,6 +45,8 @@ enum CommandKind: Hashable {
     case save
     /// Browse the versions kept for the current document.
     case showHistory
+    /// Show the writing calendar: a year of daily net additions.
+    case showCalendar
     /// Export the preview as a standalone HTML file.
     case exportHTML
     /// Export as Word (.docx).
@@ -89,6 +91,7 @@ enum CommandKind: Hashable {
         case .openFolder: return "file.openFolder"
         case .save: return "file.save"
         case .showHistory: return "file.history"
+        case .showCalendar: return "view.calendar"
         case .exportHTML: return "file.exportHTML"
         case .exportWord: return "file.exportWord"
         case .exportPDF: return "file.exportPDF"
@@ -224,6 +227,13 @@ enum CommandCatalog {
             kind: .toggleSidebar, title: t("Sidebar", "侧栏"), section: .view,
             symbol: "sidebar.left", shortcut: nil,
             keywords: ["sidebar", "outline", "panel"], subtitle: nil
+        ),
+        AppCommand(
+            // ⌘⇧Y 挨着版本历史的 ⌘Y：一个是「这篇的过去」，一个是「这一年写过的」。
+            kind: .showCalendar, title: t("Writing Calendar…", "写作日历…"), section: .view,
+            symbol: "calendar", shortcut: KeyboardShortcut("y", modifiers: [.command, .shift]),
+            keywords: ["calendar", "stats", "streak", "daily", "history", "日历", "统计", "连续"],
+            subtitle: nil
         ),
         AppCommand(
             kind: .closeWorkspace, title: t("Close Workspace", "关闭工作区"), section: .view,
@@ -401,6 +411,7 @@ struct CommandRuntime {
         case .openFolder: workspace.openPanel()
         case .save: store.save()
         case .showHistory: store.showHistory()
+        case .showCalendar: store.showCalendar()
         case .exportHTML: store.exportHTML()
         case .exportWord: store.exportWord()
         case .exportPDF: store.exportPDF()

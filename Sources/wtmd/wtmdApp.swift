@@ -85,6 +85,7 @@ struct AppMenus: Commands {
         CommandGroup(after: .sidebar) {
             Divider()
             menuItem(.toggleSplit)
+            menuItem(.showCalendar)
             Divider()
             menuItem(.toggleTypewriter)
             menuItem(.toggleFocus)

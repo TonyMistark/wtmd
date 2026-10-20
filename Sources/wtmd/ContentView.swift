@@ -60,6 +60,14 @@ struct ContentView: View {
                 close: { store.historyVisible = false }
             )
         }
+        // 写作日历：一年里每天的净增，一眼看完
+        .sheet(isPresented: $store.calendarVisible) {
+            WritingCalendarPanel(
+                days: calendarDays,
+                goal: writing.dailyGoal,
+                close: { store.calendarVisible = false }
+            )
+        }
         // 每天最多查一次新版本；失败静默，绝不打断写作
         .task { await updates.checkIfDue() }
         // 文档从任何入口打开（⌘O、最近文件、标题栏）后，工作区树跟上高亮
@@ -395,21 +403,36 @@ struct ContentView: View {
     }
 
     /// 今日净增与目标。达成只换一条进度条的颜色——不弹窗、不庆祝、不打断。
+    /// 点开是这一年：这里说「今天」，那里说「每天都写了多少」。
     private func dailyGoalBadge(total: Int) -> some View {
         let goal = writing.dailyGoal
         let reached = WritingGoal.isReached(total: total, goal: goal)
-        return HStack(spacing: 6) {
-            Text(t(
-                "Today \(total.formatted()) / \(goal.formatted()) characters",
-                "今日 \(total.formatted()) / \(goal.formatted()) 字"
-            ))
-            .monospacedDigit()
-            goalBar(fraction: WritingGoal.fraction(total: total, goal: goal), reached: reached)
+        return Button {
+            store.showCalendar()
+        } label: {
+            HStack(spacing: 6) {
+                Text(t(
+                    "Today \(total.formatted()) / \(goal.formatted()) characters",
+                    "今日 \(total.formatted()) / \(goal.formatted()) 字"
+                ))
+                .monospacedDigit()
+                goalBar(fraction: WritingGoal.fraction(total: total, goal: goal), reached: reached)
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .help(t(
-            "Net characters written today — deleting takes them back off. Set the goal under Settings › Theme › Writing.",
-            "今天净增的字数，删字会扣回去。目标在「设置 › 主题 › 写作」里改。"
+            "Net characters written today — deleting takes them back off. Click for the whole year; the goal is under Settings › Theme › Writing.",
+            "今天净增的字数，删字会扣回去。点开看这一年。目标在「设置 › 主题 › 写作」里改。"
         ))
+    }
+
+    /// 最近一年逐日净增。面板每次打开算一遍——365 次字典查找，不值得缓存。
+    private var calendarDays: [WritingCalendar.Day] {
+        guard let stats = store.writingStats else { return [] }
+        return WritingCalendar.days(endingAt: Date(), count: 365, calendar: .current) {
+            stats.total(on: $0)
+        }
     }
 
     private func goalBar(fraction: Double, reached: Bool) -> some View {

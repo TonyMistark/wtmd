@@ -153,6 +153,8 @@ final class DocumentStore: ObservableObject {
     @Published private(set) var historyEntries: [HistoryEntry] = []
     /// 版本历史面板是否展开。每扇窗口各一份——A 窗翻着旧稿，不该盖在 B 窗上。
     @Published var historyVisible = false
+    /// 写作日历面板是否展开。同上，每扇窗口各一份。
+    @Published var calendarVisible = false
 
     /// Single source of truth for the welcome screen. Kept on the store (instead
     /// of inline in the view body) so the condition is unit-testable.
@@ -845,6 +847,12 @@ final class DocumentStore: ObservableObject {
     func showHistory() {
         refreshHistory()
         historyVisible = true
+    }
+
+    /// 打开写作日历。账本是应用级的，窗口只负责把它摊开——
+    /// 没设目标、甚至一天没写，也让它打开：空态会自己解释。
+    func showCalendar() {
+        calendarVisible = true
     }
 
     /// 把某一版装回编辑器。
