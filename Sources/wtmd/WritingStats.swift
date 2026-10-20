@@ -153,10 +153,7 @@ final class WritingStats: ObservableObject {
     private var todayKey: String { dayKey(for: now()) }
 
     private func dayKey(for date: Date) -> String {
-        let parts = calendar.dateComponents([.year, .month, .day], from: date)
-        return String(
-            format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0
-        )
+        WritingDayKey.string(for: date, calendar: calendar)
     }
 
     private static func decode(_ raw: String?) -> [String: Int] {
