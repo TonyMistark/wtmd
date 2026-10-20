@@ -203,3 +203,81 @@ v0.15 把「应用级」的东西收到一处：**工具栏右侧一颗「功能
 - issue [#146](https://github.com/TonyMistark/wtmd/issues/146) → PR
   [#148](https://github.com/TonyMistark/wtmd/pull/148)（CI 双绿一次过）→ tag `v0.15.2`。
   README 徽章 → v0.15.2、测试计数 → 758。
+
+## 补丁（v0.15.3，2026-10-20）
+
+这一版把三件事叠在一起：两个读者报的问题，一次入口改版。
+
+### 预览空白处右键弹「重新载入」
+
+- 现象：预览区空白处点右键，弹出一个只有「Reload」一项的菜单。
+- 查证：WKWebView **不走** `NSView.menu(for:)`——子类覆写返回 `nil` 的写法实测
+  从未被调用（探针取证过），它自己维护一份内部菜单，只能在弹出之后拦。
+- 修法：`PreviewContextMenu` 只装一次 `NSMenu.didBeginTrackingNotification`；
+  判据是「非分隔项只有 1 项、没有子菜单、action 是 `forwardContextMenuAction:`」；
+  命中就 `cancelTracking()`，而且**必须下一拍**——当拍撤销无效，菜单照样留在屏上。
+- 选中文字时的完整菜单（拷贝、查询、服务…）照常弹出，判据不会命中。
+
+### 别人喊停，不算崩溃
+
+- 现象：一天里 8 份 `kind: terminated`，全是启动同一秒就「死掉」。
+- 根因：`killall` / `pkill` 发的是 SIGTERM，走系统默认处理：`atexit` 与
+  `willTerminateNotification` 都不执行，`.inflight-<pid>-<ts>.raw` 留在盘上；
+  下次启动把它收成「上次没有正常退出」——报告里那句「没抓到现场」是字面意思。
+- 修法三处：SIGTERM / SIGINT / SIGHUP 单独接住（处理器里只 `unlink` 预存的 C 路径，
+  再 `SIG_DFL` + `raise`，进程照样当场结束）；收割前用 `isLiveSibling`
+  （pid 活着 + 不是自己 + `proc_pidpath` 路径一致）跳过活着的兄弟实例；
+  `.terminated` 的标题从 `[崩溃]` 改成 `[退出]`。
+- 真正的崩溃路径一个字没动：`kill -9`、断电、签名异常照样上报。
+- 真机对照（`CFFIXED_USER_HOME` 隔离 `Application Support`）：修复前 `kill -TERM`
+  留 1 份现场、下次启动出 `kind: terminated`；修复后 0 份现场、0 份报告。
+  两份实例并排跑也不再有误报。
+
+### 功能中心 → 设置窗口
+
+`ControlCenterPanel`、`ControlCenterCatalog` 与工具栏那颗滑块按钮一起退休：
+360 pt 的浮层里摊三组十二行，再往里加东西就得滚，行数一多「点进去落在哪一页」
+也越来越难猜。
+
+- 新外壳 `SettingsShell`：左边一列功能、右边是选中的那一页，窗口固定 780×560，
+  切页不跳窗。左侧顶部是**账户区**（头像 + 昵称），下面「写作 / 外观 / 应用与帮助」
+  三组共六页——写作、主题、版式、打印、快捷键，加上新写的「应用」（版本、系统、
+  立即检查更新、关于、崩溃报告文件夹）。
+- 侧栏**不用 `List`**：macOS 26 的 sidebar 样式会把选中高亮涂到分组标题上（截图实证），
+  改成自绘行，与旧浮层同一套按钮语言。
+- 个人信息（只存本地）：`ProfileStore`——昵称进 `UserDefaults`
+  （`wtmd.profile.nickname`），头像缩到 512 px 存
+  `Application Support/wtmd/profile/avatar.png`。没设头像时画默认头像
+  （昵称首字，再没有人像符号）。工具栏入口就是这枚圆头像，有昵称就并排写上；
+  点它打开设置并落在「个人信息」页。
+- 头像缩放走 `NSBitmapImageRep` 而不是 `lockFocus`：后者按屏幕 scale 出图，
+  Retina 上 512 pt 会落成 1024 px，「存小一点」就白做了。
+- 「关于」抽成 `AboutPanel.show()`，App 菜单、⌘K、设置页三处同一个实现。
+- 各页去掉写死的 480×520，改成铺满右侧内容区。
+
+### 测试
+
+770 → **758**（`ControlCenterTests` 29 条随浮层一起退休，新增
+`SettingsShellTests` 12 条 + `ProfileStoreTests` 5 条）。
+
+- `SettingsShellTests`：分类顺序、每页各出现一次、`rawValue` 稳定、更新状态四句话；
+  装配断言——自绘侧栏、七页齐全、设置场景用 `SettingsShell`、工具栏头像开 `.profile`、
+  旧浮层与滑块图标已清。
+- `ProfileStoreTests`：昵称读写与修剪、首字、头像存取删、坏文件不动旧值。
+- 反向验证：判据恒 false → 红；去掉活体过滤 → 红；工具栏改回旧状态 → 红；
+  设置场景不注入 profile → 红；头像不落盘 → 3 条断言红。
+- issue [#150](https://github.com/TonyMistark/wtmd/issues/150) →
+  PR [#151](https://github.com/TonyMistark/wtmd/pull/151)；
+  [#143](https://github.com/TonyMistark/wtmd/issues/143) →
+  [#152](https://github.com/TonyMistark/wtmd/pull/152)；
+  [#153](https://github.com/TonyMistark/wtmd/issues/153) →
+  [#154](https://github.com/TonyMistark/wtmd/pull/154)。三份 PR 各自 CI 双绿。
+- tag `v0.15.3`。README 徽章 → v0.15.3，特性列表「功能中心」换成「设置窗口」，
+  路线图补这三个补丁。
+
+### 教训
+
+**macOS 26 上 `CGWindowListCreateImage` 传自己的 windowNumber，拍到的是整块屏幕。**
+系统会给玻璃效果的窗口配一块全屏背景窗，标题与尺寸都不属于「我的窗」。
+真机取证改用「窗口框架落盘」（`NSApp.windows` 的 title / frame / toolbar 项数），
+以后别再拿它当「截自己的窗」用。
