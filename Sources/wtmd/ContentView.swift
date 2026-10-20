@@ -68,6 +68,17 @@ struct ContentView: View {
                 close: { store.calendarVisible = false }
             )
         }
+        // 上次崩了（或读者点了「报告问题」）：说清楚发生了什么，给一条去 GitHub 的路
+        .sheet(isPresented: $store.crashVisible) {
+            CrashPanel(
+                report: store.crashReport,
+                extraCount: store.crashExtraCount,
+                copy: { store.copyCrashReport($0) },
+                reveal: { store.revealCrashReport($0) },
+                openIssue: { store.openCrashIssue($0) },
+                dismiss: { store.dismissCrashPrompt() }
+            )
+        }
         // 每天最多查一次新版本；失败静默，绝不打断写作
         .task { await updates.checkIfDue() }
         // 文档从任何入口打开（⌘O、最近文件、标题栏）后，工作区树跟上高亮

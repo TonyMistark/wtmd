@@ -27,6 +27,9 @@ final class SharedAppEnvironment: ObservableObject {
     let history: DocumentHistory
     /// 谁开着哪一篇。同一篇稿子只该在一扇窗里打开——见 `OpenDocuments`。
     let openDocuments: OpenDocuments
+    /// 崩溃报告的账房：收现场、列清单、交给读者。应用级一份——报告属于这台
+    /// 机器，不属于某一扇窗。
+    let crashes: CrashStore
 
     /// 参数默认 `nil` 而不是直接给实例：默认实参在非隔离上下文里求值，
     /// 而 `WritingStats` 这类类型的主初始化器是 main-actor 隔离的。
@@ -41,7 +44,8 @@ final class SharedAppEnvironment: ObservableObject {
         recentFiles: RecentFiles? = nil,
         conflicts: ConflictArchive? = nil,
         history: DocumentHistory? = nil,
-        openDocuments: OpenDocuments? = nil
+        openDocuments: OpenDocuments? = nil,
+        crashes: CrashStore? = nil
     ) {
         self.themeManager = themeManager ?? ThemeManager()
         self.writing = writing ?? WritingSettings()
@@ -54,6 +58,7 @@ final class SharedAppEnvironment: ObservableObject {
         self.conflicts = conflicts ?? ConflictArchive()
         self.history = history ?? DocumentHistory()
         self.openDocuments = openDocuments ?? OpenDocuments()
+        self.crashes = crashes ?? CrashStore()
     }
 }
 
@@ -95,6 +100,7 @@ final class WindowModel: ObservableObject, Identifiable {
             session: session,
             conflicts: shared.conflicts,
             history: shared.history,
+            crashes: shared.crashes,
             writingStats: shared.writingStats,
             themeManager: shared.themeManager,
             recentFiles: shared.recentFiles,
@@ -201,6 +207,15 @@ final class WindowCoordinator: ObservableObject {
         let first = primary ?? WindowModel(session: Session(defaults: defaults), shared: shared)
         self.primary = first
         windows[first.id] = first
+        // 上次的现场已经在 `harvest()` 里整理好了：开窗就问一句。
+        // 只有主窗问——副窗是读者自己开的，不该被一张崩溃说明挡住。
+        if shared.crashes.hasPending {
+            // 窗口还没挂上去就弹 sheet 会被系统丢掉：等一拍再问。
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                first.store.showCrashPrompt()
+            }
+        }
         // 名单先抄下来，等开窗通道到手再摆——`openWindow` 只在场景里读得到。
         pendingRestorations = book.entries
 
@@ -216,6 +231,8 @@ final class WindowCoordinator: ObservableObject {
             // 占着稿子——否则新启动的窗会被一扇已经不存在的窗挡在门外。
             return self.windows[id] != nil && !self.closedWindows.contains(id)
         }
+        // 起点也算一次「开着几扇窗」：崩溃时至少知道一开始是几扇。
+        noteWindowState("open")
     }
 
     func model(for id: UUID) -> WindowModel? { windows[id] }
@@ -335,7 +352,18 @@ final class WindowCoordinator: ObservableObject {
             startsBlank: blank
         )
         windows[id] = model
+        noteWindowState("open")
         return model
+    }
+
+    /// 崩溃报告里的「当时开着几扇窗」。
+    ///
+    /// 两行：一行给解析（`windows 3`），一行给人看（开了/关了第几扇）。
+    /// 只在窗口生命周期上写——打字不走这里，不会拖慢任何东西。
+    private func noteWindowState(_ action: String) {
+        let open = windows.values.filter { !closedWindows.contains($0.id) }.count
+        CrashBreadcrumbs.note("windows \(open)")
+        CrashBreadcrumbs.note("window \(action) · \(open) open")
     }
 
     /// 这扇窗的草稿家还留着字吗？
@@ -357,6 +385,7 @@ final class WindowCoordinator: ObservableObject {
         // 下次启动），可窗口本身已经不在了。
         closedWindows.insert(model.id)
         shared.openDocuments.release(model.id)
+        noteWindowState("close")
         bindings.removeAll { $0.model.id == model.id }
         guard model.id != primary.id else { return }
         model.workspace.close()
