@@ -940,6 +940,10 @@ final class DocumentStore: ObservableObject {
 
     var crashFolder: URL? { crashes?.directory }
 
+    /// 有没有还没看过的报告。功能中心用它决定那一行右侧写「有报告」还是「还没有」。
+    /// 已经看过的也算「有」——文件仍在磁盘上，那一行说的是文件夹里有什么。
+    var hasCrashReports: Bool { crashes.map { !$0.reports.isEmpty } ?? false }
+
     func copyCrashReport(_ report: CrashReport) {
         crashes?.copyToPasteboard(report)
     }

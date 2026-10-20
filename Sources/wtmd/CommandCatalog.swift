@@ -79,6 +79,8 @@ enum CommandKind: Hashable {
     case rescanThemes
     /// Ask GitHub for the latest release, ignoring the daily throttle.
     case checkForUpdates
+    /// Open the settings window on the page it was last on.
+    case openSettings
     /// Open a pre-filled GitHub issue with versions and system details.
     case reportProblem
     /// Open a file from the recent list.
@@ -110,6 +112,7 @@ enum CommandKind: Hashable {
         case .openThemesFolder: return "theme.openFolder"
         case .rescanThemes: return "theme.rescan"
         case .checkForUpdates: return "app.checkForUpdates"
+        case .openSettings: return "app.settings"
         case .reportProblem: return "app.reportProblem"
         case .openRecent(let url): return "recent.\(url.absoluteString)"
         }
@@ -262,6 +265,14 @@ enum CommandCatalog {
             kind: .rescanThemes, title: t("Rescan Themes", "重新扫描主题"), section: .theme,
             symbol: "arrow.clockwise", shortcut: nil,
             keywords: ["theme", "rescan", "reload", "refresh"], subtitle: nil
+        ),
+        AppCommand(
+            // 设置窗口本来只有 ⌘, 这一条路，且藏在 App 菜单里。登记进来，
+            // ⌘K 与功能中心就都能直达——同一个动作不该有三套说法。
+            kind: .openSettings, title: t("Settings…", "设置…"), section: .app,
+            symbol: "gearshape", shortcut: KeyboardShortcut(",", modifiers: .command),
+            keywords: ["settings", "preferences", "options", "配置", "设置", "偏好"],
+            subtitle: nil
         ),
         AppCommand(
             kind: .checkForUpdates, title: t("Check for Updates…", "检查更新…"), section: .app,
@@ -440,6 +451,7 @@ struct CommandRuntime {
         case .openThemesFolder: themeManager.openThemesFolder()
         case .rescanThemes: themeManager.reload()
         case .checkForUpdates: Task { await updates.check(force: true) }
+        case .openSettings: SettingsWindow.open()
         case .reportProblem: store.reportProblem()
         case .openRecent(let url): store.open(url: url)
         }
