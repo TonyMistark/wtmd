@@ -105,6 +105,8 @@ struct ContentView: View {
             // 把「开设置」这件事交给命令层：菜单、⌘K、设置窗口走的是同一条路，
             // 它们都拿不到视图环境，只有这里能。
             SettingsWindow.install { openSettings() }
+            // 设置里点过「打开写作日历」，而这扇窗当时还没回来：现在把它摊开。
+            if CalendarRequest.consume() { store.showCalendar() }
         }
         .overlay {
             ZStack {
