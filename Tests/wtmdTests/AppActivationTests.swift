@@ -301,3 +301,62 @@ struct CalendarRequestTests {
         _ = CalendarRequest.consume()
     }
 }
+
+// MARK: - 神灯动画
+
+/// 收进 Dock 有动画、放出来没有，是最容易被察觉的不对称：点最小化，窗口
+/// 缩进 Dock；点 Dock 图标，窗口「啪」地出现。差别来自谁动手——系统的
+/// 恢复带着从 Dock 长出来的动画，自己的 `deminiaturize` 只有终点。
+@Suite("Dock 缩放的动画")
+struct DockGenieTests {
+    private func info(miniaturized: Bool, sheet: Bool = false, canBecomeKey: Bool = true) -> AppActivation.WindowInfo {
+        .init(
+            isVisible: !miniaturized,
+            isMiniaturized: miniaturized,
+            isSheet: sheet,
+            canBecomeKey: canBecomeKey,
+            isPanel: false
+        )
+    }
+
+    @Test("全缩着：交回系统，让它做神灯")
+    func allMinimizedGoesToTheSystem() {
+        #expect(AppActivation.defersToSystem([info(miniaturized: true)]))
+        #expect(AppActivation.defersToSystem([info(miniaturized: true), info(miniaturized: true)]))
+    }
+
+    @Test("有一扇看得见的：自己举，别等系统")
+    func oneVisibleWindowHandlesItself() {
+        #expect(!AppActivation.defersToSystem([info(miniaturized: true), info(miniaturized: false)]))
+        #expect(!AppActivation.defersToSystem([info(miniaturized: false)]))
+    }
+
+    @Test("sheet 与不能当主的窗不算数：它们不会把「全缩着」变成「有窗」")
+    func sheetsAndPanelsDoNotCount() {
+        #expect(AppActivation.defersToSystem([
+            info(miniaturized: true),
+            info(miniaturized: false, sheet: true),
+            info(miniaturized: false, canBecomeKey: false),
+        ]))
+    }
+
+    @Test("一扇窗都没有：谈不上交给系统")
+    func noWindowsAtAll() {
+        #expect(!AppActivation.defersToSystem([]))
+        #expect(!AppActivation.defersToSystem([info(miniaturized: false, sheet: true)]))
+    }
+
+    @Test("装配：reopen 先问「该不该交给系统」，并且留了兜底")
+    func reopenDefersBeforeRaising() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/wtmd/AppActivation.swift")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        #expect(source.contains("defersToSystem(windows.map(AppActivation.info))"))
+        #expect(source.contains("deferToSystemFallback()"))
+        // 放出来之后不该再 order front：那一下会把动画拽到终点。
+        #expect(!source.contains("deminiaturize(nil)\n            windows[index].makeKeyAndOrderFront"))
+    }
+}
