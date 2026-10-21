@@ -157,13 +157,13 @@ struct AppDockMenuTests {
     /// 点下去自然什么都不发生。真应用里它由 `@NSApplicationDelegateAdaptor` 持有。
     private let delegate = AppDelegate()
 
-    private func menu() -> NSMenu? {
+    private func makeMenu() -> NSMenu? {
         delegate.applicationDockMenu(NSApplication.shared)
     }
 
     @Test("右键菜单里有「新建窗口」和「设置…」，前者挂着 ⌘N")
     func dockMenuOffersNewWindowAndSettings() throws {
-        let menu = try #require(menu())
+        let menu = try #require(makeMenu())
         #expect(menu.items.count == 2)
         #expect(menu.items[0].title == t("New Window", "新建窗口"))
         #expect(menu.items[0].keyEquivalent == "n")
@@ -176,7 +176,7 @@ struct AppDockMenuTests {
 
     @Test("「新建窗口」走的是 ⌘N 那条路，不是举旧窗")
     func newWindowItemOpensAFreshWindow() throws {
-        let menu = try #require(menu())
+        let menu = try #require(makeMenu())
         var opened = 0
         AppActivation.newWindow = { opened += 1 }
         defer { AppActivation.newWindow = nil }
@@ -189,7 +189,7 @@ struct AppDockMenuTests {
 
     @Test("还没装上窗口通道时退回主窗，而不是无声无息")
     func newWindowFallsBackToTheMainWindow() throws {
-        let menu = try #require(menu())
+        let menu = try #require(makeMenu())
         var opened = 0
         AppActivation.newWindow = nil
         AppActivation.openMain = { opened += 1 }
@@ -203,7 +203,7 @@ struct AppDockMenuTests {
 
     @Test("「设置…」开的是设置窗口")
     func settingsItemOpensSettings() throws {
-        let menu = try #require(menu())
+        let menu = try #require(makeMenu())
         var opened = 0
         SettingsWindow.install { opened += 1 }
         defer { SettingsWindow.install(nil) }
