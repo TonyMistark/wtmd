@@ -226,3 +226,78 @@ struct AppDockMenuTests {
         #expect(source.contains("openNewWindow(inheriting:"), "新窗口没走窗口表那条路")
     }
 }
+
+// MARK: - 从设置里打开写作日历
+
+/// 日历是写作窗口上的一张 sheet，设置窗口里没有那份 `DocumentStore`——
+/// 所以按钮不能自己打开它，只能留一条请求，由窗口那边接单。这几条钉住
+/// 「谁摊开、谁记账、记一次就够」。
+@Suite("设置里打开写作日历", .serialized)
+@MainActor
+struct CalendarRequestTests {
+    @Test("窗口在：当场摊开，不叫开窗，也不记账")
+    func presentsInTheExistingWindow() {
+        var opened = 0
+        var presented = 0
+        CalendarRequest.present = { presented += 1; return true }
+        AppActivation.openMain = { opened += 1 }
+        defer { restore() }
+
+        CalendarRequest.show()
+
+        #expect(presented == 1)
+        #expect(opened == 0)
+        #expect(CalendarRequest.consume() == false, "窗口当场处理了，不该再记一笔")
+    }
+
+    @Test("窗口不在：先把账记上，再叫它回来")
+    func keepsTheRequestWhenNoWindowIsAround() {
+        var opened = 0
+        CalendarRequest.present = { false }
+        AppActivation.openMain = { opened += 1 }
+        defer { restore() }
+
+        CalendarRequest.show()
+
+        #expect(opened == 1)
+        #expect(CalendarRequest.pending)
+    }
+
+    @Test("兑现一次就划掉：同一次请求不会摊两遍")
+    func consumesOnlyOnce() {
+        CalendarRequest.present = nil
+        defer { restore() }
+
+        CalendarRequest.show()
+
+        #expect(CalendarRequest.consume())
+        #expect(CalendarRequest.consume() == false)
+    }
+
+    @Test("整条路接得上：设置里有按钮，窗口根视图接单，窗口出现时兑现")
+    func thePathIsWired() throws {
+        let settings = try source("SettingsPages.swift")
+        #expect(settings.contains("CalendarRequest.show()"), "设置里没有打开日历的按钮")
+
+        let root = try source("WindowRoot.swift")
+        #expect(root.contains("CalendarRequest.present ="), "窗口根视图没接单")
+
+        let content = try source("ContentView.swift")
+        #expect(content.contains("CalendarRequest.consume()"), "窗口出现时没人兑现这笔账")
+    }
+
+    private func source(_ name: String) throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/wtmd/\(name)")
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    private func restore() {
+        CalendarRequest.present = nil
+        AppActivation.openMain = nil
+        _ = CalendarRequest.consume()
+    }
+}

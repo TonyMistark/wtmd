@@ -176,6 +176,53 @@ enum AppActivation {
     }
 }
 
+/// 从别的窗口打开写作日历。
+///
+/// 日历是写作窗口上的一张 sheet，挂在那个窗口的 `DocumentStore` 上；设置窗口是
+/// 独立场景，手里没有那份 store。所以入口只能反过来：按下按钮的这一边不打开
+/// 任何东西，只留一句「有人要日历」，由窗口那边接单。
+///
+/// 窗口还在（哪怕缩着）就直接摊开；一扇都没有就先记着，等窗口回来再接。
+@MainActor
+enum CalendarRequest {
+    /// 由窗口根视图装进来。返回 `false` 表示眼下没有能摊开它的窗。
+    static var present: (() -> Bool)?
+
+    /// 窗还没开时先记的一笔。窗口出现（`ContentView` 的 `onAppear`）再兑现。
+    private(set) static var pending = false
+
+    static func show() {
+        if present?() == true { return }
+        pending = true
+        // 开窗是异步的：这里只负责把窗叫回来，等它落地再摊开。
+        AppActivation.openMain?()
+        waitForWindow(attempts: 20)
+    }
+
+    /// 窗口从「关着」到「能摊 sheet」之间隔着好几帧（场景重建、视图装配）。
+    /// 与其猜一个延迟，不如隔一会儿问一句——问到了就把记的那一笔划掉，免得
+    /// 窗口下次出现时又莫名其妙弹一次。
+    private static func waitForWindow(attempts: Int) {
+        guard attempts > 0 else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            // 这笔账已经被兑现（或撤掉）了就别再问——同一次请求只摊一次。
+            guard pending else { return }
+            if present?() == true {
+                pending = false
+                return
+            }
+            waitForWindow(attempts: attempts - 1)
+        }
+    }
+
+    /// 窗口出现了：该摊开的摊开。取用即清——同一次请求不该摊两次。
+    static func consume() -> Bool {
+        defer { pending = false }
+        return pending
+    }
+}
+
 /// 点 Dock 图标那一下走这里。SwiftUI 自己的实现只认「上一次那扇窗」，
 /// 那扇窗没了就什么都不做——所以先问一句我们能不能举一扇出来。
 @MainActor

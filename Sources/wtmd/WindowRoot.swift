@@ -173,8 +173,10 @@ struct OpenWindowBridge: View {
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
-            .onAppear {
-                coordinator.attach { id in
+            // 闭包统一弱持有 coordinator：它由窗口表活着，而这几条通道活得比窗口久，
+            // 强留着它等于把整张窗口表钉在这里。
+            .onAppear { [weak coordinator] in
+                coordinator?.attach { id in
                     openWindow(id: WindowScene.extra, value: id)
                 }
                 // 一扇窗都不剩的时候，点 Dock 图标得能开回主窗——与「设置」同一条：
@@ -184,6 +186,16 @@ struct OpenWindowBridge: View {
                 AppActivation.newWindow = { [weak coordinator] in
                     guard let coordinator else { return }
                     coordinator.openNewWindow(inheriting: coordinator.primary.workspace.root)
+                }
+                // 设置里那个「打开写作日历」：日历是这扇窗上的 sheet，只有这里能摊开。
+                CalendarRequest.present = { [weak coordinator] in
+                    guard let coordinator,
+                          let window = coordinator.window(for: coordinator.primary.id),
+                          window.isVisible
+                    else { return false }
+                    AppActivation.bringToFront(window)
+                    coordinator.primary.store.showCalendar()
+                    return true
                 }
             }
     }

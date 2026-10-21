@@ -120,6 +120,26 @@ struct WritingSettingsView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }
+
+            // 日历原本只有 ⇧⌘Y 一条路，设置里找不到它的人会以为功能没了。
+            Section(t("Writing Calendar", "写作日历")) {
+                HStack {
+                    Text(t(
+                        "A year of daily net additions, one square a day.",
+                        "一年里每天的净增，一天一格。"
+                    ))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(t("Open Calendar…", "打开日历…")) { CalendarRequest.show() }
+                }
+                Text(t(
+                    "Also on ⇧⌘Y, or by clicking today's progress in the status bar.",
+                    "也可以用 ⇧⌘Y 打开，或点状态栏上的今日进度。"
+                ))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .settingsPage()
