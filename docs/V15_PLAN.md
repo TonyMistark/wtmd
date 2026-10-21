@@ -341,3 +341,35 @@ v0.15 把「应用级」的东西收到一处：**工具栏右侧一颗「功能
 **仓库里不留可启动的 `.app`。** 只要它躺在用户的家目录里，Spotlight 就会把它当成一份
 装好的应用，「应用」列表里于是出现重名条目——而且删掉文件之后，`lsregister` 里的旧注册
 还会残留很久。构建产物应该有「临时」的样子：临时目录、退出即清。
+
+## 补丁（v0.15.5，2026-10-21）
+
+### 关掉窗口之后，右键 Dock 图标没有入口
+
+- 现象：主窗口按 ⌘W 关掉，应用还在（Dock 图标亮着），但点 Dock 图标不开窗；
+  右键 Dock 图标只有系统那几项，没有任何能新建的东西。
+- 两件事分开看：**点 Dock 图标不开窗**是 v0.15.4 修的（`AppActivation` 挑一扇
+  可见的举起，全关光就走 `openWindow(id:)` 开主窗）；**右键没有入口**是这一版补的。
+- 修法：`AppDelegate.applicationDockMenu(_:)` 给两条——「新建窗口」（显示 ⌘N）与
+  「设置…」。前者走与 ⌘N 同一条路（`coordinator.openNewWindow(inheriting:)`：
+  新会话、接着用当前窗口的文件夹），不是把旧窗举起来；两条动作都先 `activate`，
+  否则 Dock 菜单选完焦点还在别处，新窗口会开在后台。
+- 通道照旧由根视图（`OpenWindowBridge`）交给 `AppActivation.newWindow`——与
+  `openMain` 同一条机制，因为 `openWindow` 只在场景环境里读得到。
+
+### 测试
+
+702 → 707（+69），新增 `AppDockMenuTests` 5 条：菜单两项与 ⌘N、每项都有
+target/action、「新建窗口」调到新窗通道、通道没装上时退回主窗、「设置…」开设置、
+根视图把通道交出去。反向验证：`applicationDockMenu` 返回 nil → 3 条红；
+新建窗口不调通道 → 1 条红。
+
+真机探针（临时，已删）：`NSApp.delegate=AppDelegate`、菜单两项；关掉全部窗口之后
+点「新建窗口」→ 新窗口 `visible=true`。
+
+### 教训
+
+**`#require` 不要和同名局部变量放在一起。** `let menu = try #require(menu())`
+在 CI 那套工具链上被解析成「`menu` 是个 NSMenu，不能调用」，本机新编译器的
+解析顺序不同，所以本地全绿、CI 直接编译失败。测试里这类同名遮蔽对编译器版本太敏感，
+辅助函数一律换个名字（`makeMenu()`）。
