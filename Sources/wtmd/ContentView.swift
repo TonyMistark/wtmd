@@ -120,8 +120,9 @@ struct ContentView: View {
                     .frame(width: 0, height: 0)
                     .accessibilityHidden(true)
 
-                // ⌘K 命令面板
-                Button("") { paletteVisible.toggle() }
+                // ⌘K 命令面板。与工具栏那枚放大镜同一个状态：开着再按一次也不关，
+                // 关它只有 Esc 与点空白处——两个入口不该互相打断。
+                Button("") { paletteVisible = true }
                     .keyboardShortcut("k", modifiers: .command)
                     .opacity(0)
                     .frame(width: 0, height: 0)
@@ -564,6 +565,17 @@ struct ContentView: View {
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
+            // 命令面板不能只活在键盘上：⌘K 之外，也得有一条给鼠标的路。
+            // 同一张面板、同一个状态——按钮只是把「有没有开」翻过来。
+            Button {
+                paletteVisible = true
+            } label: {
+                Label(t("Search Commands", "搜索命令"), systemImage: "magnifyingglass")
+                    .background(ToolbarTip(text: paletteHint))
+            }
+            .help(paletteHint)
+            .accessibilityLabel(t("Search Commands", "搜索命令"))
+
             Button {
                 workspace.openPanel()
             } label: {
@@ -624,6 +636,15 @@ struct ContentView: View {
         t(
             "Settings — profile, writing, appearance, updates",
             "设置——个人信息、写作、外观、更新"
+        )
+    }
+
+    /// 说的是这张面板**能干什么**，而不是它的名字：第一次点开的人靠这句话
+    /// 判断「这里能不能找到我要的东西」。
+    private var paletteHint: String {
+        t(
+            "Search commands — run an action without hunting the menus (⌘K)",
+            "搜索命令——不必翻菜单就能执行一项操作（⌘K）"
         )
     }
 }
