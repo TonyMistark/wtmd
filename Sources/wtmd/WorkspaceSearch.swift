@@ -75,6 +75,7 @@ enum WorkspaceSearch {
         limit: Int = hitLimit,
         sizeLimit: Int = fileSizeLimit,
         overlay: [URL: String] = [:],
+        ignores: WorkspaceIgnore = .empty,
         shouldContinue: @Sendable () -> Bool = { true }
     ) -> WorkspaceSearchReport {
         var report = WorkspaceSearchReport()
@@ -88,7 +89,7 @@ enum WorkspaceSearch {
             uniqueKeysWithValues: overlay.map { ($0.key.resolvingSymlinksInPath().path, $0.value) }
         )
 
-        for url in markdownFiles(in: root, shouldContinue: shouldContinue) {
+        for url in markdownFiles(in: root, ignores: ignores, shouldContinue: shouldContinue) {
             // Cancelled mid-sweep: hand back what we have; the caller discards
             // it anyway, and stopping here is what keeps typing responsive.
             guard shouldContinue() else { return report }
@@ -170,19 +171,33 @@ enum WorkspaceSearch {
     /// Sorted by path rather than by the file system's enumeration order: two
     /// runs over the same folder must produce the same list, or `↑`/`↓` in the
     /// panel would point at different sentences each time.
-    static func markdownFiles(in root: URL, shouldContinue: @Sendable () -> Bool = { true }) -> [URL] {
+    static func markdownFiles(
+        in root: URL,
+        ignores: WorkspaceIgnore = .empty,
+        shouldContinue: @Sendable () -> Bool = { true }
+    ) -> [URL] {
         guard let enumerator = FileManager.default.enumerator(
             at: root,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else { return [] }
 
+        let rootPath = root.resolvingSymlinksInPath().path
         var files: [URL] = []
         for case let url as URL in enumerator {
             if !shouldContinue() { break }
             if isSkippedDirectory(url) {
                 enumerator.skipDescendants()
                 continue
+            }
+            // `.wtmdignore` 里点名的目录在枚举时就剪掉：不读盘，也不往下走。
+            if !ignores.isEmpty {
+                let relative = relativePath(of: url.resolvingSymlinksInPath().path, under: rootPath)
+                let isDirectory = WorkspaceScanner.isDirectory(url)
+                if ignores.excludes(relativePath: relative, isDirectory: isDirectory) {
+                    if isDirectory { enumerator.skipDescendants() }
+                    continue
+                }
             }
             guard WorkspaceScanner.markdownExtensions.contains(url.pathExtension.lowercased()),
                   !WorkspaceScanner.isDirectory(url)

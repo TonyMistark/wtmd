@@ -81,23 +81,31 @@ import Testing
 
 // MARK: - 结果行
 
-/// 空查询插入分组小标题，结果按分组聚拢。
+/// 空查询按命令分组摆：读者是在「浏览」，分组就是目录。
 @Test func emptyQueryInsertsSectionHeaders() {
     let commands = [
         command("甲", section: .file),
         command("乙", section: .file),
         command("丙", section: .view),
     ]
-    let rows = CommandSearch.rows(for: "", results: CommandSearch.filter("", in: commands))
-    #expect(shape(rows) == ["H:file", "C:甲", "C:乙", "H:view", "C:丙"])
+    let rows = PaletteRows.build(.init(
+        query: PaletteQuery.parse(""),
+        commands: CommandSearch.filter("", in: commands),
+        files: [], textHits: [], textTotal: 0
+    ))
+    #expect(shape(rows) == ["H:section.file", "C:甲", "C:乙", "H:section.view", "C:丙"])
 }
 
-/// 有查询时保持平铺：小标题会打断按相关度排好的顺序。
-@Test func typedQueryStaysFlat() {
+/// 有查询时命令挤在一段里：再按原本的分组切，会把相关度排好的顺序打散。
+@Test func typedQueryGroupsCommandsUnderOneHeader() {
     let commands = [command("save", section: .file), command("scope", section: .writing)]
-    let rows = CommandSearch.rows(for: "s", results: CommandSearch.filter("s", in: commands))
-    #expect(shape(rows).allSatisfy { $0.hasPrefix("C:") })
-    #expect(shape(rows).count == 2)
+    let rows = PaletteRows.build(.init(
+        query: PaletteQuery.parse("s"),
+        commands: CommandSearch.filter("s", in: commands),
+        files: [], textHits: [], textTotal: 0
+    ))
+    #expect(shape(rows).first == "H:commands")
+    #expect(shape(rows).filter { $0.hasPrefix("C:") }.count == 2)
 }
 
 // MARK: - 命令清单
@@ -342,12 +350,17 @@ private func shortcutLabel(_ kind: CommandKind) -> String? {
     CommandCatalog.command(for: kind)?.shortcut.map(ShortcutFormatter.label)
 }
 
-/// 把结果行压成可断言的形状：`H:file` 是分组标题，`C:标题` 是命令行。
+/// 把结果行压成可断言的形状：`H:分组` 是小标题，`C:标题` 是命令，
+/// `F:文件名` 是文件，`T:行文` 是正文命中，`S:词` 是搜过的词，`→` 是出口。
 private func shape(_ rows: [PaletteRow]) -> [String] {
     rows.map { row in
         switch row {
-        case .header(let section): return "H:\(section.rawValue)"
+        case .header(let group): return "H:\(group.id)"
         case .command(let result): return "C:\(result.command.title)"
+        case .file(let hit): return "F:\(hit.name)"
+        case .text(let hit): return "T:\(hit.lineText)"
+        case .search(let term): return "S:\(term)"
+        case .seeAll: return "→"
         }
     }
 }
@@ -464,10 +477,10 @@ struct ToolbarSearchEntryTests {
         #expect(content.contains("paletteVisible = true"))
     }
 
-    @Test("面板与按钮用同一句话：都说自己搜的是命令")
+    @Test("面板说清自己搜三类东西，而不是只说「命令」")
     func thePanelSaysWhatItSearches() throws {
         let palette = try source("CommandPalette.swift")
-        #expect(palette.contains(#"t("Search commands…", "搜索命令…")"#))
+        #expect(palette.contains(#"t("Search commands, files, text…", "搜索命令、文件、正文…")"#))
     }
 
     @Test("按钮有提示：工具栏的 .help 到不了 AppKit，得靠锚点写 toolTip")
