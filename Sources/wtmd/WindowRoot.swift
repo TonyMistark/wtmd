@@ -180,6 +180,11 @@ struct OpenWindowBridge: View {
                 // 一扇窗都不剩的时候，点 Dock 图标得能开回主窗——与「设置」同一条：
                 // 场景环境只有视图拿得到，命令层只能拿到一个闭包。
                 AppActivation.openMain = { openWindow(id: WindowScene.main) }
+                // Dock 菜单的「新建窗口」：与 ⌘N 同一条路——新会话、接着用当前文件夹。
+                AppActivation.newWindow = { [weak coordinator] in
+                    guard let coordinator else { return }
+                    coordinator.openNewWindow(inheriting: coordinator.primary.workspace.root)
+                }
             }
     }
 }

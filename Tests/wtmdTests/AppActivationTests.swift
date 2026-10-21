@@ -145,3 +145,84 @@ struct AppActivationAssemblyTests {
             .appendingPathComponent("Sources/wtmd/\(name)")
     }
 }
+
+// MARK: - 右键 Dock 图标
+
+/// 窗口全关掉之后，人右键 Dock 图标是去找入口的。系统默认那份菜单里
+/// 只有「显示所有窗口」和一个空列表——这里补的是「新建窗口」。
+@Suite("Dock 菜单")
+@MainActor
+struct AppDockMenuTests {
+    /// 菜单项的 `target` 是弱引用：delegate 没人持有的话，菜单还没点就被回收了，
+    /// 点下去自然什么都不发生。真应用里它由 `@NSApplicationDelegateAdaptor` 持有。
+    private let delegate = AppDelegate()
+
+    private func makeMenu() -> NSMenu? {
+        delegate.applicationDockMenu(NSApplication.shared)
+    }
+
+    @Test("右键菜单里有「新建窗口」和「设置…」，前者挂着 ⌘N")
+    func dockMenuOffersNewWindowAndSettings() throws {
+        let menu = try #require(makeMenu())
+        #expect(menu.items.count == 2)
+        #expect(menu.items[0].title == t("New Window", "新建窗口"))
+        #expect(menu.items[0].keyEquivalent == "n")
+        #expect(menu.items[0].keyEquivalentModifierMask == .command)
+        #expect(menu.items[1].title == t("Settings…", "设置…"))
+        // 每一项都得有人接：target 为 nil 的菜单项在 Dock 上点下去什么都不会发生。
+        #expect(menu.items.allSatisfy { $0.target != nil })
+        #expect(menu.items.allSatisfy { $0.action != nil })
+    }
+
+    @Test("「新建窗口」走的是 ⌘N 那条路，不是举旧窗")
+    func newWindowItemOpensAFreshWindow() throws {
+        let menu = try #require(makeMenu())
+        var opened = 0
+        AppActivation.newWindow = { opened += 1 }
+        defer { AppActivation.newWindow = nil }
+
+        let item = menu.items[0]
+        NSApplication.shared.sendAction(try #require(item.action), to: item.target, from: item)
+
+        #expect(opened == 1)
+    }
+
+    @Test("还没装上窗口通道时退回主窗，而不是无声无息")
+    func newWindowFallsBackToTheMainWindow() throws {
+        let menu = try #require(makeMenu())
+        var opened = 0
+        AppActivation.newWindow = nil
+        AppActivation.openMain = { opened += 1 }
+        defer { AppActivation.openMain = nil }
+
+        let item = menu.items[0]
+        NSApplication.shared.sendAction(try #require(item.action), to: item.target, from: item)
+
+        #expect(opened == 1)
+    }
+
+    @Test("「设置…」开的是设置窗口")
+    func settingsItemOpensSettings() throws {
+        let menu = try #require(makeMenu())
+        var opened = 0
+        SettingsWindow.install { opened += 1 }
+        defer { SettingsWindow.install(nil) }
+
+        let item = menu.items[1]
+        NSApplication.shared.sendAction(try #require(item.action), to: item.target, from: item)
+
+        #expect(opened == 1)
+    }
+
+    @Test("根视图把「另起一桌」也交出去了")
+    func theRootViewHandsOverNewWindow() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/wtmd/WindowRoot.swift")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        #expect(source.contains("AppActivation.newWindow"), "根视图没把「开新窗」交出去")
+        #expect(source.contains("openNewWindow(inheriting:"), "新窗口没走窗口表那条路")
+    }
+}
