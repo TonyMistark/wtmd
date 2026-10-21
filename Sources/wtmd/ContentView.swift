@@ -10,6 +10,7 @@ struct ContentView: View {
     @EnvironmentObject var typesetting: TypesettingSettings
     @EnvironmentObject var printing: PrintSettings
     @EnvironmentObject var updates: UpdateChecker
+    @EnvironmentObject var installer: UpdateInstaller
     @EnvironmentObject var overrides: ShortcutOverrides
     /// 工具栏那颗头像：有昵称就写上，没有就只画一枚圆。
     @EnvironmentObject var profile: ProfileStore
@@ -503,7 +504,8 @@ struct ContentView: View {
         .frame(width: 46, height: 4)
     }
 
-    /// 更新提示：有新版时是可点的徽标，其余反馈（已是最新 / 失败）短暂停留后自己消失。
+    /// 更新提示：有新版时点一下就是整个更新（下载 → 挂载 → 装配 → 重启），
+    /// 其余反馈（已是最新 / 失败）短暂停留后自己消失。
     @ViewBuilder
     private var updateBadge: some View {
         switch updates.status {
@@ -513,16 +515,8 @@ struct ContentView: View {
                 .scaleEffect(0.7)
                 .frame(width: 12, height: 12)
                 .help(t("Checking for updates…", "正在检查更新…"))
-        case .available(let version, let url):
-            Button {
-                NSWorkspace.shared.open(url)
-            } label: {
-                Label(t("v\(version) available", "v\(version) 可用"), systemImage: "arrow.down.circle")
-                    .foregroundStyle(Color.accentColor)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(t("Open the download page: \(url.absoluteString)", "打开下载页：\(url.absoluteString)"))
+        case .available(let version, let url, let asset):
+            updateAvailableBadge(version: version, url: url, asset: asset)
         case .upToDate(let version):
             Text(t("v\(version) is up to date", "v\(version) 已是最新"))
                 .foregroundStyle(.tertiary)
@@ -532,6 +526,59 @@ struct ContentView: View {
         case .idle:
             EmptyView()
         }
+    }
+
+    /// 有新版时的那枚徽标。装得动就一键装；下载中的进度写在原地，
+    /// 失败了退回两条老路——再点重试，或者去 Release 页手动下载。
+    @ViewBuilder
+    private func updateAvailableBadge(version: String, url: URL, asset: UpdateAsset?) -> some View {
+        switch installer.phase {
+        case .downloading(let fraction):
+            Text(t("Downloading \(Int(fraction * 100))%", "下载中 \(Int(fraction * 100))%"))
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .help(t("Downloading the update", "正在下载更新"))
+        case .installing:
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.mini)
+                    .scaleEffect(0.7)
+                Text(t("Installing…", "正在安装…"))
+                    .foregroundStyle(.secondary)
+            }
+            .help(t("Swapping the new app into /Applications", "正在把新版换进 /Applications"))
+        case .failed(let reason):
+            Button {
+                NSWorkspace.shared.open(url)
+            } label: {
+                Label(t("Update failed", "更新失败"), systemImage: "exclamationmark.arrow.circlepath")
+                    .foregroundStyle(.secondary)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(t("Retry from the release page. \(reason)", "去 Release 页重试。\(reason)"))
+        case .idle:
+            Button {
+                startUpdate(version: version, url: url, asset: asset)
+            } label: {
+                Label(t("v\(version) available", "v\(version) 可用"), systemImage: "arrow.down.circle")
+                    .foregroundStyle(Color.accentColor)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(asset == nil
+                ? t("Open the download page: \(url.absoluteString)", "打开下载页：\(url.absoluteString)")
+                : t("Download and install v\(version), then relaunch", "下载并安装 v\(version)，装完自动重启"))
+        }
+    }
+
+    /// 有 dmg 就一键装；没有（Release 没挂附件）就退回打开下载页。
+    private func startUpdate(version: String, url: URL, asset: UpdateAsset?) {
+        guard let asset else {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        Task { await installer.run(asset: asset, version: version, releaseURL: url) }
     }
 
     /// 两个写作模式的开关：界面越安静，越容易待在里面。

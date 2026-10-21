@@ -82,8 +82,34 @@ enum UpdateStatus: Equatable {
     case idle
     case checking
     case upToDate(version: String)
-    case available(version: String, releaseURL: URL)
+    /// `asset` 是 dmg 的下载地址与大小；Release 里没挂 dmg 时为 nil，
+    /// 界面此时退回「打开 Release 页」的老路。
+    case available(version: String, releaseURL: URL, asset: UpdateAsset?)
     case failed
+}
+
+/// Release 里挑出来的 dmg 附件：一键更新下载的就是它。
+struct UpdateAsset: Equatable {
+    let url: URL
+    let name: String
+    let byteCount: Int
+
+    var megabytes: String {
+        byteCount >= 0 ? String(format: "%.1f MB", Double(byteCount) / 1_000_000) : ""
+    }
+
+    /// 从一组附件里挑出该装的 dmg：认 `wtmd-<版本>.dmg`（大小写不敏感），
+    /// 多个时挑名字里带版本号的那个，再不行取第一个。
+    static func dmg(named names: [(name: String, url: URL, size: Int)], version: String?) -> UpdateAsset? {
+        let candidates = names.compactMap { piece -> UpdateAsset? in
+            guard piece.name.lowercased().hasSuffix(".dmg") else { return nil }
+            return UpdateAsset(url: piece.url, name: piece.name, byteCount: piece.size)
+        }
+        guard candidates.count > 1, let version else { return candidates.first }
+        return candidates.first {
+            $0.name.localizedCaseInsensitiveContains(version)
+        } ?? candidates.first
+    }
 }
 
 // MARK: - 检查器
@@ -190,7 +216,7 @@ final class UpdateChecker: ObservableObject {
             return
         }
         if latest > current {
-            status = .available(version: latest.description, releaseURL: release.htmlURL)
+            status = .available(version: latest.description, releaseURL: release.htmlURL, asset: release.asset)
         } else {
             flash(.upToDate(version: current.description))
         }
@@ -245,12 +271,37 @@ private struct GitHubRelease: Decodable {
     let htmlURL: URL
     let draft: Bool
     let prerelease: Bool
+    var asset: UpdateAsset? {
+        UpdateAsset.dmg(
+            named: (assets ?? []).compactMap { piece in
+                guard let url = piece.downloadURL, let name = piece.name, !name.isEmpty else { return nil }
+                return (name, url, piece.size ?? -1)
+            },
+            version: AppVersion(tagName)?.description
+        )
+    }
+
+    private var assets: [GitHubAsset]?
 
     enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
         case htmlURL = "html_url"
         case draft
         case prerelease
+        case assets
+    }
+
+    private struct GitHubAsset: Decodable {
+        // 附件字段缺了不算错：GitHub 偶尔挂非 dmg 的东西，跳过它就好
+        let name: String?
+        let size: Int?
+        let downloadURL: URL?
+
+        enum CodingKeys: String, CodingKey {
+            case name
+            case size
+            case downloadURL = "browser_download_url"
+        }
     }
 }
 

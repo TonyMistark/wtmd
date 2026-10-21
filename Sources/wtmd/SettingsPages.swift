@@ -246,6 +246,7 @@ struct PrintingSettingsView: View {
 /// **看得见状态**的：现在是什么版本、上次检查结果如何、报告存在哪。
 struct AppSettingsView: View {
     @EnvironmentObject var updates: UpdateChecker
+    @EnvironmentObject var installer: UpdateInstaller
     @EnvironmentObject var crashes: CrashStore
 
     var body: some View {
@@ -258,10 +259,11 @@ struct AppSettingsView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     Spacer()
+                    updateAction
                     Button(updates.isChecking ? t("Checking…", "正在检查…") : t("Check Now", "立即检查")) {
                         Task { await updates.check(force: true) }
                     }
-                    .disabled(updates.isChecking)
+                    .disabled(updates.isChecking || installer.phase.isWorking)
                 }
             }
 
@@ -280,6 +282,44 @@ struct AppSettingsView: View {
         }
         .formStyle(.grouped)
         .settingsPage()
+    }
+
+    /// 「有新版」时「立即检查」旁边换成更新的动作：能装就装，
+    /// 失败给一条去访达的退路；其他时刻这块是空的。
+    @ViewBuilder
+    private var updateAction: some View {
+        switch (updates.status, installer.phase) {
+        case (.available(let version, let url, let asset), .idle):
+            Button(t("Update…", "现在更新…")) {
+                if let asset {
+                    Task { await installer.run(asset: asset, version: version, releaseURL: url) }
+                } else {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        case (_, .downloading(let fraction)):
+            Text(t("Downloading \(Int(fraction * 100))%", "下载中 \(Int(fraction * 100))%"))
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+        case (_, .installing):
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini).scaleEffect(0.7)
+                Text(t("Installing…", "正在安装…")).font(.callout).foregroundStyle(.secondary)
+            }
+        case (_, .failed(let reason)):
+            if installer.downloadedDMG != nil {
+                Button(t("Reveal Download", "在访达中显示")) {
+                    installer.revealFallback()
+                }
+                .help(reason)
+            } else {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(.secondary)
+                    .help(reason)
+            }
+        default:
+            EmptyView()
+        }
     }
 }
 

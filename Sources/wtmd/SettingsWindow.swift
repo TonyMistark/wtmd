@@ -293,7 +293,7 @@ extension UpdateStatus {
         case .idle: return nil
         case .checking: return t("Checking…", "正在检查…")
         case .upToDate(let version): return t("v\(version) is up to date", "v\(version) 已是最新")
-        case .available(let version, _): return t("v\(version) available", "v\(version) 可用")
+        case .available(let version, _, _): return t("v\(version) available", "v\(version) 可用")
         case .failed: return t("Last check failed", "上次检查失败")
         }
     }

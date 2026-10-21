@@ -49,6 +49,7 @@ struct wtmdApp: App {
                 .environmentObject(shared.printing)
                 .environmentObject(shared.overrides)
                 .environmentObject(shared.updates)
+                .environmentObject(shared.installer)
                 .environmentObject(shared.crashes)
         }
     }
