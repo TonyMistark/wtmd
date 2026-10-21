@@ -281,3 +281,63 @@ v0.15 把「应用级」的东西收到一处：**工具栏右侧一颗「功能
 系统会给玻璃效果的窗口配一块全屏背景窗，标题与尺寸都不属于「我的窗」。
 真机取证改用「窗口框架落盘」（`NSApp.windows` 的 title / frame / toolbar 项数），
 以后别再拿它当「截自己的窗」用。
+
+## 补丁（v0.15.4，2026-10-21）
+
+两个都不算功能，一个是反复被撞见的怪毛病，一个是打包链上的错位。
+
+### 点 Dock 图标，窗口不上来
+
+- 现象：点 Dock 上的图标，窗口不到最前面；有时点一下主窗口也一样。**「有时候又是好的」**。
+- 根因：全仓没有一行激活相关代码——`NSApp.activate`、`applicationShouldHandleReopen`、
+  `activationPolicy` 零命中，全靠系统默认。而系统只举「它记得的那扇窗」：那扇窗可能已经
+  被 ⌘W 关掉（窗口没了、模型还在）、缩在 Dock 里（要 `deminiaturize` 才出得来）、是一张
+  sheet（挂在别人身上，自己拿不出手）、或记着的位置落在屏幕外（拔过外接屏、改过分辨率）。
+  关掉的设置窗还会留一扇 `isVisible = false` 的「wtmd Settings」。任何一条成立，点 Dock 的
+  结果都是「菜单栏换了名字，屏幕上一个像素没动」——也正因为依赖状态，才会时好时坏。
+- 修法：新增 `AppActivation`，把「举哪一扇」写成纯函数。优先级：最近一次成为 key 的那扇
+  （且仍可见）→ 看得见的普通窗口 → 看得见的面板 → 缩着的（先 `deminiaturize`）；sheet 与
+  `canBecomeKey == false` 的一律不参与。挑到就 `activate()` + `makeKeyAndOrderFront`，
+  整个在屏幕外先 `center()`；一扇都挑不出来就走 `openWindow(id:)` 开回主窗——不把这件事
+  留给系统。`AppDelegate` 由 `@NSApplicationDelegateAdaptor` 装进来，开窗闭包走
+  `OpenWindowBridge`（与设置窗口同一条：场景环境只有视图拿得到）。
+- 顺带两处：`applicationDidBecomeActive` 里若前台没有 key 窗，把看得见的那扇认作主窗——
+  否则键盘焦点在别处，点哪儿都像「没到最前面」；`revealDocument`（跳到别窗里已有的稿子）
+  原来只 `makeKeyAndOrderFront`，应用在后台时窗口只在自己层里往前提，人看到的还是别的
+  App——改用同一套 `bringToFront`。
+- 取证边界：本机沙箱里启动的 GUI 进程 `NSApp.isActive` 恒 false，`activate()` 也不生效，
+  **激活本身只能由用户在自己的机器上确认**。留了一行轨迹
+  `CrashBreadcrumbs.note("reopen hasVisible=… raised=…")`：这个毛病只在特定状态之后复发，
+  下次看 `breadcrumbs.log` 就知道走到哪一步。
+
+### 构建产物冒充「装好的应用」
+
+- 现象：「Apps」（Spotlight 驱动）里搜 wtmd 出现两个条目——`/Applications` 里装的那个，
+  和仓库里的 `dist/wtmd.app`。
+- 根因：`make-dmg.sh` 用 `./make-app.sh dist` 把 app 拼在 `dist/` 下、做完不删；家目录下
+  任何 `.app` 都会被 Spotlight 当成一份装好的应用（`mdfind "kMDItemFSName == 'wtmd.app'"`
+  同时返回两条）。`lsregister -dump` 里还挂着一串历史残留：`dist/dmg-staging/`、
+  `/Volumes/wtmd 1..3`、垃圾桶里十来个旧 staging 目录。
+- 修法：打包改成在 `mktemp -d` 里拼装（`trap … EXIT` 收尾），`dist/` 只留最终的 dmg；
+  `dist/` 与 `make-app.sh` 输出目录各放一个 `.metadata_never_index` 兜底——以后就算有人
+  把 `.app` 丢回家目录，Spotlight 也整棵跳过。
+- 对照实验：去掉标记再把 `.app` 放进 `dist/`，5 秒内就被收录；放回标记后同样的 `.app`
+  等 20 秒也不收录。冒烟测试也随之改成「挂载 dmg → 跑卷内那份 app」。
+
+### 测试
+
+771（702 + 69）全绿。这一版没有改 Swift 的行为契约以外的模型：新增
+`AppActivationTests` 13 条（挑窗规则 8 条、屏幕外判定 1 条、装配 4 条），其余不变。
+
+- 反向验证：`lastKey` 不判可见 → 红；根视图不交接 `openMain` → 红；delegate 卸掉 → 红。
+- issue [#156](https://github.com/TonyMistark/wtmd/issues/156) →
+  PR [#157](https://github.com/TonyMistark/wtmd/pull/157)；
+  [#158](https://github.com/TonyMistark/wtmd/issues/158) →
+  [#159](https://github.com/TonyMistark/wtmd/pull/159)。两份 PR 各自 CI 双绿。
+- tag `v0.15.4`。README 徽章 → v0.15.4，测试数 758 → 771，路线图补这两个补丁。
+
+### 教训
+
+**仓库里不留可启动的 `.app`。** 只要它躺在用户的家目录里，Spotlight 就会把它当成一份
+装好的应用，「应用」列表里于是出现重名条目——而且删掉文件之后，`lsregister` 里的旧注册
+还会残留很久。构建产物应该有「临时」的样子：临时目录、退出即清。

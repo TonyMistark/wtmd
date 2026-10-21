@@ -4,7 +4,7 @@
 
 一个开源、本地优先的 macOS Markdown 写作与阅读工具。思绪落下的一刻，成文已然成型。
 
-![Status](https://img.shields.io/badge/status-v0.15.3-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
+![Status](https://img.shields.io/badge/status-v0.15.4-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
 
 ## 特性
 
@@ -33,7 +33,7 @@
 - **崩了也说清楚** — 进程被信号打死时，本机当场记下信号、调用栈与最近 40 行操作轨迹（启动/开窗/关窗/打开文档），下次打开用一页说明白发生了什么，可「复制报告」「在访达中显示」，或一键打开已填好标题与正文的 GitHub 新建 issue 页面。报告只存在 `~/Library/Application Support/wtmd/crashes/`，**不含任何正文**、不联网；正常退出不会留下误报
 - **更新提示** — 启动时每天最多查一次 GitHub Release，有新版本就在状态栏给一个可点的徽标；只读版本号，不上报任何数据，离线或失败时完全静默
 - **导出** — 独立 HTML 文件（内联主题）、Word（.docx，标题/列表/表格/代码/图片都保留结构）、打印/存为 PDF（页边距、页码、首行标题可调，字号行距跟屏幕走，段落不拦腰截断）
-- **零第三方依赖** — Markdown 解析器完全自研（`WTMarkdownKit`），758 项单元测试覆盖，GitHub Actions 双系统 CI
+- **零第三方依赖** — Markdown 解析器完全自研（`WTMarkdownKit`），771 项单元测试覆盖，GitHub Actions 双系统 CI
 
 ## 安装
 
@@ -111,7 +111,7 @@ result.outline // [OutlineItem(level: 1, text: "标题", slug: "标题", line: 0
 - v0.12 — **已发布（v0.12.0）**：写过的东西都在——本地版本历史自动留存（打开/写盘/离开三时刻）、版本历史面板（⌘Y）、一键装回（[详见规划](docs/V12_PLAN.md)）
 - v0.13 — **已发布（v0.13.0）**：写了多少，自己看得见——写作日历（一年热力格、连续天数、本月/今年/最高单日）、负增长日空心标记（[详见规划](docs/V13_PLAN.md)）
 - v0.14 — **已发布（v0.14.1）**：崩了也说清楚——信号级崩溃现场采集（信号 + 调用栈 + 操作轨迹）、下次启动说明与一键上报、GitHub issue 预填链接（[详见规划](docs/V14_PLAN.md)）；v0.14.1 修掉打字机模式点一下编辑器就崩（居中不再走动画代理，[#135](https://github.com/TonyMistark/wtmd/issues/135)）
-- v0.15 — **已发布（v0.15.1）**：一处门——工具栏右侧「功能中心」把写作日历、版本历史、每日目标、主题、版式、打印、设置、快捷键、检查更新、报告问题、关于收进主界面一块浮面，行尾写状态、点一行即执行（[详见规划](docs/V15_PLAN.md)）；v0.15.1 修掉面板里点「设置…」没反应（改用 SwiftUI 的 `openSettings`，[#142](https://github.com/TonyMistark/wtmd/issues/142)）、补上「关于」；v0.15.2 把设置拆成一页一件事——每日目标、阅读版式、打印设置各自直达对应页（[#146](https://github.com/TonyMistark/wtmd/issues/146)）；v0.15.3 把那块浮面升级成左侧导航的设置窗口、新增本地个人信息（昵称 + 头像，[#153](https://github.com/TonyMistark/wtmd/issues/153)），并修掉预览空白处右键弹「重新载入」（[#150](https://github.com/TonyMistark/wtmd/issues/150)）、外部 `kill` 被误报成崩溃（[#143](https://github.com/TonyMistark/wtmd/issues/143)）
+- v0.15 — **已发布（v0.15.1）**：一处门——工具栏右侧「功能中心」把写作日历、版本历史、每日目标、主题、版式、打印、设置、快捷键、检查更新、报告问题、关于收进主界面一块浮面，行尾写状态、点一行即执行（[详见规划](docs/V15_PLAN.md)）；v0.15.1 修掉面板里点「设置…」没反应（改用 SwiftUI 的 `openSettings`，[#142](https://github.com/TonyMistark/wtmd/issues/142)）、补上「关于」；v0.15.2 把设置拆成一页一件事——每日目标、阅读版式、打印设置各自直达对应页（[#146](https://github.com/TonyMistark/wtmd/issues/146)）；v0.15.3 把那块浮面升级成左侧导航的设置窗口、新增本地个人信息（昵称 + 头像，[#153](https://github.com/TonyMistark/wtmd/issues/153)），并修掉预览空白处右键弹「重新载入」（[#150](https://github.com/TonyMistark/wtmd/issues/150)）、外部 `kill` 被误报成崩溃（[#143](https://github.com/TonyMistark/wtmd/issues/143)）；v0.15.4 修掉点 Dock 图标窗口不上来——不再交给系统去举「它记得的那扇窗」，自己挑一扇看得见的（[#156](https://github.com/TonyMistark/wtmd/issues/156)），并让仓库里的构建产物不再冒充「装好的应用」——`dist/` 只留一个 dmg（[#158](https://github.com/TonyMistark/wtmd/issues/158)）
 
 ## 参与贡献
 
