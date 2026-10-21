@@ -140,7 +140,7 @@ struct CommandPalette: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
 
-            TextField(t("Type a command…", "输入命令…"), text: $query)
+            TextField(t("Search commands…", "搜索命令…"), text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .focused($searchFocused)

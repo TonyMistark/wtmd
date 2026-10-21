@@ -433,3 +433,46 @@ private func preservingRecentFiles<T>(_ body: () throws -> T) rethrows -> T {
     }
     return try body()
 }
+
+// MARK: - 工具栏上的入口
+
+/// 面板写得再好，只有 ⌘K 一条路的话，鼠标用户根本不知道它存在。
+/// 这里守的是「工具栏上确实有那么一颗按钮，点下去开的是同一张面板」——
+/// 逻辑测试在 `CommandTests` 里已经齐了，缺的一直是入口。
+@Suite("工具栏的搜索入口")
+struct ToolbarSearchEntryTests {
+    private func source(_ name: String) throws -> String {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/wtmd/\(name)")
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    @Test("工具栏里有一颗按钮，名字与面板一致")
+    func toolbarHasASearchButton() throws {
+        let content = try source("ContentView.swift")
+        #expect(content.contains(#"Label(t("Search Commands", "搜索命令"), systemImage: "magnifyingglass")"#))
+        #expect(content.contains("paletteHint"))
+    }
+
+    @Test("点下去是「打开」，不是「切一下」")
+    func theButtonOnlyOpens() throws {
+        let content = try source("ContentView.swift")
+        #expect(!content.contains("paletteVisible.toggle()"), "按钮会把已经打开的面板关掉")
+        #expect(content.contains("paletteVisible = true"))
+    }
+
+    @Test("面板与按钮用同一句话：都说自己搜的是命令")
+    func thePanelSaysWhatItSearches() throws {
+        let palette = try source("CommandPalette.swift")
+        #expect(palette.contains(#"t("Search commands…", "搜索命令…")"#))
+    }
+
+    @Test("按钮有提示：工具栏的 .help 到不了 AppKit，得靠锚点写 toolTip")
+    func theButtonCarriesATooltip() throws {
+        let content = try source("ContentView.swift")
+        #expect(content.contains("ToolbarTip(text: paletteHint)"), "工具栏项缺 toolTip 锚点")
+    }
+}
