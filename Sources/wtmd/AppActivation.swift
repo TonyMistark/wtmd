@@ -63,6 +63,20 @@ enum AppActivation {
         windows[index].isMiniaturized ? .deminiaturize(index) : .raise(index)
     }
 
+    /// 所有能当主的窗口都缩在 Dock 里吗？
+    ///
+    /// 是的话，这件事该让系统来做：**只有系统那条路能给出「神灯」动画**——
+    /// 窗口从 Dock 里长出来。自己 `deminiaturize` 得到的是「啪」地出现，
+    /// 收起来有动画、放出来没有，一样是两个动作不一样的手感。
+    ///
+    /// 面板与 sheet 不算：它们缩不了，也不该把「还有一扇看得见的窗」这件事
+    /// 从眼前挡掉。
+    static func defersToSystem(_ windows: [WindowInfo]) -> Bool {
+        let eligible = windows.filter { !$0.isSheet && $0.canBecomeKey }
+        guard !eligible.isEmpty else { return false }
+        return eligible.allSatisfy { $0.isMiniaturized }
+    }
+
     // MARK: - 动手
 
     /// 这扇窗还在某块屏幕上吗？
@@ -108,8 +122,11 @@ enum AppActivation {
             windows[index].makeKeyAndOrderFront(nil)
         case .deminiaturize(let index):
             recenterIfOffScreen(windows[index])
+            // 叫醒只要 `deminiaturize`：它会从 Dock 里把窗口放出来（神灯效果）。
+            // 后面再 `makeKeyAndOrderFront` 会把还没跑完的动画一把拽到终点——
+            // 看着就是「直接显示」。只要它能收键盘就够了。
             windows[index].deminiaturize(nil)
-            windows[index].makeKeyAndOrderFront(nil)
+            windows[index].makeKey()
         }
         return true
     }
@@ -132,7 +149,12 @@ enum AppActivation {
         if app.isHidden { app.unhide(nil) }
         activate(app)
         recenterIfOffScreen(window)
-        if window.isMiniaturized { window.deminiaturize(nil) }
+        if window.isMiniaturized {
+            // 同 `raiseFrontWindow`：放出来之后别抢着 order front，让神灯跑完。
+            window.deminiaturize(nil)
+            window.makeKey()
+            return
+        }
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -152,12 +174,13 @@ enum AppActivation {
         case .raise(let index):
             windows[index].makeKeyAndOrderFront(nil)
         case .deminiaturize(let index):
+            // 与 `raiseFrontWindow` 同一条：放出来就行，别抢着 order front。
             windows[index].deminiaturize(nil)
-            windows[index].makeKeyAndOrderFront(nil)
+            windows[index].makeKey()
         }
     }
 
-    private static func info(_ window: NSWindow) -> WindowInfo {
+    static func info(_ window: NSWindow) -> WindowInfo {
         WindowInfo(
             isVisible: window.isVisible,
             isMiniaturized: window.isMiniaturized,
@@ -244,6 +267,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 返回值是「这件事我处理完了」。举不出一扇窗（全关了）就返回 false，
     /// 让系统按自己的规矩开一扇新的。
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        let windows = sender.windows
+        // 所有窗口都缩在 Dock 里：交回系统。只有系统那条路能从 Dock 把窗口
+        // **神灯式**放大出来；自己 deminiaturize 只能「啪」地摆出来。收起来有
+        // 动画、放出来没有，同一件事两个手感。
+        if AppActivation.defersToSystem(windows.map(AppActivation.info)) {
+            deferToSystemFallback()
+            CrashBreadcrumbs.note("reopen deferred to system hasVisible=\(flag)")
+            return false
+        }
+
         let raised = AppActivation.raiseFrontWindow()
         // 留一行轨迹：这个 bug 只在某些状态之后出现，下次复发时针眼在这里。
         CrashBreadcrumbs.note("reopen hasVisible=\(flag) raised=\(raised)")
@@ -251,6 +284,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let open = AppActivation.openMain else { return false }
         open()
         return true
+    }
+
+    /// 交给系统之后仍要留一条后路：系统只认「它记得的那扇」，那扇要是不在
+    /// 列表里，屏幕上一个像素都不会动。半秒后还没人出来，就自己把窗口拎出来
+    /// ——没有动画总比没反应强。
+    private func deferToSystemFallback() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            let visible = NSApplication.shared.windows.contains {
+                $0.isVisible && !($0 is NSPanel) && $0.canBecomeKey
+            }
+            guard !visible else { return }
+            _ = AppActivation.raiseFrontWindow()
+        }
     }
 
     /// 右键 Dock 图标那一下：系统默认只给「显示所有窗口」与窗口列表。
