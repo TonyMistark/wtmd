@@ -80,6 +80,10 @@ enum AppActivation {
     /// 没有窗可举时开一扇的通道。由根视图装进来——`openWindow` 只在场景里读得到。
     static var openMain: (() -> Void)?
 
+    /// 「另起一桌」的通道：与 ⌘N 同一条路（新会话、接着用当前文件夹）。
+    /// 同样是根视图装进来的——它得拿到窗口表。
+    static var newWindow: (() -> Void)?
+
     static func remember(_ window: NSWindow?) {
         guard let window, window.sheetParent == nil else { return }
         lastKey = window
@@ -200,6 +204,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let open = AppActivation.openMain else { return false }
         open()
         return true
+    }
+
+    /// 右键 Dock 图标那一下：系统默认只给「显示所有窗口」与窗口列表。
+    /// 手上没有窗口的人，第一反应就是右键找一个能开的入口——所以这里补一条
+    /// 「新建窗口」，与 ⌘N 同一个实现。
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+
+        let new = NSMenuItem(
+            title: t("New Window", "新建窗口"),
+            action: #selector(newWindowFromDock),
+            keyEquivalent: "n"
+        )
+        new.keyEquivalentModifierMask = .command
+        new.target = self
+        menu.addItem(new)
+
+        let settings = NSMenuItem(
+            title: t("Settings…", "设置…"),
+            action: #selector(openSettingsFromDock),
+            keyEquivalent: ""
+        )
+        settings.target = self
+        menu.addItem(settings)
+
+        return menu
+    }
+
+    @objc private func newWindowFromDock() {
+        // 先激活应用：Dock 菜单选完，焦点可能还在别处，新窗口会在后台开出来。
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        if let newWindow = AppActivation.newWindow {
+            newWindow()
+            return
+        }
+        // 窗口通道还没装好（理论上不会）时退回主窗，总比什么都不做强。
+        AppActivation.openMain?()
+    }
+
+    @objc private func openSettingsFromDock() {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        SettingsWindow.open()
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
