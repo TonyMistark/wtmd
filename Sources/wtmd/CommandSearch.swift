@@ -118,38 +118,4 @@ enum CommandSearch {
         character == " " || character == "." || character == "/" || character == "-"
             || character == "·" || character == "（" || character == "("
     }
-
-    /// Lay the results out as display rows.
-    ///
-    /// An empty query gets section headers so the whole list can be browsed; a
-    /// non-empty query stays flat, because headers would break the relevance
-    /// ordering that the user is scanning.
-    static func rows(for query: String, results: [Result]) -> [PaletteRow] {
-        guard query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return results.map(PaletteRow.command)
-        }
-        var rows: [PaletteRow] = []
-        var current: CommandSection?
-        for result in results {
-            if result.command.section != current {
-                rows.append(.header(result.command.section))
-                current = result.command.section
-            }
-            rows.append(.command(result))
-        }
-        return rows
-    }
-}
-
-/// A line in the palette: either a section header or a command.
-enum PaletteRow: Identifiable {
-    case header(CommandSection)
-    case command(CommandSearch.Result)
-
-    var id: String {
-        switch self {
-        case .header(let section): return "header.\(section.id)"
-        case .command(let result): return result.id
-        }
-    }
 }

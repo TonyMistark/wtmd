@@ -35,6 +35,8 @@ final class WorkspaceSearchController: ObservableObject {
         let query: String
         let options: FindOptions
         let overlay: [URL: String]
+        /// `.wtmdignore`：跟着工作区走的忽略清单。
+        var ignores: WorkspaceIgnore = .empty
         let shouldContinue: @Sendable () -> Bool
     }
 
@@ -46,6 +48,7 @@ final class WorkspaceSearchController: ObservableObject {
             query: input.query,
             options: input.options,
             overlay: input.overlay,
+            ignores: input.ignores,
             shouldContinue: input.shouldContinue
         )
     }
@@ -139,6 +142,7 @@ final class WorkspaceSearchController: ObservableObject {
 
         let query = trimmedQuery
         let options = options
+        let ignores = WorkspaceIgnore.load(root: root)
         var overlay: [URL: String] = [:]
         if let live = liveDocument?() { overlay[live.url] = live.text }
 
@@ -158,6 +162,7 @@ final class WorkspaceSearchController: ObservableObject {
                         query: query,
                         options: options,
                         overlay: overlay,
+                        ignores: ignores,
                         shouldContinue: { !Task.isCancelled }
                     )
                 )

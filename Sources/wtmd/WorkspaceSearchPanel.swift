@@ -105,7 +105,16 @@ struct WorkspaceSearchPanel: View {
         if search.root == nil {
             hint(t("Open a folder first (⌘⇧O) — the search runs inside it", "先打开一个文件夹（⌘⇧O），搜索会在这个文件夹里进行"))
         } else if !search.hasQuery {
-            hint(t("Type a keyword to sweep the whole workspace", "输入关键词，把整个工作区翻一遍"))
+            VStack(alignment: .leading, spacing: 4) {
+                hint(t("Type a keyword to sweep the whole workspace", "输入关键词，把整个工作区翻一遍"))
+                Text(t(
+                    "Files and folders you never want searched go in a .wtmdignore at the workspace root.",
+                    "不想被翻的文件与文件夹，写进工作区根目录的 .wtmdignore。"
+                ))
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 14)
+            }
         } else if search.hits.isEmpty {
             hint(search.isSearching ? t("Searching…", "正在搜索…") : t("Nothing found for \(search.trimmedQuery)", "没有找到「\(search.trimmedQuery)」"))
         } else {

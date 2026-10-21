@@ -30,6 +30,16 @@ struct ContentView: View {
     /// 分栏两侧的联动账本：谁动了、动到第几行、另一边该跟到哪。
     @StateObject private var splitSync = SplitSyncController()
 
+    /// 面板自己的记忆：最近搜过的词、最近用过的命令。写 UserDefaults，
+    /// 关掉应用也还在——这两件事的价值全在「下次打开」。
+    @StateObject private var paletteHistory = PaletteHistory()
+
+    /// 工作区里所有文件，供面板的 `@` 那一段用。树已经是现成的，摊平一次
+    /// 比重扫一遍磁盘便宜得多。
+    private var paletteFiles: [PaletteFileHit] {
+        PaletteFileSearch.flatten(workspace.tree, root: workspace.root)
+    }
+
 
     var body: some View {
         NavigationSplitView(
@@ -148,6 +158,22 @@ struct ContentView: View {
                             overrides: overrides.overrides
                         ),
                         runtime: commandRuntime,
+                        files: paletteFiles,
+                        root: workspace.root,
+                        liveDocument: { [weak store] in
+                            guard let store, let url = store.fileURL else { return nil }
+                            return (url, store.text)
+                        },
+                        history: paletteHistory,
+                        onOpenFile: { store.open(url: $0) },
+                        onOpenTextHit: { hit in
+                            store.workspaceSearch.dismiss()
+                            store.openSearchHit(hit)
+                        },
+                        onSeeAll: { term in
+                            store.workspaceSearch.query = term
+                            store.workspaceSearch.present(root: workspace.root)
+                        },
                         isPresented: $paletteVisible
                     )
                     .transition(.opacity)
