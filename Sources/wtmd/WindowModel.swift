@@ -18,6 +18,9 @@ final class SharedAppEnvironment: ObservableObject {
     let typesetting: TypesettingSettings
     let printing: PrintSettings
     let updates: UpdateChecker
+    /// 一键更新：下载 → 挂载 → 装配 → 重启。与 `updates` 同级——
+    /// 更新属于这台机器，不属于某一扇窗。
+    let installer: UpdateInstaller
     let overrides: ShortcutOverrides
     let writingStats: WritingStats
     let recentFiles: RecentFiles
@@ -41,6 +44,7 @@ final class SharedAppEnvironment: ObservableObject {
         typesetting: TypesettingSettings? = nil,
         printing: PrintSettings? = nil,
         updates: UpdateChecker? = nil,
+        installer: UpdateInstaller? = nil,
         overrides: ShortcutOverrides? = nil,
         writingStats: WritingStats? = nil,
         recentFiles: RecentFiles? = nil,
@@ -55,6 +59,7 @@ final class SharedAppEnvironment: ObservableObject {
         self.typesetting = typesetting ?? TypesettingSettings()
         self.printing = printing ?? PrintSettings()
         self.updates = updates ?? UpdateChecker()
+        self.installer = installer ?? UpdateInstaller(steps: UpdateInstaller.productionSteps())
         self.overrides = overrides ?? ShortcutOverrides()
         self.writingStats = writingStats ?? WritingStats()
         self.recentFiles = recentFiles ?? RecentFiles()

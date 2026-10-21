@@ -67,7 +67,7 @@ struct SettingsCatalogTests {
         #expect(UpdateStatus.upToDate(version: "0.15.2").summary == "v0.15.2 已是最新")
         #expect(
             UpdateStatus.available(
-                version: "0.16.0", releaseURL: URL(string: "https://example.com")!
+                version: "0.16.0", releaseURL: URL(string: "https://example.com")!, asset: nil
             ).summary == "v0.16.0 可用"
         )
         #expect(UpdateStatus.failed.summary == "上次检查失败")

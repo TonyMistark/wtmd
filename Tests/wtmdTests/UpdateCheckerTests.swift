@@ -139,7 +139,7 @@ private final class UpdateHarness {
     await checker.check(force: true)
 
     let expectedURL = try #require(URL(string: "https://github.com/TonyMistark/wtmd/releases/tag/v0.4.0"))
-    #expect(checker.status == .available(version: "0.4.0", releaseURL: expectedURL))
+    #expect(checker.status == .available(version: "0.4.0", releaseURL: expectedURL, asset: nil))
     #expect(harness.stub.calls == 1)
 }
 
@@ -282,7 +282,7 @@ private final class UpdateHarness {
     let checker = harness.checker()
     await checker.checkIfDue()
     #expect(harness.stub.calls == 2)
-    #expect(checker.status == .available(version: "0.4.0", releaseURL: try #require(URL(string: "https://github.com/TonyMistark/wtmd/releases/tag/v0.4.0"))))
+    #expect(checker.status == .available(version: "0.4.0", releaseURL: try #require(URL(string: "https://github.com/TonyMistark/wtmd/releases/tag/v0.4.0")), asset: nil))
 }
 
 @Test @MainActor func manualCheckBypassesThrottle() async throws {
