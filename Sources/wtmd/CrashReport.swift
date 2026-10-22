@@ -49,6 +49,8 @@ struct CrashRaw: Equatable {
     var signal: String?
     var exceptionName: String?
     var exceptionReason: String?
+    /// 崩溃时刻（Unix 秒）。信号处理器当场写下；旧格式没有这行，回退文件创建时间。
+    var unixSeconds: UInt64?
     var frames: [String] = []
 
     /// 读 `.inflight-*.raw`。宽容优先：多一行少一行都不该让报告丢掉。
@@ -76,6 +78,8 @@ struct CrashRaw: Equatable {
                 raw.kind = .exception
             } else if trimmed.hasPrefix("reason ") {
                 raw.exceptionReason = String(trimmed.dropFirst(7))
+            } else if trimmed.hasPrefix("t "), let seconds = UInt64(trimmed.dropFirst(2)) {
+                raw.unixSeconds = seconds
             }
         }
         return raw

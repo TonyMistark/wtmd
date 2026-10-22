@@ -92,7 +92,12 @@ final class CrashStore: ObservableObject {
             let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
             let raw = CrashRaw.parse(text)
             let breadcrumbs = Self.breadcrumbs(in: directory)
-            let report = Self.report(from: raw, breadcrumbs: breadcrumbs, capturedAt: createdAt)
+            // 崩溃时刻优先信现场里写的那行（处理器当场记的）；现场文件是启动时
+            // 预建的，创建时间其实是**启动**时间——拿它当崩溃时刻能差出半小时（#181）。
+            let capturedAt = raw.unixSeconds.map {
+                Date(timeIntervalSince1970: TimeInterval($0))
+            } ?? createdAt
+            let report = Self.report(from: raw, breadcrumbs: breadcrumbs, capturedAt: capturedAt)
             write(report)
             try? fileManager.removeItem(at: url)
         }
