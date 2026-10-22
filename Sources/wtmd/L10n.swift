@@ -57,7 +57,10 @@ enum L10n {
     /// Test hook: pin the language ("en" / "zh") regardless of everything else.
     nonisolated(unsafe) static var override: String?
 
-    /// 用户在设置里选的界面语言（`Language.rawValue`；缺省 nil = 跟随系统）。
+    /// 用户在设置里选的界面语言（`Language.rawValue`）。
+    /// * nil —— 从没选过，走 `defaultLanguage`（中文）；
+    /// * 空串 —— 设置里显式选了「跟随系统」，按系统首选语言走。
+    /// 两者必须分开：默认值是中文，而「跟随系统」是用户主动的选择。
     /// 菜单文案随 SwiftUI 命令在启动时构建，所以改完要重启才完整生效。
     static var userPreference: String? {
         get { UserDefaults.standard.string(forKey: "wtmd.language") }
@@ -70,29 +73,42 @@ enum L10n {
         }
     }
 
-    /// A test runner always sees the Chinese copy, so assertions on UI text do
-    /// not depend on the CI machine's locale. Resolution order:
-    /// test override > user preference > test-process pin > system languages.
-    ///
-    /// Detection has to cover both runners: the XCTest path exposes
-    /// `XCTestCase`, but the swift-testing helper is a separate process that
-    /// loads **no** XCTest at all — its path (`swiftpm-testing-helper`) is the
-    /// only reliable trace it leaves.
-    private static let isTestProcess: Bool = {
-        if NSClassFromString("XCTestCase") != nil { return true }
-        let path = Bundle.main.bundlePath + "/" + (CommandLine.arguments.first ?? "")
-        return path.contains("xctest") || path.contains("swiftpm")
-    }()
+    /// 界面语言的出厂值。文案本来就是按中文写的，没选过语言的用户直接给
+    /// 中文——不让系统语言替人做决定。想跟系统走的人在设置里显式选
+    /// 「跟随系统」（存空串），那是另一个分支。
+    static let defaultLanguage: Language = .chinese
 
-    /// 当前生效的语言。
+    /// 当前生效的语言。解析顺序：
+    /// override（测试钉值）> 用户偏好（空串 = 跟随系统）> 出厂值中文。
+    ///
+    /// 系统语言只在用户显式选了「跟随系统」时才参与判断，所以 CI 机器的
+    /// locale 不影响对界面文案的断言。
     static var current: Language {
         if let override, let pinned = Language.match(override) { return pinned }
-        if let raw = userPreference, let chosen = Language(rawValue: raw) { return chosen }
-        if isTestProcess { return .chinese }
+        return resolve(preference: userPreference, systemLanguage: detectedSystemLanguage)
+    }
+
+    /// 偏好 → 语言的纯函数：不读 UserDefaults、不读 Locale。
+    ///
+    /// 拆出来的真正原因是**可测**：全局状态（UserDefaults、系统语言）只能
+    /// 有一份，并行跑的测试互相污染会变成难查的 flake；把判断收进纯函数，
+    /// 各种组合直接从参数喂进来。
+    ///
+    /// 关键区分：`nil`（从没选过）→ 出厂值中文；`""`（显式选了「跟随
+    /// 系统」）→ 系统语言。二者混为一谈，选「跟随系统」就会失效。
+    /// 其它脏值（旧版本遗留、手改 plist）退回出厂值。
+    static func resolve(preference: String?, systemLanguage: Language) -> Language {
+        guard let raw = preference else { return defaultLanguage }
+        if let chosen = Language(rawValue: raw) { return chosen }
+        return raw.isEmpty ? systemLanguage : defaultLanguage
+    }
+
+    /// 系统首选语言里第一个认识的；一个都不认识就回出厂值。
+    static var detectedSystemLanguage: Language {
         for preferred in Locale.preferredLanguages {
             if let language = Language.match(preferred) { return language }
         }
-        return .english
+        return defaultLanguage
     }
 
     static var isChinese: Bool { current == .chinese }

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import wtmd
 
-/// 取词与语言解析：override 说了算，用户偏好次之，测试进程固定中文兜底——
+/// 取词与语言解析：override 说了算，用户偏好次之，没有偏好就是出厂值中文——
 /// 这样对界面文案的断言不随 CI 机器的系统语言漂。
 /// override 是全局的，套件内必须串行。
 @Suite("L10n：取词与语言解析", .serialized)
@@ -18,8 +18,9 @@ struct L10nTests {
         #expect(t("Open") == "打开")
         #expect(L10n.isChinese)
 
-        // 不设 override：测试进程固定中文，断言才稳。
+        // 不设 override：从没选过语言，出厂值就是中文，断言才稳。
         L10n.override = nil
+        L10n.userPreference = nil
         #expect(L10n.isChinese)
         #expect(t("Open") == "打开")
     }
@@ -57,11 +58,38 @@ struct L10nTests {
         #expect(t("Source", context: "mode") == "Source")
     }
 
-    @Test func userPreferenceWinsOverTheTestPin() {
+    /// 解析本身是纯函数，各种组合直接喂参数——不去动全局 UserDefaults，
+    /// 并行跑的测试套件就不会互相污染。
+    @Test func preferenceResolutionKeepsDefaultAndFollowSystemApart() {
+        // 从没选过：出厂值中文，不管系统是什么语言。
+        #expect(L10n.defaultLanguage == .chinese)
+        #expect(L10n.resolve(preference: nil, systemLanguage: .english) == .chinese)
+        #expect(L10n.resolve(preference: nil, systemLanguage: .chinese) == .chinese)
+
+        // 显式选了一种语言：说它是什么就是什么。
+        #expect(L10n.resolve(preference: "en", systemLanguage: .chinese) == .english)
+        #expect(L10n.resolve(preference: "zh", systemLanguage: .english) == .chinese)
+
+        // 显式选「跟随系统」：存的是空串，必须真的跟系统走。
+        #expect(L10n.resolve(preference: "", systemLanguage: .english) == .english)
+        #expect(L10n.resolve(preference: "", systemLanguage: .chinese) == .chinese)
+
+        // 脏值（旧版本遗留、手改 plist）不当机，退回出厂值中文。
+        #expect(L10n.resolve(preference: "xx", systemLanguage: .english) == .chinese)
+    }
+
+    @Test func localeDetectionMatchesTheSystemPreference() {
+        let expected = Locale.preferredLanguages
+            .compactMap { Language.match($0) }
+            .first ?? L10n.defaultLanguage
+        #expect(L10n.detectedSystemLanguage == expected)
+    }
+
+    @Test func userPreferenceWinsOverTheDefault() {
         UserDefaults.standard.removeObject(forKey: "wtmd.language")
         defer { UserDefaults.standard.removeObject(forKey: "wtmd.language") }
 
-        // 解析顺序：override > 用户偏好 > 测试进程钉中文 > 跟随系统。
+        // 解析顺序：override > 用户偏好 > 出厂值中文。
         #expect(L10n.current == .chinese)
 
         L10n.userPreference = "en"
@@ -69,7 +97,7 @@ struct L10nTests {
         L10n.userPreference = nil
         #expect(L10n.current == .chinese)
 
-        // 不认识的值不挡路，退回跟随（测试进程即中文）。
+        // 不认识的值不挡路，退回出厂值。
         L10n.userPreference = "xx"
         #expect(L10n.current == .chinese)
         L10n.userPreference = nil
