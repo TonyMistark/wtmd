@@ -23,6 +23,9 @@ struct wtmdApp: App {
         // 设置里那个「打开写作日历」：设置窗口是独立场景，手里没有窗口表，
         // 靠这一句找得到主窗那本字数账。
         CalendarRequest.coordinator = coordinator
+        // ⌥ 组合的改派键在菜单派发里时灵时不灵（#201）：编辑器一聚焦，
+        // 「ß」直接进正文。装上本地监视器，派发之前就把改派过的组合截走。
+        ShortcutKeyInterceptor.install(shared: shared, coordinator: coordinator)
         _shared = StateObject(wrappedValue: shared)
         _coordinator = StateObject(wrappedValue: coordinator)
     }
