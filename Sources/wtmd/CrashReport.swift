@@ -14,6 +14,10 @@ enum CrashEnvironment {
         return version
     }
 
+    /// 开发版（`swift run`、`.build/debug/wtmd`）：没有 bundle 版本号。
+    /// 它们的现场另存一本账，不混进读者的崩溃面板（#147）。
+    static var isDevelopmentBuild: Bool { appVersion == "dev" }
+
     static var systemDescription: String {
         let version = ProcessInfo.processInfo.operatingSystemVersion
         var text = "macOS \(version.majorVersion).\(version.minorVersion)"
