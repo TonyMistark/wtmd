@@ -665,3 +665,58 @@ SwiftUI 的命令菜单**只在启动时建一次**。两条路都试过、都�
 - **SwiftUI 的命令菜单是一次性的**：改了快捷键相关的状态，菜单不会跟着重建
   （`@ObservedObject` 与 `@StateObject` 都不行）。要「立即生效」只能自己改 `NSMenuItem`。
 - 界面文案承诺「立即生效」之前，先亲手验一次——这次那句文案骗了整整两个版本。
+
+### v0.15.13（2026-10-22）— 侧栏开关按了像没按（#192）
+
+用户把侧栏改派成 `⌥S`（之前是 `⌃L`）：键位录进了、菜单里也显示，按下去画面毫无反应。
+「改派写回菜单」（#189）明明修过了，怎么又哑了？
+
+#### 排查
+
+给开发版挂上环境变量探针，把**真实菜单**摊开、用合成事件走完整派发链：
+
+```
+DUMP overrides={"view.toggleSidebar": {"key": "s", "modifiers": ["option"]}}
+DUMP start    sidebar key="s" mask=[opt] state=1 enabled=true target=MenuItemCallback
+DUMP handled=true
+DUMP RUN view.toggleSidebar
+```
+
+菜单项带着 ⌥S、`performKeyEquivalent` 命中、`CommandRuntime.run` 真的执行了，
+侧栏也真的收放了（前后两张截图对比可见）。快捷键那一环是好的。
+
+真正的洞在 `ContentView` 的分栏绑定上：
+
+```swift
+get: { store.sidebarVisible ? .automatic : .detailOnly }
+```
+
+`sidebarVisible` 默认 true，而 `.automatic` 在窗口不够宽时让**系统**折叠侧栏——
+状态却还是 true（菜单打着勾，探针里 `state=1` 而画面上侧栏是收着的，脱节实锤）。
+于是按快捷键：true→false（`.detailOnly`，画面本来就没侧栏）；false→true
+（`.automatic`，系统又把它折回去）。**怎么按都看不见变化**。
+⌃L 修好哑键之后用户仍报无效，根子在这里——#189 修的是「键位没人接」，
+这次是「接了也白接」。
+
+#### 修复
+
+```swift
+get: { store.sidebarVisible ? .all : .detailOnly }
+```
+
+状态是唯一事实来源：开就显式展开（`.all`），关才收起。窄窗下侧栏不再被系统
+悄悄折走；快捷键、工具栏按钮、菜单三项同一条路，全部即按即见效。
+
+#### 测试
+
+863 → 864（+1）：新 `SidebarVisibilityTests` 扫源码钉死「columnVisibility 别用
+`.automatic`、必须是显式两态」（先剥 `//` 注释再判，沿用 MenuPlacementTests 的
+教训）。反向验证：把 `.all` 拆回 `.automatic`，守卫当场红 2 条；恢复即绿。
+
+#### 教训
+
+- **「按了没反应」不一定是键位的问题**：先确认事件到没到（`run` 有没有执行）、
+  再确认执行了画面动没动。这次两层各验一次，根因在第三层——状态与画面脱节。
+- **`NavigationSplitView` 的 `.automatic` 不是「跟随状态」，是「系统说了算」**：
+  想让布尔状态当事实来源，就写显式的 `.all` / `.detailOnly`。
+- 截图是最好的判据：`state` 是谁的 state、画面上到底有没有侧栏，一对就知道谁撒谎。
