@@ -617,3 +617,51 @@ SwiftUI 不警告、不报错，整组内容静默蒸发。同一个文件里 `.
   「别用 .saveItem」注释绊红，本地跑在加注释之前所以没发现（CI 抓到的）。现在先剥注释再判。
 - 面板与菜单共用一个 `CommandRuntime`，只覆盖了「面板能跑」，**没有覆盖「键盘能到」**——
   这正是它能活到用户按下去才被发现的原因。
+
+### v0.15.12（2026-10-22）— 改派的快捷键按不动（#189）
+
+在「设置 › 快捷键」里给侧栏派了 `⌃L`：录入成功、列表显示 `⌃L`，按下去毫无反应。
+两个根因叠在一起，都只有把真实菜单打出来才看得见。
+
+**一、命令没有菜单项承载。** AppKit 的快捷键只由菜单项的 key equivalent 派发——
+`toggleSidebar` 在目录里（⌘K 搜得到、点了能开合），却从没被摆进任何菜单。
+同一个洞里还掉着 `toggleMode`（⌘/）、`closeWorkspace`、`openThemesFolder`、`rescanThemes`：
+**⌘/ 切「思绪 ⇄ 成文」一直是哑的**。而设置页把目录里所有命令都列出来让人改派，
+包括这五条根本没进菜单的。
+
+**二、改完菜单不重建。** 补上菜单项之后 `⌃L` 还是不动。探针让它运行时改派、改完再 dump：
+
+```
+PHASE 1  Sidebar | key=- mask=0
+ASSIGN   result=assigned stored=["view.toggleSidebar": ... "control"]
+PHASE 2  Sidebar | key=- mask=0
+```
+
+SwiftUI 的命令菜单**只在启动时建一次**。两条路都试过、都不重建：`Commands` 里加
+`@ObservedObject`；让 `wtmdApp` 自己 `@StateObject` 观察改派表（body 确实重算了）。
+于是界面上那句「立即生效」是假的——得重启。
+
+修法：
+
+- 五条命令进菜单（视图三条、wtmd 菜单两条），顺手去掉 View 菜单开头孤立的分隔线；
+- 新 `ShortcutMenuSync`：改派落盘时自己改 `NSMenuItem.keyEquivalent`。认命令项靠两条
+  同时成立——action 是 SwiftUI 的 `menuAction:`、标题与目录逐字相同；系统项一个字不碰；
+- 「设置 › 快捷键」只列**有菜单项承载**的命令（`CommandCatalog.menuCarriedKinds`），
+  `assign` 也拒掉其余命令。`openSettings` 记进 `systemOwnedKinds`：App 菜单那一项由系统
+  `Settings` 场景摆，⌘, 归它（试过 `replacing: .appSettings`，系统项照样在，变成两条并排）。
+
+探针复测：`PHASE 2 Sidebar | key=l mask=262144`（control），`performKeyEquivalent = true`。
+
+#### 测试
+
+857 → 863（+6）：`MenuPlacementTests` 补一条「目录里每条命令都有菜单项承载」；
+新 `ShortcutMenuSyncTests` 5 条（改派落到菜单项、恢复出厂、不碰别人的项、子菜单也到、
+`persist()` 里确实调了写回）。反向验证各拆一次，都当场红。
+
+#### 教训
+
+- **快捷键 = 菜单项的 key equivalent**。命令写在目录里、面板里能执行，都不代表键位有人接。
+  给命令加「可改派」之前，先确认它在菜单里。
+- **SwiftUI 的命令菜单是一次性的**：改了快捷键相关的状态，菜单不会跟着重建
+  （`@ObservedObject` 与 `@StateObject` 都不行）。要「立即生效」只能自己改 `NSMenuItem`。
+- 界面文案承诺「立即生效」之前，先亲手验一次——这次那句文案骗了整整两个版本。
