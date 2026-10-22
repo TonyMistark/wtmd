@@ -134,6 +134,14 @@ final class ShortcutOverrides: ObservableObject {
         guard !RecordedShortcut.reservedChords.contains(shortcut.chordKey) else {
             return .rejected(t("⌘K belongs to the command palette and cannot be reassigned", "⌘K 属于命令面板，不能改派"))
         }
+        // 没有菜单项的命令，键位按下去了没人接——与其存一个哑键，不如当场说清楚
+        guard CommandCatalog.menuCarriedKinds.contains(kind) else {
+            let title = CommandCatalog.command(for: kind)?.title ?? kind.id
+            return .rejected(t(
+                "\(title) has no menu item, so a shortcut would do nothing",
+                "「\(title)」没有菜单项，派了快捷键也不会生效"
+            ))
+        }
         // 至少要有一个真正的修饰键：光杆字母用来打字
         guard shortcut.modifiers.contains(where: { $0 != "shift" }) else {
             return .rejected(t("A shortcut must include at least one of ⌘, ⌥ or ⌃", "快捷键至少要带上 ⌘、⌥ 或 ⌃ 中的一个"))
@@ -183,6 +191,9 @@ final class ShortcutOverrides: ObservableObject {
     private func persist() {
         guard let data = try? JSONEncoder().encode(overrides) else { return }
         defaults.set(data, forKey: Self.storageKey)
+        // SwiftUI 不会因为这张表变了就重建菜单（实测），改完得自己写回菜单项，
+        // 否则「立即生效」是一句空话——得等下次启动。
+        ShortcutMenuSync.apply(overrides: overrides)
     }
 }
 

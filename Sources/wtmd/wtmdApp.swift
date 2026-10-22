@@ -77,6 +77,10 @@ struct AppMenus: Commands {
         CommandGroup(after: .appInfo) {
             menuItem(.checkForUpdates)
             Divider()
+            // 主题的两条维护动作：以前只有 ⌘K 到得了，于是在设置里给它们改派快捷键
+            // 等于按了个哑键——快捷键只能由菜单项承载。
+            menuItem(.openThemesFolder)
+            menuItem(.rescanThemes)
         }
         CommandGroup(replacing: .newItem) {
             menuItem(.newDocument)
@@ -102,12 +106,16 @@ struct AppMenus: Commands {
             menuItem(.searchWorkspace)
         }
         CommandGroup(after: .sidebar) {
-            Divider()
+            menuItem(.toggleMode)
             menuItem(.toggleSplit)
+            menuItem(.toggleSidebar)
+            Divider()
             menuItem(.showCalendar)
             Divider()
             menuItem(.toggleTypewriter)
             menuItem(.toggleFocus)
+            Divider()
+            menuItem(.closeWorkspace)
             Divider()
             Button(t("Command Palette…", "命令面板…")) { active.paletteVisible = true }
                 .keyboardShortcut("k", modifiers: .command)
