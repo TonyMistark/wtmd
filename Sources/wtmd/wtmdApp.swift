@@ -81,7 +81,10 @@ struct AppMenus: Commands {
         CommandGroup(replacing: .newItem) {
             menuItem(.newDocument)
         }
-        CommandGroup(replacing: .saveItem) {
+        // 别用 `replacing: .saveItem`：那一组只存在于文档型应用（`DocumentGroup`），
+        // wtmd 不是——`replacing` 一个不存在的分组会把整组内容**静默丢掉**，
+        // 菜单里于是没有「打开/保存/导出」，⌘S 按下去毫无反应（#186）。
+        CommandGroup(after: .newItem) {
             menuItem(.openDocument)
             menuItem(.openFolder)
             menuItem(.save)
