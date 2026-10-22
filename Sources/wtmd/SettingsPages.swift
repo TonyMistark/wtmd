@@ -221,10 +221,11 @@ struct AppSettingsView: View {
     @EnvironmentObject var updates: UpdateChecker
     @EnvironmentObject var installer: UpdateInstaller
     @EnvironmentObject var crashes: CrashStore
-    /// 界面语言。默认显示「简体中文」（出厂值），空串 = 用户显式选了
+    /// 界面语言。默认选中项直接取 `L10n.defaultLanguage`——默认值只有一处
+    /// 定义，设置页显示的就一定是实际生效的那个。空串 = 用户显式选了
     /// 「跟随系统」；`L10n.userPreference` 直接读同一个 UserDefaults 键，
     /// 这里写进去那边就能看到。
-    @AppStorage("wtmd.language") private var languageChoice = Language.chinese.rawValue
+    @AppStorage("wtmd.language") private var languageChoice = L10n.defaultLanguage.rawValue
 
     var body: some View {
         Form {
