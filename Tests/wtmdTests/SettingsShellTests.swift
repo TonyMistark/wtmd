@@ -15,9 +15,9 @@ struct SettingsCatalogTests {
         SettingsGroup.allCases.filter { $0 != .profile }.flatMap(\.tabs)
     }
 
-    @Test("左侧四类：个人、写作、外观、应用与帮助")
+    @Test("左侧四类：个人信息、写作、外观、应用与帮助")
     func groupsInOrder() {
-        #expect(SettingsGroup.allCases.map(\.title) == ["个人", "写作", "外观", "应用与帮助"])
+        #expect(SettingsGroup.allCases.map(\.title) == ["个人信息", "写作", "外观", "应用与帮助"])
         #expect(SettingsGroup.allCases.map(\.rawValue) == ["profile", "writing", "appearance", "app"])
     }
 

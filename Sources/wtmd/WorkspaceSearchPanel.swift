@@ -57,7 +57,7 @@ struct WorkspaceSearchPanel: View {
             Image(systemName: "text.magnifyingglass")
                 .foregroundStyle(.secondary)
 
-            TextField(t("Search the whole workspace…", "在整个工作区里搜索…"), text: $search.query)
+            TextField(t("Search the whole workspace…"), text: $search.query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .focused($fieldFocused)
@@ -76,10 +76,10 @@ struct WorkspaceSearchPanel: View {
                 .lineLimit(1)
                 .fixedSize()
 
-            optionChip("Aa", on: search.options.contains(.caseSensitive), help: t("Match case", "区分大小写")) {
+            optionChip("Aa", on: search.options.contains(.caseSensitive), help: t("Match case")) {
                 toggle(.caseSensitive)
             }
-            optionChip(".*", on: search.options.contains(.regex), help: t("Regular expression", "正则表达式")) {
+            optionChip(".*", on: search.options.contains(.regex), help: t("Regular expression")) {
                 toggle(.regex)
             }
 
@@ -91,7 +91,7 @@ struct WorkspaceSearchPanel: View {
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
-                .help(t("Clear", "清空"))
+                .help(t("Clear"))
             }
         }
         .padding(.horizontal, 14)
@@ -103,20 +103,17 @@ struct WorkspaceSearchPanel: View {
     @ViewBuilder
     private var content: some View {
         if search.root == nil {
-            hint(t("Open a folder first (⌘⇧O) — the search runs inside it", "先打开一个文件夹（⌘⇧O），搜索会在这个文件夹里进行"))
+            hint(t("Open a folder first (⌘⇧O) — the search runs inside it"))
         } else if !search.hasQuery {
             VStack(alignment: .leading, spacing: 4) {
-                hint(t("Type a keyword to sweep the whole workspace", "输入关键词，把整个工作区翻一遍"))
-                Text(t(
-                    "Files and folders you never want searched go in a .wtmdignore at the workspace root.",
-                    "不想被翻的文件与文件夹，写进工作区根目录的 .wtmdignore。"
-                ))
+                hint(t("Type a keyword to sweep the whole workspace"))
+                Text(t("Files and folders you never want searched go in a .wtmdignore at the workspace root."))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, 14)
             }
         } else if search.hits.isEmpty {
-            hint(search.isSearching ? t("Searching…", "正在搜索…") : t("Nothing found for \(search.trimmedQuery)", "没有找到「\(search.trimmedQuery)」"))
+            hint(search.isSearching ? t("Searching…") : t("Nothing found for {}", search.trimmedQuery))
         } else {
             resultList
         }
@@ -157,7 +154,7 @@ struct WorkspaceSearchPanel: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Text(t("\(count) matches", "\(count) 处"))
+            Text(t("{} matches", count))
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
             Spacer(minLength: 0)

@@ -206,9 +206,9 @@ struct ContentView: View {
                 WorkspaceTreeView()
             }
 
-            Section(t("Outline", "大纲")) {
+            Section(t("Outline")) {
                 if store.outline.isEmpty {
-                    Text(t("No headings yet — type # to start the first one", "思绪尚未成章 —— 输入 # 开始第一个标题"))
+                    Text(t("No headings yet — type # to start the first one"))
                         .font(.callout)
                         .foregroundStyle(.tertiary)
                 } else {
@@ -220,7 +220,7 @@ struct ContentView: View {
 
             // 工作区打开时，文件树已经承担了导航职责，最近文件只会让侧栏变长
             if !workspace.isOpen, !store.recentFiles.urls.isEmpty {
-                Section(t("Recent Files", "最近文件")) {
+                Section(t("Recent Files")) {
                     ForEach(store.recentFiles.urls, id: \.absoluteString) { url in
                         Button {
                             store.open(url: url)
@@ -247,8 +247,8 @@ struct ContentView: View {
     /// 侧栏按钮只有一个，图标不表达开合方向：悬停说清点下去会怎样。
     private var sidebarHint: String {
         store.sidebarVisible
-            ? t("Hide the sidebar", "收起侧栏")
-            : t("Show the sidebar", "展开侧栏")
+            ? t("Hide the sidebar")
+            : t("Show the sidebar")
     }
 
 
@@ -256,7 +256,7 @@ struct ContentView: View {
         Button {
             store.jump(to: item)
         } label: {
-            Text(item.text.isEmpty ? t("(untitled)", "（无标题）") : item.text)
+            Text(item.text.isEmpty ? t("(untitled)") : item.text)
                 .font(item.level <= 2 ? .callout.weight(.medium) : .callout)
                 .lineLimit(1)
                 .padding(.leading, CGFloat(item.level - 1) * 11)
@@ -357,7 +357,7 @@ struct ContentView: View {
         )
         .overlay(alignment: .topLeading) {
             if store.text.isEmpty {
-                Text(t("Start writing — press ⌘/ to watch it become a document", "落笔即成文 —— 输入第一行思绪，⌘/ 见证它成为文档"))
+                Text(t("Start writing — press ⌘/ to watch it become a document"))
                     .font(.callout)
                     .foregroundStyle(.tertiary)
                     .padding(.top, 16)
@@ -411,10 +411,10 @@ struct ContentView: View {
     /// 状态栏：字数 / 词数 / 阅读时长 —— 写作者的距离感。
     private var statusBar: some View {
         HStack(spacing: 14) {
-            Text(t("\(store.statistics.characters) characters", "\(store.statistics.characters) 字"))
-            Text(t("\(store.statistics.words) words", "\(store.statistics.words) 词"))
+            Text(t("{} characters", store.statistics.characters))
+            Text(t("{} words", store.statistics.words))
             if store.statistics.readingMinutes > 0 {
-                Text(t("~\(store.statistics.readingMinutes) min read", "约 \(store.statistics.readingMinutes) 分钟读完"))
+                Text(t("~{} min read", store.statistics.readingMinutes))
             }
             if let stats = store.writingStats, writing.dailyGoal > 0 {
                 dailyGoalBadge(total: stats.today)
@@ -430,18 +430,18 @@ struct ContentView: View {
                     conflictListVisible = true
                 } label: {
                     Label(
-                        t("\(store.archivedConflicts.count) unmerged local copies", "\(store.archivedConflicts.count) 份未合并的本地版本"),
+                        t("{} unmerged local copies", store.archivedConflicts.count),
                         systemImage: "exclamationmark.triangle.fill"
                     )
                     .foregroundStyle(.orange)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(t("Local copies kept when a conflict was left unresolved. Open to recover or discard them.", "冲突未解决时切走留下的本地版本，点开可取回或丢弃"))
+                .help(t("Local copies kept when a conflict was left unresolved. Open to recover or discard them."))
             }
             updateBadge
             writingModeToggles
-            Text(store.fileURL?.lastPathComponent ?? t("Draft", "草稿"))
+            Text(store.fileURL?.lastPathComponent ?? t("Draft"))
                 .foregroundStyle(.tertiary)
         }
         .font(.caption)
@@ -463,20 +463,14 @@ struct ContentView: View {
             CalendarWindow.show(store: store, goal: goal)
         } label: {
             HStack(spacing: 6) {
-                Text(t(
-                    "Today \(total.formatted()) / \(goal.formatted()) characters",
-                    "今日 \(total.formatted()) / \(goal.formatted()) 字"
-                ))
+                Text(t("Today {} / {} characters", total.formatted(), goal.formatted()))
                 .monospacedDigit()
                 goalBar(fraction: WritingGoal.fraction(total: total, goal: goal), reached: reached)
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(t(
-            "Net characters written today — deleting takes them back off. Click for the whole year; the goal is under Settings › Theme › Writing.",
-            "今天净增的字数，删字会扣回去。点开看这一年。目标在「设置 › 主题 › 写作」里改。"
-        ))
+        .help(t("Net characters written today — deleting takes them back off. Click for the whole year; the goal is under Settings › Theme › Writing."))
     }
 
     private func goalBar(fraction: Double, reached: Bool) -> some View {
@@ -501,14 +495,14 @@ struct ContentView: View {
                 .controlSize(.mini)
                 .scaleEffect(0.7)
                 .frame(width: 12, height: 12)
-                .help(t("Checking for updates…", "正在检查更新…"))
+                .help(t("Checking for updates…"))
         case .available(let version, let url, let asset):
             updateAvailableBadge(version: version, url: url, asset: asset)
         case .upToDate(let version):
-            Text(t("v\(version) is up to date", "v\(version) 已是最新"))
+            Text(t("v{} is up to date", version))
                 .foregroundStyle(.tertiary)
         case .failed:
-            Text(t("Update check failed", "检查更新失败"))
+            Text(t("Update check failed"))
                 .foregroundStyle(.tertiary)
         case .idle:
             EmptyView()
@@ -521,41 +515,41 @@ struct ContentView: View {
     private func updateAvailableBadge(version: String, url: URL, asset: UpdateAsset?) -> some View {
         switch installer.phase {
         case .downloading(let fraction):
-            Text(t("Downloading \(Int(fraction * 100))%", "下载中 \(Int(fraction * 100))%"))
+            Text(t("Downloading {}%", Int(fraction * 100)))
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
-                .help(t("Downloading the update", "正在下载更新"))
+                .help(t("Downloading the update"))
         case .installing:
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.mini)
                     .scaleEffect(0.7)
-                Text(t("Installing…", "正在安装…"))
+                Text(t("Installing…"))
                     .foregroundStyle(.secondary)
             }
-            .help(t("Swapping the new app into /Applications", "正在把新版换进 /Applications"))
+            .help(t("Swapping the new app into /Applications"))
         case .failed(let reason):
             Button {
                 NSWorkspace.shared.open(url)
             } label: {
-                Label(t("Update failed", "更新失败"), systemImage: "exclamationmark.arrow.circlepath")
+                Label(t("Update failed"), systemImage: "exclamationmark.arrow.circlepath")
                     .foregroundStyle(.secondary)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(t("Retry from the release page. \(reason)", "去 Release 页重试。\(reason)"))
+            .help(t("Retry from the release page. {}", reason))
         case .idle:
             Button {
                 startUpdate(version: version, url: url, asset: asset)
             } label: {
-                Label(t("v\(version) available", "v\(version) 可用"), systemImage: "arrow.down.circle")
+                Label(t("v{} available", version), systemImage: "arrow.down.circle")
                     .foregroundStyle(Color.accentColor)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(asset == nil
-                ? t("Open the download page: \(url.absoluteString)", "打开下载页：\(url.absoluteString)")
-                : t("Download and install v\(version), then relaunch", "下载并安装 v\(version)，装完自动重启"))
+                ? t("Open the download page: {}", url.absoluteString)
+                : t("Download and install v{}, then relaunch", version))
         }
     }
 
@@ -574,13 +568,13 @@ struct ContentView: View {
             modeToggle(
                 symbol: "align.vertical.center",
                 isOn: writing.typewriter,
-                help: t("Typewriter mode: keep the caret line centred (⌥⌘T)", "打字机模式：光标行停在屏幕中部（⌥⌘T）")
+                help: t("Typewriter mode: keep the caret line centred (⌥⌘T)")
             ) { writing.typewriter.toggle() }
 
             modeToggle(
                 symbol: "scope",
                 isOn: writing.focusMode,
-                help: t("Focus mode: dim everything but the current paragraph (⌥⌘F)", "专注模式：当前段落之外退成浅灰（⌥⌘F）")
+                help: t("Focus mode: dim everything but the current paragraph (⌥⌘F)")
             ) { writing.focusMode.toggle() }
         }
     }
@@ -619,7 +613,7 @@ struct ContentView: View {
                     .background(ToolbarTip(text: store.mode.cycleHint))
             }
             .help(store.mode.cycleHint)
-            .accessibilityLabel(t("View mode", "视图模式"))
+            .accessibilityLabel(t("View mode"))
             .accessibilityValue(store.mode.label)
             .accessibilityHint(store.mode.cycleHint)
         }
@@ -630,43 +624,43 @@ struct ContentView: View {
             Button {
                 paletteVisible = true
             } label: {
-                Label(t("Search Commands", "搜索命令"), systemImage: "magnifyingglass")
+                Label(t("Search Commands"), systemImage: "magnifyingglass")
                     .background(ToolbarTip(text: paletteHint))
             }
             .help(paletteHint)
-            .accessibilityLabel(t("Search Commands", "搜索命令"))
+            .accessibilityLabel(t("Search Commands"))
 
             Button {
                 workspace.openPanel()
             } label: {
-                Label(t("Open Folder", "打开文件夹"), systemImage: "folder.badge.plus")
+                Label(t("Open Folder"), systemImage: "folder.badge.plus")
             }
-            .help(t("Open a folder as the workspace (⌘⇧O)", "把文件夹作为工作区打开（⌘⇧O）"))
+            .help(t("Open a folder as the workspace (⌘⇧O)"))
 
             Button {
                 store.sidebarVisible.toggle()
             } label: {
-                Label(t("Sidebar", "侧栏"), systemImage: "sidebar.left")
+                Label(t("Sidebar"), systemImage: "sidebar.left")
                     // 工具栏里的 `.help` 到不了 AppKit，提示由锚点写进宿主视图
                     .background(ToolbarTip(text: sidebarHint))
             }
             .help(sidebarHint)
-            .accessibilityLabel(t("Sidebar", "侧栏"))
+            .accessibilityLabel(t("Sidebar"))
             .accessibilityValue(store.sidebarVisible
-                ? t("Shown", "已展开")
-                : t("Hidden", "已收起"))
+                ? t("Shown")
+                : t("Hidden"))
 
             Menu {
-                Button(t("Export HTML…", "导出 HTML…")) { store.exportHTML() }
-                Button(t("Print / Save as PDF…", "打印 / 存为 PDF…")) { store.exportPDF() }
+                Button(t("Export HTML…")) { store.exportHTML() }
+                Button(t("Print / Save as PDF…")) { store.exportPDF() }
             } label: {
-                Label(t("Export", "导出"), systemImage: "square.and.arrow.up")
+                Label(t("Export"), systemImage: "square.and.arrow.up")
             }
 
             Button {
                 store.save()
             } label: {
-                Label(t("Save", "保存"), systemImage: "square.and.arrow.down")
+                Label(t("Save"), systemImage: "square.and.arrow.down")
             }
             .disabled(!isEnabled(.save))
 
@@ -687,25 +681,19 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .help(settingsHint)
-            .accessibilityLabel(t("Settings", "设置"))
+            .accessibilityLabel(t("Settings"))
             .accessibilityValue(profile.displayName)
         }
     }
 
     private var settingsHint: String {
-        t(
-            "Settings — profile, writing, appearance, updates",
-            "设置——个人信息、写作、外观、更新"
-        )
+        t("Settings — profile, writing, appearance, updates")
     }
 
     /// 说的是这张面板**能干什么**，而不是它的名字：第一次点开的人靠这句话
     /// 判断「这里能不能找到我要的东西」。
     private var paletteHint: String {
-        t(
-            "Search commands — run an action without hunting the menus (⌘K)",
-            "搜索命令——不必翻菜单就能执行一项操作（⌘K）"
-        )
+        t("Search commands — run an action without hunting the menus (⌘K)")
     }
 }
 
@@ -733,31 +721,31 @@ struct WelcomeView: View {
                 .font(.title3)
                 .foregroundStyle(.secondary)
 
-            Text(t("The moment a thought lands, the document is already taking shape", "思绪落下的一刻，成文已然成型"))
+            Text(t("The moment a thought lands, the document is already taking shape"))
                 .font(.callout)
                 .foregroundStyle(.tertiary)
 
             HStack(spacing: 16) {
                 Button(action: onNew) {
-                    Label(t("Start Writing", "记下思绪"), systemImage: "character.cursor.ibeam")
+                    Label(t("Start Writing"), systemImage: "character.cursor.ibeam")
                         .padding(.horizontal, 8)
                 }
                 .controlSize(.large)
-                .help(t("New document (⌘N)", "新建一篇文档（⌘N）"))
+                .help(t("New document (⌘N)"))
 
                 Button(action: onOpen) {
-                    Label(t("Open File", "打开文档"), systemImage: "folder")
+                    Label(t("Open File"), systemImage: "folder")
                         .padding(.horizontal, 8)
                 }
                 .controlSize(.large)
-                .help(t("Open a Markdown file (⌘O)", "打开 Markdown 文件（⌘O）"))
+                .help(t("Open a Markdown file (⌘O)"))
 
                 Button(action: onOpenFolder) {
-                    Label(t("Open Folder", "打开文件夹"), systemImage: "folder.badge.plus")
+                    Label(t("Open Folder"), systemImage: "folder.badge.plus")
                         .padding(.horizontal, 8)
                 }
                 .controlSize(.large)
-                .help(t("Open a folder as the workspace (⌘⇧O)", "把文件夹作为工作区打开（⌘⇧O）"))
+                .help(t("Open a folder as the workspace (⌘⇧O)"))
             }
 
             Spacer()

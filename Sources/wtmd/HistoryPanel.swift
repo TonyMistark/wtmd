@@ -16,9 +16,9 @@ enum HistoryDay: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .today: return t("Today", "今天")
-        case .yesterday: return t("Yesterday", "昨天")
-        case .earlier: return t("Earlier", "更早")
+        case .today: return t("Today")
+        case .yesterday: return t("Yesterday")
+        case .earlier: return t("Earlier")
         }
     }
 
@@ -125,7 +125,7 @@ struct HistoryPanel: View {
             }
         }
         .alert(
-            t("Delete this version?", "删掉这一版？"),
+            t("Delete this version?"),
             isPresented: Binding(
                 get: { pending != nil },
                 set: { if !$0 { pending = nil } }
@@ -134,35 +134,32 @@ struct HistoryPanel: View {
         ) { action in
             switch action {
             case .delete(let entry):
-                Button(t("Delete", "删除"), role: .destructive) {
+                Button(t("Delete"), role: .destructive) {
                     delete(entry)
                     pending = nil
                 }
             case .clearAll:
-                Button(t("Clear All History", "清空全部历史"), role: .destructive) {
+                Button(t("Clear All History"), role: .destructive) {
                     clearAll()
                     pending = nil
                 }
             }
-            Button(t("Cancel", "取消"), role: .cancel) { pending = nil }
+            Button(t("Cancel"), role: .cancel) { pending = nil }
         } message: { action in
             switch action {
             case .delete:
-                Text(t("This version will be gone for good. The text cannot be recovered.", "这一版会被永久删除，内容找不回来。"))
+                Text(t("This version will be gone for good. The text cannot be recovered."))
             case .clearAll:
-                Text(t("Every kept version of this document will be removed.", "这篇稿子的所有旧版都会被删掉。"))
+                Text(t("Every kept version of this document will be removed."))
             }
         }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(t("Version History", "版本历史"))
+            Text(t("Version History"))
                 .font(.headline)
-            Text(t(
-                "Every saved version of “\(documentName)”. Pick one to look at it, then put it back in the editor if it is the one you want.",
-                "「\(documentName)」写过的每一版都在这里。点开看一眼，是想要的那版就装回编辑器。"
-            ))
+            Text(t("Every saved version of “{}”. Pick one to look at it, then put it back in the editor if it is the one you want.", documentName))
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -174,10 +171,10 @@ struct HistoryPanel: View {
 
     private var empty: some View {
         VStack(spacing: 8) {
-            Text(t("No versions kept yet.", "还没有留下旧版。"))
+            Text(t("No versions kept yet."))
                 .font(.callout)
                 .foregroundStyle(.tertiary)
-            Text(t("A version is kept when you open the file, after a save, and when you leave it.", "打开这篇、每次存盘之后、以及离开它的时候，都会留一版。"))
+            Text(t("A version is kept when you open the file, after a save, and when you leave it."))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
@@ -226,7 +223,7 @@ struct HistoryPanel: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Text(t("Read-only", "只读"))
+                    Text(t("Read-only"))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -235,7 +232,7 @@ struct HistoryPanel: View {
                 Divider()
 
                 ScrollView {
-                    Text(Self.content(of: entry) ?? t("This version can no longer be read.", "这一版已经读不出来了。"))
+                    Text(Self.content(of: entry) ?? t("This version can no longer be read."))
                         .font(.system(.body, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -243,7 +240,7 @@ struct HistoryPanel: View {
                 }
             }
         } else {
-            Text(t("Choose a version on the left.", "在左边选一版。"))
+            Text(t("Choose a version on the left."))
                 .font(.callout)
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -252,14 +249,14 @@ struct HistoryPanel: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            Button(t("Open Folder in Finder", "在访达中打开文件夹")) {
+            Button(t("Open Folder in Finder")) {
                 if let folder { NSWorkspace.shared.open(folder) }
             }
             .buttonStyle(.link)
             .font(.caption)
             .disabled(folder == nil)
 
-            Button(t("Clear All History…", "清空全部历史…")) {
+            Button(t("Clear All History…")) {
                 pending = .clearAll
             }
             .buttonStyle(.link)
@@ -268,21 +265,21 @@ struct HistoryPanel: View {
 
             Spacer()
 
-            Button(t("Delete…", "删除…")) {
+            Button(t("Delete…")) {
                 if let entry = selectedEntry { pending = .delete(entry) }
             }
             .controlSize(.small)
             .disabled(selectedEntry == nil)
 
-            Button(t("Put This Version Back", "装回这一版")) {
+            Button(t("Put This Version Back")) {
                 if let entry = selectedEntry { restore(entry) }
             }
             .controlSize(.small)
             .keyboardShortcut(.defaultAction)
             .disabled(selectedEntry == nil)
-            .help(t("Replaces the editor's text with this version; the current text is kept in the history first", "用这一版替换编辑器里的内容；当前这一版会先存进历史"))
+            .help(t("Replaces the editor's text with this version; the current text is kept in the history first"))
 
-            Button(t("Close", "关闭"), action: close)
+            Button(t("Close"), action: close)
                 .controlSize(.small)
                 .keyboardShortcut(.cancelAction)
         }
@@ -303,11 +300,8 @@ struct HistoryPanel: View {
 
     static func sizeLabel(_ bytes: Int) -> String {
         bytes < 1024
-            ? t("\(bytes) bytes", "\(bytes) 字节")
-            : t(
-                String(format: "%.1f KB", Double(bytes) / 1024),
-                String(format: "%.1f KB", Double(bytes) / 1024)
-            )
+            ? t("{} bytes", bytes)
+            : t(String(format: "%.1f KB", Double(bytes) / 1024))
     }
 
     private static func accessibilityLabel(for entry: HistoryEntry) -> String {

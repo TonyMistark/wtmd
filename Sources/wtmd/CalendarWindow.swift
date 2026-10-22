@@ -37,7 +37,7 @@ enum CalendarWindow {
     static func show(store: DocumentStore, goal: Int) {
         let window = controller?.window ?? makeWindow()
         source = store
-        window.title = t("Writing Calendar", "写作日历")
+        window.title = t("Writing Calendar")
         window.contentViewController = NSHostingController(
             rootView: panel(hosting: window, store: store, goal: goal)
         )

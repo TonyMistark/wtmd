@@ -27,10 +27,10 @@ enum PaletteScope: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .all: return t("All", "全部")
-        case .commands: return t("Commands", "命令")
-        case .files: return t("Files", "文件")
-        case .text: return t("Text", "正文")
+        case .all: return t("All")
+        case .commands: return t("Commands")
+        case .files: return t("Files")
+        case .text: return t("Text")
         }
     }
 
@@ -167,12 +167,12 @@ enum PaletteGroup: Equatable {
 
     var title: String {
         switch self {
-        case .recent: return t("Recently Used", "最近使用")
-        case .searches: return t("Recent Searches", "最近搜索")
+        case .recent: return t("Recently Used")
+        case .searches: return t("Recent Searches")
         case .section(let section): return section.title
-        case .commands: return t("Commands", "命令")
-        case .files: return t("Files", "文件")
-        case .text: return t("Text", "正文")
+        case .commands: return t("Commands")
+        case .files: return t("Files")
+        case .text: return t("Text")
         }
     }
 }

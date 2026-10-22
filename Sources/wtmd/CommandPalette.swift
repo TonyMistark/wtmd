@@ -67,7 +67,7 @@ enum ShortcutFormatter {
         case .return: return "↩"
         case .escape: return "⎋"
         case .tab: return "⇥"
-        case .space: return t("Space", "空格")
+        case .space: return t("Space")
         case .delete: return "⌫"
         default: return String(key.character).uppercased()
         }
@@ -229,7 +229,7 @@ struct CommandPalette: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
 
-            TextField(t("Search commands, files, text…", "搜索命令、文件、正文…"), text: $query)
+            TextField(t("Search commands, files, text…"), text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .focused($searchFocused)
@@ -253,7 +253,7 @@ struct CommandPalette: View {
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
-                .help(t("Clear", "清空"))
+                .help(t("Clear"))
             }
         }
         .padding(.horizontal, 14)
@@ -277,7 +277,7 @@ struct CommandPalette: View {
                 )
         }
         .buttonStyle(.plain)
-        .help(t("Only \(scope.title)", "只要\(scope.title)"))
+        .help(t("Only {}", scope.title))
     }
 
     private func toggle(_ scope: PaletteScope) {
@@ -297,7 +297,7 @@ struct CommandPalette: View {
             Text(emptyTitle)
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            Text(t("Try \"export\", \"@chapter\", \"#measure\"", "试试「导出」「@章节」「#版心」"))
+            Text(t("Try \"export\", \"@chapter\", \"#measure\""))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
@@ -306,11 +306,11 @@ struct CommandPalette: View {
     }
 
     private var emptyTitle: String {
-        guard !parsed.isEmpty else { return t("No commands to run", "没有可执行的命令") }
+        guard !parsed.isEmpty else { return t("No commands to run") }
         if parsed.scope == .text && root == nil {
-            return t("Open a folder to search its text", "先打开一个文件夹才能搜正文")
+            return t("Open a folder to search its text")
         }
-        return t("Nothing found for \"\(parsed.trimmedNeedle)\"", "没有找到「\(parsed.trimmedNeedle)」")
+        return t("Nothing found for \"{}\"", parsed.trimmedNeedle)
     }
 
     private var resultList: some View {
@@ -510,10 +510,7 @@ struct CommandPalette: View {
                 Image(systemName: "arrow.up.right.square")
                     .frame(width: 18)
                     .foregroundStyle(isSelected ? Color.white : Color.secondary)
-                Text(t(
-                    "See all matches in the workspace",
-                    "在工作区中查看全部"
-                ))
+                Text(t("See all matches in the workspace"))
                 .font(.system(size: 12))
                 .foregroundStyle(isSelected ? Color.white : Color.primary)
                 Spacer(minLength: 8)
@@ -554,7 +551,7 @@ struct CommandPalette: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            Text(t("› commands   @ files   # text", "› 命令　@ 文件　# 正文"))
+            Text(t("› commands   @ files   # text"))
                 .font(.system(size: 10).monospaced())
                 .foregroundStyle(.tertiary)
 
@@ -574,16 +571,16 @@ struct CommandPalette: View {
     private var summary: String {
         var parts: [String] = []
         if !commandResults.isEmpty {
-            parts.append(t("\(commandResults.count) commands", "\(commandResults.count) 条命令"))
+            parts.append(t("{} commands", commandResults.count))
         }
         if parsed.scope == .all || parsed.scope == .files {
             let count = PaletteFileSearch.filter(
                 parsed.trimmedNeedle, in: files, limit: PaletteRows.fileLimit
             ).count
-            if count > 0 { parts.append(t("\(count) files", "\(count) 个文件")) }
+            if count > 0 { parts.append(t("{} files", count)) }
         }
         if !textSearch.hits.isEmpty {
-            parts.append(t("\(textSearch.hits.count)+ matches", "\(textSearch.hits.count)+ 处"))
+            parts.append(t("{}+ matches", textSearch.hits.count))
         }
         return parts.joined(separator: " · ")
     }

@@ -117,7 +117,7 @@ struct AppMenus: Commands {
             Divider()
             menuItem(.closeWorkspace)
             Divider()
-            Button(t("Command Palette…", "命令面板…")) { active.paletteVisible = true }
+            Button(t("Command Palette…")) { active.paletteVisible = true }
                 .keyboardShortcut("k", modifiers: .command)
         }
         // 帮助菜单默认只有一项打不开的「wtmd 帮助」。换成真正有用的那个：
@@ -125,7 +125,7 @@ struct AppMenus: Commands {
         CommandGroup(replacing: .help) {
             menuItem(.reportProblem)
             Divider()
-            Button(t("Crash Reports Folder", "崩溃报告文件夹")) {
+            Button(t("Crash Reports Folder")) {
                 NSWorkspace.shared.open(shared.crashes.directory)
             }
         }

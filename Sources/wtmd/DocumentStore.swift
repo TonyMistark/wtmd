@@ -14,9 +14,9 @@ enum ViewMode: String, CaseIterable, Identifiable {
     /// 中心思想的界面落点：源码是思绪的原貌，预览是思绪的成文。
     var label: String {
         switch self {
-        case .edit: return t("Source", "思绪")
-        case .preview: return t("Preview", "成文")
-        case .split: return t("Split", "对照")
+        case .edit: return t("Source", context: "mode")
+        case .preview: return t("Preview")
+        case .split: return t("Split")
         }
     }
 
@@ -52,20 +52,11 @@ enum ViewMode: String, CaseIterable, Identifiable {
         let detail: String
         switch self {
         case .edit:
-            detail = t(
-                "just you and the text. Click for \(next.label).",
-                "只有源码，专心写。点击切到\(next.label)"
-            )
+            detail = t("just you and the text. Click for {}.", next.label)
         case .preview:
-            detail = t(
-                "the finished page, no editing. Click for \(next.label).",
-                "只读成文。点击切到\(next.label)"
-            )
+            detail = t("the finished page, no editing. Click for {}.", next.label)
         case .split:
-            detail = t(
-                "type on the left, the page follows on the right. Click for \(next.label).",
-                "左边写，右边跟着成文。点击回到\(next.label)"
-            )
+            detail = t("type on the left, the page follows on the right. Click for {}.", next.label)
         }
         return "\(label) · \(detail)"
     }
@@ -374,7 +365,7 @@ final class DocumentStore: ObservableObject {
     // MARK: - 状态
 
     var isDirty: Bool { text != savedSnapshot }
-    var displayName: String { fileURL?.lastPathComponent ?? t("Untitled.md", "未命名.md") }
+    var displayName: String { fileURL?.lastPathComponent ?? t("Untitled.md") }
     var windowTitle: String { (isDirty ? "● " : "") + displayName }
 
     func textDidChange(_ new: String) {
@@ -716,7 +707,7 @@ final class DocumentStore: ObservableObject {
             targetURL = existing
         } else {
             let panel = NSSavePanel()
-            panel.nameFieldStringValue = t("Untitled.md", "未命名.md")
+            panel.nameFieldStringValue = t("Untitled.md")
             panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
             // 工作区打开着就以它为默认落点：读者已经在那个文件夹里了，
             // 再让他从「文稿」一路导航过去是多出来的一步。
@@ -763,14 +754,8 @@ final class DocumentStore: ObservableObject {
             return
         }
         let alert = NSAlert()
-        alert.messageText = t(
-            "That file is open in another window",
-            "这个文件正在另一扇窗口里打开"
-        )
-        alert.informativeText = t(
-            "Saving here would overwrite what is being written there. Close it in that window first, or choose another name.",
-            "存到这里会盖掉那扇窗里正在写的内容。请先在那里关掉它，或者换一个文件名。"
-        )
+        alert.messageText = t("That file is open in another window")
+        alert.informativeText = t("Saving here would overwrite what is being written there. Close it in that window first, or choose another name.")
         alert.runModal()
     }
 
@@ -797,7 +782,7 @@ final class DocumentStore: ObservableObject {
         guard let change, change != .heldElsewhere, isDirty, let conflicts else { return }
         guard let entry = conflicts.archive(text, originalURL: fileURL) else { return }
         refreshArchivedConflicts()
-        showArchiveNotice(t("Saved a local copy of \(entry.originalName) to the conflict archive", "已把「\(entry.originalName)」的本地版本存入冲突副本"))
+        showArchiveNotice(t("Saved a local copy of {} to the conflict archive", entry.originalName))
     }
 
     private func refreshArchivedConflicts() {
@@ -901,7 +886,7 @@ final class DocumentStore: ObservableObject {
         guard let history, let fileURL else { return }
         history.removeAll(for: fileURL)
         refreshHistory()
-        showArchiveNotice(t("Cleared the version history of \(displayName)", "已清除「\(displayName)」的版本历史"))
+        showArchiveNotice(t("Cleared the version history of {}", displayName))
     }
 
     // MARK: - 崩溃报告
@@ -1000,7 +985,7 @@ final class DocumentStore: ObservableObject {
         panel.allowedContentTypes = [.html]
 
         // 附件选项：使用当前主题（不勾则导出默认主题）
-        let useCurrent = NSButton(checkboxWithTitle: t("Style with current theme", "使用当前主题样式"), target: nil, action: nil)
+        let useCurrent = NSButton(checkboxWithTitle: t("Style with current theme"), target: nil, action: nil)
         useCurrent.state = .on
         useCurrent.controlSize = .small
         panel.accessoryView = useCurrent
@@ -1228,8 +1213,8 @@ final class DocumentStore: ObservableObject {
         guard let entry = conflicts.archive(text, originalURL: fileURL) else { return }
         refreshArchivedConflicts()
         showArchiveNotice(t(
-            "Also open in another window — this version was saved to the conflict archive",
-            "「\(entry.originalName)」也在另一扇窗口里开着，这一版已存入冲突副本"
+            "Also open in another window — this version of \"{}\" was saved to the conflict archive",
+            entry.originalName
         ))
     }
 

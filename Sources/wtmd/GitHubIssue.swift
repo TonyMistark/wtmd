@@ -26,10 +26,7 @@ enum GitHubIssue {
 
         // 太长：对半砍，直到装得下。报告的结构（头部、调用栈开头）都在前面，
         // 砍掉的多半是轨迹的尾巴——那正是最不重要的部分。
-        let marker = t(
-            "\n\n… (truncated — copy the full report from wtmd)",
-            "\n\n…（报告过长，已截断。完整内容可在 wtmd 里点「复制报告」）"
-        )
+        let marker = t("\n\n… (truncated — copy the full report from wtmd)")
         var cut = body.count / 2
         while cut > 80 {
             guard let candidate = compose(

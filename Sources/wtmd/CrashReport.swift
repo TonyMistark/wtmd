@@ -127,10 +127,10 @@ struct CrashReport: Identifiable, Equatable {
 
     var headline: String {
         switch kind {
-        case .signal: return t("wtmd crashed", "wtmd 上次崩溃了")
-        case .exception: return t("wtmd crashed", "wtmd 上次崩溃了")
-        case .terminated: return t("wtmd did not shut down normally", "wtmd 上次没有正常退出")
-        case .feedback: return t("Report a Problem", "报告问题")
+        case .signal: return t("wtmd crashed")
+        case .exception: return t("wtmd crashed")
+        case .terminated: return t("wtmd did not shut down normally")
+        case .feedback: return t("Report a Problem")
         }
     }
 
@@ -147,18 +147,11 @@ struct CrashReport: Identifiable, Equatable {
         switch kind {
         case .exception:
             let name = exceptionNameFromMarkdown ?? "NSException"
-            return t(
-                "An unexpected condition stopped the app (\(name)).",
-                "程序遇到一个没处理的情况，停在了这里（\(name)）。"
-            )
+            return t("An unexpected condition stopped the app ({}).", name)
         case .terminated:
-            return t(
-                "No crash detail was captured — the app was stopped from outside "
-                    + "(force quit, `kill`, a restart or a power cut).",
-                "这次没抓到现场：可能是强制退出、`kill`、重启或断电。"
-            )
+            return t("No crash detail was captured — the app was stopped from outside (force quit, `kill`, a restart or a power cut).")
         case .feedback:
-            return t("Written from inside the app.", "在应用里写下的一份说明。")
+            return t("Written from inside the app.")
         case .signal:
             let name = signal ?? "signal"
             return "\(name) — \(Self.explain(signal: name))"
@@ -169,31 +162,19 @@ struct CrashReport: Identifiable, Equatable {
     static func explain(signal name: String) -> String {
         switch name {
         case "SIGSEGV":
-            return t(
-                "it read or wrote memory it does not own — usually a nil or already-freed object.",
-                "读写了一块不属于它的内存，常见原因是空对象或已经释放的对象。"
-            )
+            return t("it read or wrote memory it does not own — usually a nil or already-freed object.")
         case "SIGABRT":
-            return t(
-                "it was stopped on purpose after an internal check failed.",
-                "内部检查没过，程序主动终止了自己。"
-            )
+            return t("it was stopped on purpose after an internal check failed.")
         case "SIGBUS":
-            return t(
-                "memory access went wrong at the hardware level.",
-                "内存访问在硬件层面出错（对齐或映射问题）。"
-            )
+            return t("memory access went wrong at the hardware level.")
         case "SIGILL":
-            return t(
-                "it hit an instruction it cannot execute — Swift's `fatalError` lands here.",
-                "执行到一条非法指令，Swift 的 `fatalError` 就落在这里。"
-            )
+            return t("it hit an instruction it cannot execute — Swift's `fatalError` lands here.")
         case "SIGFPE":
-            return t("an arithmetic operation failed.", "算术运算出错。")
+            return t("an arithmetic operation failed.")
         case "SIGTRAP":
-            return t("a trap was raised — a debugger or an assertion.", "触发了陷阱（断点或断言）。")
+            return t("a trap was raised — a debugger or an assertion.")
         default:
-            return t("the system stopped it.", "系统把它停掉了。")
+            return t("the system stopped it.")
         }
     }
 
@@ -201,7 +182,7 @@ struct CrashReport: Identifiable, Equatable {
     var summaryLine: String {
         var parts = [Self.stampFormatter.string(from: capturedAt), "wtmd \(appVersion)", system]
         if let windowCount, windowCount > 1 {
-            parts.append(t("\(windowCount) windows", "\(windowCount) 扇窗口"))
+            parts.append(t("{} windows", windowCount))
         }
         return parts.joined(separator: " · ")
     }
@@ -209,14 +190,14 @@ struct CrashReport: Identifiable, Equatable {
     var suggestedIssueTitle: String {
         switch kind {
         case .feedback:
-            return t("[Feedback] ", "[反馈] ") + (documentName ?? "")
+            return t("[Feedback] ") + (documentName ?? "")
         case .terminated:
             // 没有栈、没有信号——这不是崩溃，是有人把进程结束了。标题不该
             // 让人以为是应用自己出了问题。
-            return t("[Exit] wtmd ended without a clean quit · v", "[退出] wtmd 没有正常退出 · v")
+            return t("[Exit] wtmd ended without a clean quit · v")
                 + appVersion
         default:
-            return t("[Crash] ", "[崩溃] ") + (signal ?? kind.rawValue) + " · v" + appVersion
+            return t("[Crash] ") + (signal ?? kind.rawValue) + " · v" + appVersion
         }
     }
 
@@ -306,54 +287,46 @@ struct CrashReport: Identifiable, Equatable {
         breadcrumbs: [String],
         capturedAt: Date
     ) -> String {
-        var body = "# \(t("wtmd crash report", "wtmd 崩溃报告"))\n\n"
-        body += "- \(t("Time", "时间"))\(Self.colon)\(stampFormatter.string(from: capturedAt))\n"
-        body += "- \(t("Version", "版本"))\(Self.colon)\(CrashEnvironment.appVersion)"
+        var body = "# \(t("wtmd crash report"))\n\n"
+        body += "- \(t("Time"))\(Self.colon)\(stampFormatter.string(from: capturedAt))\n"
+        body += "- \(t("Version"))\(Self.colon)\(CrashEnvironment.appVersion)"
             + "（\(CrashEnvironment.architecture)）\n"
-        body += "- \(t("System", "系统"))\(Self.colon)\(CrashEnvironment.systemDescription)\n"
+        body += "- \(t("System"))\(Self.colon)\(CrashEnvironment.systemDescription)\n"
         if let exception = raw.exceptionName {
-            body += "- \(t("Exception", "异常"))\(Self.colon)\(exception)\n"
+            body += "- \(t("Exception"))\(Self.colon)\(exception)\n"
             if let reason = raw.exceptionReason, !reason.isEmpty {
-                body += "- \(t("Reason", "原因"))\(Self.colon)\(oneLine(reason))\n"
+                body += "- \(t("Reason"))\(Self.colon)\(oneLine(reason))\n"
             }
         } else if let signal = raw.signal {
-            body += "- \(t("Signal", "信号"))\(Self.colon)\(signal)\n"
+            body += "- \(t("Signal"))\(Self.colon)\(signal)\n"
         }
         if let windows = windowCount(in: breadcrumbs) {
-            body += "- \(t("Windows open", "开着窗口"))\(Self.colon)\(windows)\n"
+            body += "- \(t("Windows open"))\(Self.colon)\(windows)\n"
         }
         if let document = documentName(in: breadcrumbs) {
-            body += "- \(t("Document", "文档"))\(Self.colon)\(document)\n"
+            body += "- \(t("Document"))\(Self.colon)\(document)\n"
         }
 
-        body += "\n## \(t("What happened", "怎么回事"))\n\n"
+        body += "\n## \(t("What happened"))\n\n"
         if raw.frames.isEmpty {
-            body += t(
-                "Nothing was captured: the process went away without a chance to write — "
-                    + "force quit, `kill -9`, a power loss or a panic.",
-                "这次没抓到现场：进程没来得及写就被结束了——强制退出、`kill -9`、断电或系统崩溃。"
-            )
+            body += t("Nothing was captured: the process went away without a chance to write — force quit, `kill -9`, a power loss or a panic.")
             body += "\n"
         } else {
-            let name = raw.signal ?? t("an unknown signal", "未知信号")
+            let name = raw.signal ?? t("an unknown signal")
             body += "\(name) — \(explain(signal: name))\n"
-            body += "\n## \(t("Call stack", "调用栈"))\n\n```\n"
+            body += "\n## \(t("Call stack"))\n\n```\n"
             body += raw.frames.prefix(80).joined(separator: "\n")
             body += "\n```\n"
         }
 
         if !breadcrumbs.isEmpty {
-            body += "\n## \(t("What led up to it", "之前发生了什么"))\n\n```\n"
+            body += "\n## \(t("What led up to it"))\n\n```\n"
             body += breadcrumbs.suffix(40).joined(separator: "\n")
             body += "\n```\n"
         }
 
         body += "\n---\n"
-        body += t(
-            "Collected locally by wtmd. It contains no writing from your documents — "
-                + "only versions, window counts, file names, and the stack.",
-            "这份报告由 wtmd 在本机生成，不含任何正文内容——只有版本、窗口数、文件名和调用栈。"
-        )
+        body += t("Collected locally by wtmd. It contains no writing from your documents — only versions, window counts, file names, and the stack.")
         return body
     }
 
@@ -362,14 +335,14 @@ struct CrashReport: Identifiable, Equatable {
 
     /// 手动「报告问题」的正文。
     static func feedbackBody(note: String, documentName: String?) -> String {
-        var body = "# \(t("Problem report", "问题反馈"))\n\n"
-        body += "- \(t("Time", "时间"))\(Self.colon)\(stampFormatter.string(from: Date()))\n"
-        body += "- \(t("Version", "版本"))\(Self.colon)\(CrashEnvironment.appVersion)"
+        var body = "# \(t("Problem report"))\n\n"
+        body += "- \(t("Time"))\(Self.colon)\(stampFormatter.string(from: Date()))\n"
+        body += "- \(t("Version"))\(Self.colon)\(CrashEnvironment.appVersion)"
             + "（\(CrashEnvironment.architecture)）\n"
-        body += "- \(t("System", "系统"))\(Self.colon)\(CrashEnvironment.systemDescription)\n"
-        if let documentName { body += "- \(t("Document", "文档"))\(Self.colon)\(documentName)\n" }
-        body += "\n## \(t("What I was doing", "我当时在做什么"))\n\n"
-        body += note.isEmpty ? t("_(add a sentence here)_", "_（在这里补一句）_") : note
+        body += "- \(t("System"))\(Self.colon)\(CrashEnvironment.systemDescription)\n"
+        if let documentName { body += "- \(t("Document"))\(Self.colon)\(documentName)\n" }
+        body += "\n## \(t("What I was doing"))\n\n"
+        body += note.isEmpty ? t("_(add a sentence here)_") : note
         body += "\n"
         return body
     }

@@ -122,12 +122,9 @@ struct WritingCalendarPanel: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(t("Writing Calendar", "写作日历"))
+            Text(t("Writing Calendar"))
                 .font(.headline)
-            Text(t(
-                "How much you added each day over the past year. Deletions count against the day too — some days are bound to go down.",
-                "过去一年里，每一天净增了多少字。删掉的字照样扣，所以有的日子是往下走的。"
-            ))
+            Text(t("How much you added each day over the past year. Deletions count against the day too — some days are bound to go down."))
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -142,26 +139,26 @@ struct WritingCalendarPanel: View {
     private var summaryRow: some View {
         HStack(spacing: 10) {
             summaryCard(
-                title: t("Streak", "连续"),
-                value: t("\(summary.streak) days", "\(summary.streak) 天"),
+                title: t("Streak"),
+                value: t("{} days", summary.streak),
                 detail: summary.streak > 0
-                    ? t("today counts", "今天也算进去了")
-                    : t("start again today", "今天起重新算")
+                    ? t("today counts")
+                    : t("start again today")
             )
             summaryCard(
-                title: t("This Month", "本月"),
+                title: t("This Month"),
                 value: WritingCalendarText.signed(summary.monthTotal),
-                detail: t("net characters", "净增字数")
+                detail: t("net characters")
             )
             summaryCard(
-                title: t("This Year", "今年"),
+                title: t("This Year"),
                 value: WritingCalendarText.signed(summary.yearTotal),
-                detail: t("net characters", "净增字数")
+                detail: t("net characters")
             )
             summaryCard(
-                title: t("Best Day", "最高单日"),
+                title: t("Best Day"),
                 value: summary.best.map { WritingCalendarText.signed($0.total) } ?? "0",
-                detail: summary.best.map { WritingCalendarText.dayLabel($0.date) } ?? t("no data yet", "还没有")
+                detail: summary.best.map { WritingCalendarText.dayLabel($0.date) } ?? t("no data yet")
             )
         }
     }
@@ -248,7 +245,7 @@ struct WritingCalendarPanel: View {
 
             HStack(spacing: 8) {
                 Text(selected.map { selectedLabel($0) }
-                    ?? t("Click a square to see that day.", "点一个格子，看看那天。"))
+                    ?? t("Click a square to see that day."))
                 .font(.caption)
                 .foregroundStyle(selected == nil ? .tertiary : .secondary)
                 .monospacedDigit()
@@ -284,7 +281,7 @@ struct WritingCalendarPanel: View {
 
     private var legend: some View {
         HStack(spacing: 4) {
-            Text(t("Less", "少"))
+            Text(t("Less"))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             ForEach(0..<WritingCalendar.levels, id: \.self) { level in
@@ -292,27 +289,24 @@ struct WritingCalendarPanel: View {
                     .fill(color(for: level))
                     .frame(width: 9, height: 9)
             }
-            Text(t("More", "多"))
+            Text(t("More"))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
     }
 
     private var footnote: some View {
-        Text(t(
-            "Kept on this Mac for the last 365 days. Nothing leaves the machine.",
-            "账本存在这台 Mac 上，只留最近 365 天，不上传任何地方。"
-        ))
+        Text(t("Kept on this Mac for the last 365 days. Nothing leaves the machine."))
         .font(.caption2)
         .foregroundStyle(.tertiary)
     }
 
     private var empty: some View {
         VStack(spacing: 8) {
-            Text(t("Nothing recorded yet.", "还没有记账。"))
+            Text(t("Nothing recorded yet."))
                 .font(.callout)
                 .foregroundStyle(.tertiary)
-            Text(t("Write for a few days and this fills up on its own.", "写上几天，这里自然就有了。"))
+            Text(t("Write for a few days and this fills up on its own."))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
@@ -325,18 +319,18 @@ struct WritingCalendarPanel: View {
     private var footer: some View {
         HStack {
             if goal > 0 {
-                Text(t("Shades follow your daily goal of \(goal).", "深浅跟着每日目标 \(goal) 字走。"))
+                Text(t("Shades follow your daily goal of {}.", goal))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             } else {
-                Text(t("Set a daily goal and the shades will follow it.", "设了每日目标，深浅就跟着目标走。"))
+                Text(t("Set a daily goal and the shades will follow it."))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
 
             Spacer()
 
-            Button(t("Close", "关闭"), action: close)
+            Button(t("Close"), action: close)
                 .controlSize(.small)
                 .keyboardShortcut(.cancelAction)
         }
@@ -362,9 +356,6 @@ struct WritingCalendarPanel: View {
 
     private func selectedLabel(_ day: WritingCalendar.Day) -> String {
         let amount = WritingCalendarText.signed(day.total)
-        return t(
-            "\(WritingCalendarText.dayLabel(day.date)) · \(amount) characters",
-            "\(WritingCalendarText.dayLabel(day.date)) · \(amount) 字"
-        )
+        return t("{} · {} characters", WritingCalendarText.dayLabel(day.date), amount)
     }
 }

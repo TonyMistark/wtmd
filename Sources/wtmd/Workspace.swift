@@ -335,8 +335,8 @@ final class WorkspaceStore: ObservableObject {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = t("Open Workspace", "打开工作区")
-        panel.message = t("Choose a folder that holds Markdown files", "选择包含 Markdown 文件的文件夹")
+        panel.prompt = t("Open Workspace")
+        panel.message = t("Choose a folder that holds Markdown files")
         if panel.runModal() == .OK, let url = panel.url {
             open(url)
         }

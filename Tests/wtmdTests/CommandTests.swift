@@ -466,7 +466,7 @@ struct ToolbarSearchEntryTests {
     @Test("工具栏里有一颗按钮，名字与面板一致")
     func toolbarHasASearchButton() throws {
         let content = try source("ContentView.swift")
-        #expect(content.contains(#"Label(t("Search Commands", "搜索命令"), systemImage: "magnifyingglass")"#))
+        #expect(content.contains(#"Label(t("Search Commands"), systemImage: "magnifyingglass")"#))
         #expect(content.contains("paletteHint"))
     }
 
@@ -480,7 +480,7 @@ struct ToolbarSearchEntryTests {
     @Test("面板说清自己搜三类东西，而不是只说「命令」")
     func thePanelSaysWhatItSearches() throws {
         let palette = try source("CommandPalette.swift")
-        #expect(palette.contains(#"t("Search commands, files, text…", "搜索命令、文件、正文…")"#))
+        #expect(palette.contains(#"t("Search commands, files, text…")"#))
     }
 
     @Test("按钮有提示：工具栏的 .help 到不了 AppKit，得靠锚点写 toolTip")
