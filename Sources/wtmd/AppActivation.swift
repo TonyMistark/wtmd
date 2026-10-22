@@ -77,6 +77,29 @@ enum AppActivation {
         return eligible.allSatisfy { $0.isMiniaturized }
     }
 
+    /// 设置里点「打开写作日历」：挑哪扇窗来摊这张 sheet。
+    ///
+    /// **缩进 Dock 的窗也算数**——`isVisible` 对缩着的窗返回 `false`，要是
+    /// 只认它，主窗收在 Dock 里时点日历会被判成「没有窗」，兜底逻辑就会
+    /// 另开一扇重复的主窗，日历还摊在那扇新窗上。缩着的窗交给
+    /// `bringToFront` 去叫醒，正好是神灯那条路。
+    ///
+    /// 主窗优先；主窗的窗体已经不在了（⌘W 关掉）就退而求其次，从剩下的
+    /// 窗里挑一扇挂得上的。sheet 与不能当主的窗不算数，与 `pick` 同一口径。
+    static func calendarHost<Element>(
+        primary: Element?,
+        candidates: [Element],
+        info: (Element) -> WindowInfo?
+    ) -> Element? {
+        func eligible(_ element: Element) -> Bool {
+            guard let item = info(element) else { return false }
+            return item.canBecomeKey && !item.isSheet
+                && (item.isVisible || item.isMiniaturized)
+        }
+        if let primary, eligible(primary) { return primary }
+        return candidates.first(where: eligible)
+    }
+
     // MARK: - 动手
 
     /// 这扇窗还在某块屏幕上吗？

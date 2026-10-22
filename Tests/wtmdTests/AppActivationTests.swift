@@ -302,6 +302,97 @@ struct CalendarRequestTests {
     }
 }
 
+// MARK: - 日历摊在哪扇窗
+
+/// 设置里点「打开写作日历」，`present` 要挑一扇窗来摊。这里钉住挑选的
+/// 口径：**缩进 Dock 的窗也算数**——`isVisible` 对缩着的窗返回 `false`，
+/// 漏了它，主窗收在 Dock 里时点日历会另开一扇重复的主窗，日历还摊在
+/// 新窗上（用户实测踩过）。
+@Suite("日历摊在哪扇窗")
+struct CalendarHostTests {
+    private func info(miniaturized: Bool, sheet: Bool = false, canBecomeKey: Bool = true) -> AppActivation.WindowInfo {
+        .init(
+            isVisible: !miniaturized,
+            isMiniaturized: miniaturized,
+            isSheet: sheet,
+            canBecomeKey: canBecomeKey,
+            isPanel: false
+        )
+    }
+
+    private func host(
+        primaryMiniaturized: Bool,
+        primaryWindow: Bool = true
+    ) -> Int? {
+        AppActivation.calendarHost(
+            primary: 0,
+            candidates: [1, 2],
+            info: { id in
+                switch id {
+                case 0: primaryWindow ? info(miniaturized: primaryMiniaturized) : nil
+                case 1: info(miniaturized: false)
+                default: info(miniaturized: true)
+                }
+            }
+        )
+    }
+
+    @Test("主窗看得见：摊在主窗上")
+    func visiblePrimaryHosts() {
+        #expect(host(primaryMiniaturized: false) == 0)
+    }
+
+    @Test("主窗缩在 Dock 里：也算数，摊在主窗上")
+    func miniaturizedPrimaryStillHosts() {
+        // 旧实现只认 isVisible，这里会判成「没有窗」而另开主窗。
+        #expect(host(primaryMiniaturized: true) == 0)
+    }
+
+    @Test("主窗的窗体不在了：退而求其次，挑一扇挂得上的")
+    func fallsBackToAnotherWindow() {
+        #expect(host(primaryMiniaturized: false, primaryWindow: false) == 1)
+        // 两扇副窗里第一扇也缩着，照样能接——挑得到就行。
+        #expect(
+            AppActivation.calendarHost(
+                primary: 0, candidates: [1], info: { _ in nil }
+            ) == nil,
+            "谁都没有窗体时，还是该走「开新窗」的兜底"
+        )
+    }
+
+    @Test("sheet 与不能当主的窗不算数")
+    func sheetsDoNotHost() {
+        #expect(
+            AppActivation.calendarHost(
+                primary: 0,
+                candidates: [1],
+                info: { $0 == 0 ? info(miniaturized: false, sheet: true) : info(miniaturized: false) }
+            ) == 1
+        )
+        #expect(
+            AppActivation.calendarHost(
+                primary: 0,
+                candidates: [],
+                info: { _ in info(miniaturized: false, canBecomeKey: false) }
+            ) == nil
+        )
+    }
+
+    @Test("装配：窗口根视图用 calendarHost 挑目标，账记在目标那扇上")
+    func thePathIsWired() throws {
+        let root = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/wtmd/WindowRoot.swift"),
+            encoding: .utf8
+        )
+        #expect(root.contains("AppActivation.calendarHost"), "挑选口径没有走纯函数，测试钉不住它")
+        #expect(root.contains("target.store.showCalendar()"), "日历该摊在选中的那扇窗的账上")
+    }
+}
+
 // MARK: - 神灯动画
 
 /// 收进 Dock 有动画、放出来没有，是最容易被察觉的不对称：点最小化，窗口
