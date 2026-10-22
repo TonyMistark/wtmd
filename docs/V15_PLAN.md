@@ -477,3 +477,37 @@ Dock 的窗返回 `false`**：主窗收在 Dock 里时被判成「没有窗」�
   再排掉 sheet 与 `canBecomeKey == false`。
 - 兜底路径（`openMain`）会**开新窗**，所以「该不该走兜底」的判据必须准：
   判错一次，人看到的就是一扇凭空多出来的主界面。
+
+### v0.15.8（2026-10-22）— 日历自己一扇窗
+
+#### 从设置打开写作日历，设置窗被顶到后面（#178）
+
+上一版只修了「另开一扇主窗」，但层次仍然不对：从设置点开日历，顺序变成
+**日历 → 主窗 → 设置**。根子不在挑窗，在**容器**——日历是主窗上的 sheet，
+而 sheet 挂在谁身上谁就跟着往前提，这是 macOS 的规矩。挑得再准，
+「主窗被举到设置前面」也躲不掉。
+
+修法：**日历独立成窗**（`CalendarWindow`，780×420，与面板尺寸一致）。
+
+- 开它谁都不碰：不举主窗、不动设置。从设置点开，天然是「日历 → 设置 → 主窗」；
+  从主窗 ⌘⇧Y 点开，主窗也不动。
+- 只留一扇：再点一次把同一扇提到前面并刷新数据；Esc 可收；`setFrameAutosaveName`
+  记住位置。
+- 机器大扫除：`CalendarRequest` 的 pending/consume/等窗回来/openMain 兜底全拆，
+  只留 `weak var coordinator`（`wtmdApp` 启动时装）+ `show()` 直读主窗那本字数账；
+  #176 的 `calendarHost` 一并退休。
+- 新隐患随手堵上：日历成了普通窗后可能被当成「主窗」举起来——`WindowInfo` 新增
+  `isAuxiliary`（按 `window.identifier` 认），`pick` / `defersToSystem` 跳过它，
+  Dock 图标永远举写作窗口。
+
+#### 测试
+
+851 → 847（-4，+7/-11）：`CalendarWindowTests` 3 条（单窗复用、**z-order 断言**、
+附属窗身份）+ `CalendarRequestTests` 重写 3 条；sheet 账目与旧挑窗用例退休。
+
+#### 教训
+
+- **sheet 会强拖宿主窗到前面**：「从 A 窗打开的东西不该重排 A 之外的窗」这类需求，
+  别用 sheet——独立小窗才是对的容器。
+- **层次断言用 `NSApp.orderedWindows` 可写**，但先拿探针证伪（把主窗提到前面，
+  断言立刻红）再信它测的是真层次。
