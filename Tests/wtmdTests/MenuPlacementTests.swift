@@ -16,7 +16,8 @@ import Testing
 struct MenuPlacementTests {
     @Test("File 菜单挂在存在的分组上，七条命令一个不少")
     func theFileMenuIsPlacedInAGroupThatExists() throws {
-        let app = try source("wtmdApp.swift")
+        // 只看代码：注释里写着「别用 .saveItem」是好事，不该因此判红。
+        let app = try strippingComments(source("wtmdApp.swift"))
 
         // `.saveItem` 在非文档型应用里不存在：replacing 它 = 整组蒸发。
         #expect(
@@ -53,6 +54,17 @@ struct MenuPlacementTests {
     }
 
     // MARK: - 从源码里抓事实
+
+    /// 剥掉行注释。守卫要判的是代码，注释里提到 `.saveItem` 是在解释为什么不能
+    /// 用它——第一版守卫就是被这句注释绊红的（本地先跑过，注释是之后补的）。
+    private func strippingComments(_ text: String) -> String {
+        text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line in
+                guard let cut = line.range(of: "//") else { return String(line) }
+                return String(line[..<cut.lowerBound])
+            }
+            .joined(separator: "\n")
+    }
 
     /// 命令的 case 名 → id（`case .save: return "file.save"`）。
     ///
