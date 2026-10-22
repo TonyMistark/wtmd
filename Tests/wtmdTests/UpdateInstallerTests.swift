@@ -419,3 +419,72 @@ struct UpdateInstallerAssemblyTests {
         #expect(app.contains("environmentObject(shared.installer)"))
     }
 }
+
+// MARK: - 重启
+
+/// 「装完退出，再也没打开」的守卫（#195）。
+///
+/// 真机探针实证：新版本已经躺在同一个路径上、bundle id 也一模一样，直接
+/// `NSWorkspace.openApplication` 只会激活「正在退场的自己」——回调里拿到的 pid
+/// 就是自己，`launch` 日志只有一条，新进程一个都没起。所以重启必须是
+/// **等我们退干净，再由别的进程 open**：一个不 wait 的 `/bin/sh` 子进程，
+/// 父进程退出后它被 launchd 收养，等 pid 消失再开新版。
+@Suite("重启：退出之后再打开")
+struct UpdateRelaunchTests {
+    private var installerSource: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/wtmd/UpdateInstaller.swift")
+    }
+
+    @Test("重启用的是「等本进程退出后 open」，而不是当场 open")
+    func theScriptWaitsForTheOldProcessToGoAway() {
+        let app = URL(fileURLWithPath: "/Applications/wtmd.app")
+        let script = UpdateInstaller.relaunchScript(waitingFor: 4242, opening: app)
+
+        #expect(script.contains("kill -0 4242"), "脚本没有等旧进程退出——那就又回到「激活自己」了")
+        #expect(
+            script.contains("/usr/bin/open -n '/Applications/wtmd.app'"),
+            "脚本里没有 open 新版（或没带 -n）"
+        )
+        #expect(
+            script.contains("[ $i -lt 75 ]"),
+            "等待没有上限——旧进程万一卡着不退，新版就永远不开"
+        )
+    }
+
+    @Test("带空格的路径整段加引号，不会被拆成两个参数")
+    func spacesSurviveTheShell() {
+        let path = "/Users/ice/My Apps/wtmd.app"
+        #expect(UpdateInstaller.shellQuoted(path) == "'/Users/ice/My Apps/wtmd.app'")
+        let script = UpdateInstaller.relaunchScript(waitingFor: 1, opening: URL(fileURLWithPath: path))
+        #expect(script.contains("'/Users/ice/My Apps/wtmd.app'"))
+    }
+
+    @Test("路径里有单引号也转义得住")
+    func quotesSurviveTheShell() {
+        #expect(
+            UpdateInstaller.shellQuoted("/tmp/it's here/wtmd.app") == "'/tmp/it'\\''s here/wtmd.app'"
+        )
+    }
+
+    @Test("relaunch 走派生重启器这条路，并留了强制新实例的退路")
+    func relaunchSpawnsTheHelper() throws {
+        // 只看代码：注释里写着「不能直接 openApplication」是在解释原因，不该判红。
+        let source = try String(contentsOf: installerSource, encoding: .utf8)
+        let code = source.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                guard let cut = line.range(of: "//") else { return String(line) }
+                return String(line[..<cut.lowerBound])
+            }
+            .joined(separator: "\n")
+
+        #expect(code.contains("spawnRelauncher("), "重启没走「退出后再打开」那条路")
+        #expect(
+            code.contains("createsNewApplicationInstance = true"),
+            "连退路都没留：子进程起不来时得强制新实例，不能什么都不开"
+        )
+    }
+}

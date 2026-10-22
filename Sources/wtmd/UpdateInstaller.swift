@@ -350,12 +350,53 @@ final class UpdateInstaller: ObservableObject {
 
     // MARK: - 重启
 
-    /// 先拉起新的，再让自己退场——顺序反了就没有「下一次」了。
+    /// 重启进新装的那份。
+    ///
+    /// **不能直接 `openApplication`**：新版已经躺在同一个路径上、bundle id 也一模一样，
+    /// LaunchServices 只会把「正在退场的自己」激活一下——回调里拿到的是**自己的 pid**，
+    /// 一个新进程都没起。用户看到的就是「装完退出，再也没打开」（#195 真机探针实证：
+    /// `openApplication returned pid=<自己>`，日志里只有一条 launch）。
+    ///
+    /// 于是把「等我们退干净，再开新版」交给一个脱离本进程的 shell：它是我们的子进程，
+    /// 我们不 wait，父进程退出后它被 launchd 收养，继续等、继续开。
     nonisolated static func relaunch(into installed: URL) async throws {
-        let configuration = NSWorkspace.OpenConfiguration()
-        try await NSWorkspace.shared.openApplication(at: installed, configuration: configuration)
-        // 给新进程一点起跑时间，再让自己退场
-        try? await Task.sleep(nanoseconds: 500_000_000)
+        do {
+            try spawnRelauncher(
+                waitingFor: ProcessInfo.processInfo.processIdentifier,
+                opening: installed
+            )
+        } catch {
+            // 派生子进程被拒（沙箱）时的退路：强制新实例，至少窗口能回来。
+            // 代价是可能和还没退干净的自己短暂并存，比什么都没有强。
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.createsNewApplicationInstance = true
+            try await NSWorkspace.shared.openApplication(at: installed, configuration: configuration)
+        }
         await MainActor.run { NSApp.terminate(nil) }
+    }
+
+    /// 交给 `/bin/sh` 的那段话：等 `pid` 消失（最多 15 秒）再开新版。
+    ///
+    /// `-n` 是保险：旧进程真要卡着不退（例如保存冲突弹窗挡住了退出），也强制起
+    /// 一个新实例，别让用户对着一片空桌面。
+    nonisolated static func relaunchScript(waitingFor pid: Int32, opening app: URL) -> String {
+        "i=0; while kill -0 \(pid) 2>/dev/null && [ $i -lt 75 ]; do sleep 0.2; i=$((i+1)); done; "
+            + "exec /usr/bin/open -n \(shellQuoted(app.path))"
+    }
+
+    /// 单引号包住路径：`~/Applications/…` 这类带空格的路径不会被拆成两个参数。
+    /// 单引号自己用 `'\''` 转义（shell 里唯一稳妥的写法）。
+    nonisolated static func shellQuoted(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// 派生那个「收尸重启」的子进程；不等它——它要活到我们退场之后。
+    nonisolated static func spawnRelauncher(waitingFor pid: Int32, opening app: URL) throws {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", relaunchScript(waitingFor: pid, opening: app)]
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+        try task.run()
     }
 }
