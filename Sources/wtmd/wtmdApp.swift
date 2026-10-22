@@ -20,6 +20,9 @@ struct wtmdApp: App {
         CrashBreadcrumbs.note("launch wtmd \(CrashEnvironment.appVersion)")
 
         let coordinator = WindowCoordinator(shared: shared)
+        // 设置里那个「打开写作日历」：设置窗口是独立场景，手里没有窗口表，
+        // 靠这一句找得到主窗那本字数账。
+        CalendarRequest.coordinator = coordinator
         _shared = StateObject(wrappedValue: shared)
         _coordinator = StateObject(wrappedValue: coordinator)
     }

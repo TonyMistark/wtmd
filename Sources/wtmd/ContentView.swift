@@ -81,14 +81,6 @@ struct ContentView: View {
                 close: { store.historyVisible = false }
             )
         }
-        // 写作日历：一年里每天的净增，一眼看完
-        .sheet(isPresented: $store.calendarVisible) {
-            WritingCalendarPanel(
-                days: calendarDays,
-                goal: writing.dailyGoal,
-                close: { store.calendarVisible = false }
-            )
-        }
         // 上次崩了（或读者点了「报告问题」）：说清楚发生了什么，给一条去 GitHub 的路
         .sheet(isPresented: $store.crashVisible) {
             CrashPanel(
@@ -116,8 +108,6 @@ struct ContentView: View {
             // 把「开设置」这件事交给命令层：菜单、⌘K、设置窗口走的是同一条路，
             // 它们都拿不到视图环境，只有这里能。
             SettingsWindow.install { openSettings() }
-            // 设置里点过「打开写作日历」，而这扇窗当时还没回来：现在把它摊开。
-            if CalendarRequest.consume() { store.showCalendar() }
         }
         .overlay {
             ZStack {
@@ -465,7 +455,7 @@ struct ContentView: View {
         let goal = writing.dailyGoal
         let reached = WritingGoal.isReached(total: total, goal: goal)
         return Button {
-            store.showCalendar()
+            CalendarWindow.show(store: store, goal: goal)
         } label: {
             HStack(spacing: 6) {
                 Text(t(
@@ -482,14 +472,6 @@ struct ContentView: View {
             "Net characters written today — deleting takes them back off. Click for the whole year; the goal is under Settings › Theme › Writing.",
             "今天净增的字数，删字会扣回去。点开看这一年。目标在「设置 › 主题 › 写作」里改。"
         ))
-    }
-
-    /// 最近一年逐日净增。面板每次打开算一遍——365 次字典查找，不值得缓存。
-    private var calendarDays: [WritingCalendar.Day] {
-        guard let stats = store.writingStats else { return [] }
-        return WritingCalendar.days(endingAt: Date(), count: 365, calendar: .current) {
-            stats.total(on: $0)
-        }
     }
 
     private func goalBar(fraction: Double, reached: Bool) -> some View {

@@ -187,24 +187,6 @@ struct OpenWindowBridge: View {
                     guard let coordinator else { return }
                     coordinator.openNewWindow(inheriting: coordinator.primary.workspace.root)
                 }
-                // 设置里那个「打开写作日历」：日历是这扇窗上的 sheet，只有这里能摊开。
-                // 缩进 Dock 的窗也算数（`isVisible` 对它返回 false）——漏了它，
-                // 主窗收起来时点日历会另开一扇重复的主窗。摊在选中的那扇上，
-                // 不一定是主窗：主窗关掉后还剩副窗时，不该为一页日历开新窗。
-                CalendarRequest.present = { [weak coordinator] in
-                    guard let coordinator else { return false }
-                    let others = coordinator.windows.values
-                        .filter { $0.id != coordinator.primary.id }
-                    guard let target = AppActivation.calendarHost(
-                        primary: coordinator.primary,
-                        candidates: Array(others),
-                        info: { coordinator.window(for: $0.id).map(AppActivation.info) }
-                    ), let window = coordinator.window(for: target.id)
-                    else { return false }
-                    AppActivation.bringToFront(window)
-                    target.store.showCalendar()
-                    return true
-                }
             }
     }
 }

@@ -229,61 +229,70 @@ struct AppDockMenuTests {
 
 // MARK: - 从设置里打开写作日历
 
-/// 日历是写作窗口上的一张 sheet，设置窗口里没有那份 `DocumentStore`——
-/// 所以按钮不能自己打开它，只能留一条请求，由窗口那边接单。这几条钉住
-/// 「谁摊开、谁记账、记一次就够」。
+/// 日历是一扇自己的窗（`CalendarWindow`），设置窗口里没有那份 `DocumentStore`——
+/// 所以入口靠 `CalendarRequest` 回到窗口表上取主窗那本账。这几条钉住
+/// 「有表就开窗、没表不崩」。
 @Suite("设置里打开写作日历", .serialized)
 @MainActor
 struct CalendarRequestTests {
-    @Test("窗口在：当场摊开，不叫开窗，也不记账")
-    func presentsInTheExistingWindow() {
-        var opened = 0
-        var presented = 0
-        CalendarRequest.present = { presented += 1; return true }
-        AppActivation.openMain = { opened += 1 }
-        defer { restore() }
+    @Test("没有窗口表：什么都不发生，也不崩")
+    func doesNothingWithoutCoordinator() {
+        let previous = CalendarRequest.coordinator
+        defer { CalendarRequest.coordinator = previous }
+
+        CalendarRequest.coordinator = nil
+        CalendarWindow.close()
+        CalendarRequest.show()
+
+        #expect(!CalendarWindow.isVisible, "没有表就不该凭空开出一扇日历")
+    }
+
+    @Test("有窗口表：把日历开出来，读的是主窗那本账")
+    func opensTheCalendarFromTheWindowTable() throws {
+        let previous = CalendarRequest.coordinator
+        defer {
+            CalendarRequest.coordinator = previous
+            CalendarWindow.close()
+        }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wtmd-calendar-request-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let defaults = UserDefaults(suiteName: "wtmd.calendar.\(UUID().uuidString)")!
+        let shared = SharedAppEnvironment(
+            writingStats: WritingStats(defaults: defaults),
+            recentFiles: RecentFiles(userDefaults: defaults),
+            conflicts: ConflictArchive(directory: root.appendingPathComponent("conflicts")),
+            history: DocumentHistory(directory: root.appendingPathComponent("history"))
+        )
+        let coordinator = WindowCoordinator(
+            shared: shared,
+            primary: WindowModel(
+                session: Session(persist: false, defaults: defaults),
+                shared: shared,
+                draftDirectory: root.appendingPathComponent("primary", isDirectory: true),
+                startsBlank: true
+            ),
+            draftRoot: root,
+            defaults: defaults
+        )
+        CalendarRequest.coordinator = coordinator
 
         CalendarRequest.show()
 
-        #expect(presented == 1)
-        #expect(opened == 0)
-        #expect(CalendarRequest.consume() == false, "窗口当场处理了，不该再记一笔")
+        #expect(CalendarWindow.isVisible, "设置里点日历，该开出一扇日历窗")
+        #expect(CalendarWindow.isShowing(store: coordinator.primary.store))
     }
 
-    @Test("窗口不在：先把账记上，再叫它回来")
-    func keepsTheRequestWhenNoWindowIsAround() {
-        var opened = 0
-        CalendarRequest.present = { false }
-        AppActivation.openMain = { opened += 1 }
-        defer { restore() }
-
-        CalendarRequest.show()
-
-        #expect(opened == 1)
-        #expect(CalendarRequest.pending)
-    }
-
-    @Test("兑现一次就划掉：同一次请求不会摊两遍")
-    func consumesOnlyOnce() {
-        CalendarRequest.present = nil
-        defer { restore() }
-
-        CalendarRequest.show()
-
-        #expect(CalendarRequest.consume())
-        #expect(CalendarRequest.consume() == false)
-    }
-
-    @Test("整条路接得上：设置里有按钮，窗口根视图接单，窗口出现时兑现")
+    @Test("装配：设置页有按钮，应用启动时把窗口表装上")
     func thePathIsWired() throws {
         let settings = try source("SettingsPages.swift")
         #expect(settings.contains("CalendarRequest.show()"), "设置里没有打开日历的按钮")
 
-        let root = try source("WindowRoot.swift")
-        #expect(root.contains("CalendarRequest.present ="), "窗口根视图没接单")
-
-        let content = try source("ContentView.swift")
-        #expect(content.contains("CalendarRequest.consume()"), "窗口出现时没人兑现这笔账")
+        let app = try source("wtmdApp.swift")
+        #expect(app.contains("CalendarRequest.coordinator = coordinator"), "启动时没把窗口表装上")
     }
 
     private func source(_ name: String) throws -> String {
@@ -293,103 +302,6 @@ struct CalendarRequestTests {
             .deletingLastPathComponent()
             .appendingPathComponent("Sources/wtmd/\(name)")
         return try String(contentsOf: url, encoding: .utf8)
-    }
-
-    private func restore() {
-        CalendarRequest.present = nil
-        AppActivation.openMain = nil
-        _ = CalendarRequest.consume()
-    }
-}
-
-// MARK: - 日历摊在哪扇窗
-
-/// 设置里点「打开写作日历」，`present` 要挑一扇窗来摊。这里钉住挑选的
-/// 口径：**缩进 Dock 的窗也算数**——`isVisible` 对缩着的窗返回 `false`，
-/// 漏了它，主窗收在 Dock 里时点日历会另开一扇重复的主窗，日历还摊在
-/// 新窗上（用户实测踩过）。
-@Suite("日历摊在哪扇窗")
-struct CalendarHostTests {
-    private func info(miniaturized: Bool, sheet: Bool = false, canBecomeKey: Bool = true) -> AppActivation.WindowInfo {
-        .init(
-            isVisible: !miniaturized,
-            isMiniaturized: miniaturized,
-            isSheet: sheet,
-            canBecomeKey: canBecomeKey,
-            isPanel: false
-        )
-    }
-
-    private func host(
-        primaryMiniaturized: Bool,
-        primaryWindow: Bool = true
-    ) -> Int? {
-        AppActivation.calendarHost(
-            primary: 0,
-            candidates: [1, 2],
-            info: { id in
-                switch id {
-                case 0: primaryWindow ? info(miniaturized: primaryMiniaturized) : nil
-                case 1: info(miniaturized: false)
-                default: info(miniaturized: true)
-                }
-            }
-        )
-    }
-
-    @Test("主窗看得见：摊在主窗上")
-    func visiblePrimaryHosts() {
-        #expect(host(primaryMiniaturized: false) == 0)
-    }
-
-    @Test("主窗缩在 Dock 里：也算数，摊在主窗上")
-    func miniaturizedPrimaryStillHosts() {
-        // 旧实现只认 isVisible，这里会判成「没有窗」而另开主窗。
-        #expect(host(primaryMiniaturized: true) == 0)
-    }
-
-    @Test("主窗的窗体不在了：退而求其次，挑一扇挂得上的")
-    func fallsBackToAnotherWindow() {
-        #expect(host(primaryMiniaturized: false, primaryWindow: false) == 1)
-        // 两扇副窗里第一扇也缩着，照样能接——挑得到就行。
-        #expect(
-            AppActivation.calendarHost(
-                primary: 0, candidates: [1], info: { _ in nil }
-            ) == nil,
-            "谁都没有窗体时，还是该走「开新窗」的兜底"
-        )
-    }
-
-    @Test("sheet 与不能当主的窗不算数")
-    func sheetsDoNotHost() {
-        #expect(
-            AppActivation.calendarHost(
-                primary: 0,
-                candidates: [1],
-                info: { $0 == 0 ? info(miniaturized: false, sheet: true) : info(miniaturized: false) }
-            ) == 1
-        )
-        #expect(
-            AppActivation.calendarHost(
-                primary: 0,
-                candidates: [],
-                info: { _ in info(miniaturized: false, canBecomeKey: false) }
-            ) == nil
-        )
-    }
-
-    @Test("装配：窗口根视图用 calendarHost 挑目标，账记在目标那扇上")
-    func thePathIsWired() throws {
-        let root = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("Sources/wtmd/WindowRoot.swift"),
-            encoding: .utf8
-        )
-        #expect(root.contains("AppActivation.calendarHost"), "挑选口径没有走纯函数，测试钉不住它")
-        #expect(root.contains("target.store.showCalendar()"), "日历该摊在选中的那扇窗的账上")
     }
 }
 
