@@ -548,3 +548,27 @@ EnvironmentObject 是 `assertionFailure` 级别的硬崩，没有软着陆。
   平时看不出来——装配守卫必须扫源码全量比对，不能靠哪次手气好没踩到。
 - 崩溃报告里的时间字段要信轨迹别信单点：`time` 与「轨迹尾 - id 时刻」对不上时，
   先怀疑记录机制本身。
+
+### v0.15.10（2026-10-22）— 开发版的现场不混进读者的账本（#147）
+
+面板里出现「[Crash] wtmd did not shut down normally · vdev」：那是 `swift run`
+出来的开发版，开发时被 `kill -9`、被重编译挤掉都是常态。隔离目录复现确认——
+dev 二进制硬杀一次，下次启动就积一份「没有正常退出」。读者看到的是一行像
+崩溃的记录，还会一路提交成 issue。真实机器上 15 份报告 9 份是 `dev`。
+
+修法：
+
+- 版本号是 `dev` 时账本落在 `crashes-dev/`，正式版仍是 `crashes/`
+  （`CrashStore.directoryName(forVersion:)` 一个纯函数定规矩）。
+- 正式版的面板不列 `version: dev` 的报告——文件留着，只是不显示，存量垃圾
+  升级后自动从视野里消失。
+- 开发版自己跑起来时过滤是关的（`hidesDevelopmentReports` 跟
+  `CrashEnvironment.isDevelopmentBuild` 走），自己看得见自己的现场。
+
+测试 851 → 855。反向验证：把目录名改回恒 `crashes`、去掉 reload 过滤，
+两条用例当场红；端到端用真 dev 二进制硬杀后重启，报告确实落在 `crashes-dev/`。
+
+#### 教训
+
+- **开发产物和读者的数据必须分账**：dev 的崩溃、日志、临时状态混进正式目录，
+  迟早会被当成「应用的 bug」。分账只要一个纯函数，比事后过滤便宜得多。
