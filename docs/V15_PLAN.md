@@ -431,3 +431,49 @@ target/action、「新建窗口」调到新窗通道、通道没装上时退回�
   `onAppear` 里赋值赶不上第一次触发的搜索。
 - **探针等 MainActor 上的 Task 别用 `RunLoop.run`**——它不恢复挂起的任务；
   用 `try await Task.sleep`。
+
+## v0.15.7（2026-10-22）——更新一步到位
+
+### 一键更新（#173）
+
+查出新版本之后，原先只能「跳去发布页，自己挂 dmg 拖进去」。现在点徽标
+（或设置 →「应用与帮助」里的「现在更新…」）就把整条路走完：
+
+- **挑包**：`UpdateChecker` 解析 release 的 assets，挑 version 对得上的 `.dmg`；
+  字段缺失的 asset 直接跳过（GitHub 的 assets 字段并非全部必填）。
+- **装**：`UpdateInstaller` 下载（256 KB 一块，1% 一步的进度）→
+  `hdiutil attach -readonly -nobrowse` → 在 `/Applications` 旁边暂存
+  `wtmd.app.update-<uuid>` → `xattr -cr` 摘掉 quarantine → 核对 bundle 版本
+  （下错包就当失败，不拿错的东西顶替）→ 旧版进废纸篓（进不去就改名让路）→
+  改名上位。
+- 全程可注入（`Steps` / `Locations`）：测试不碰真的 `/Applications`，也不真下载；
+  `run` 有重入保护，正在装的时候再点不会开第二条流水线。
+- 装完先拉起新的一份再 `NSApp.terminate`——人看到的是「它自己重启了」。
+- 零依赖：不引 Sparkle。
+
+### 写作日历摊在哪扇窗（#175）
+
+设置里点「打开写作日历」，会先冒出一扇**新的主界面**，日历还摊在新窗上。
+根因是挑窗那一步用了 `window.isVisible`——而 **`NSWindow.isVisible` 对缩进
+Dock 的窗返回 `false`**：主窗收在 Dock 里时被判成「没有窗」，兜底逻辑于是
+开出重复的主窗（同一个 `primary` 模型），日历就落在新窗上。
+
+修法：`AppActivation.calendarHost(primary:candidates:info:)` —— 缩着的窗也算数
+（`isVisible || isMiniaturized`），主窗优先，主窗窗体不在（⌘W 关过）才从剩下的
+窗里挑；sheet 与不能当主的窗不算（与 `pick` 同口径）。叫醒缩着的窗交给
+`bringToFront`（它本来就会 `deminiaturize`，顺路仍是神灯）。日历记在**选中的
+那扇窗**的账上，不再永远记主窗。
+
+### 测试
+
+829 → 851（+22）：一键更新 17 条（挑包、下载、挂载、装配、版本核对、
+旧版让路、失败降级、重入保护）、日历挑窗 5 条（含「主窗缩在 Dock 里也算数」
+的回归用例与装配断言）。反向验证照例全红后复绿。
+
+### 教训
+
+- **判「窗在不在」别用 `isVisible` 一个人**：它把「缩着」和「关了」混成一种
+  状态。要按 `AppActivation.pick` 的口径——`isVisible || isMiniaturized`，
+  再排掉 sheet 与 `canBecomeKey == false`。
+- 兜底路径（`openMain`）会**开新窗**，所以「该不该走兜底」的判据必须准：
+  判错一次，人看到的就是一扇凭空多出来的主界面。
