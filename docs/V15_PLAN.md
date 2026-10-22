@@ -511,3 +511,40 @@ Dock 的窗返回 `false`**：主窗收在 Dock 里时被判成「没有窗」�
   别用 sheet——独立小窗才是对的容器。
 - **层次断言用 `NSApp.orderedWindows` 可写**，但先拿探针证伪（把主窗提到前面，
   断言立刻红）再信它测的是真层次。
+
+### v0.15.9（2026-10-22）— 徽标一出现就闪退（#181）
+
+装着 0.15.7 的人等来新版本，徽标「vX 可用」一渲染，应用直接 SIGTRAP。
+轨迹里启动（11:09）与崩溃（12:46）隔着一小时三十七分——这本身就是线索：
+崩的不是启动，是**徽标出现的那个瞬间**。
+
+根因：`ContentView` 声明了 `@EnvironmentObject var installer`，但 `installer`
+只注进了 **Settings 场景**；两个 WindowGroup 走的 `WindowRoot` 漏了它。
+更刁的是它不崩在装上那天——徽标只在 `status == .available` 时才读
+`installer.phase`，装 0.15.7 时 GitHub 最新还是 0.15.7（「已是最新」），
+等下一个版本发布、状态一变，徽标一出现就崩。SwiftUI 对取不到的
+EnvironmentObject 是 `assertionFailure` 级别的硬崩，没有软着陆。
+
+修法两层：
+
+- `WindowRoot` 补注 `.environmentObject(model.shared.installer)`；
+- **装配守卫**（`WindowEnvironmentTests`，2 条）：从源码抓事实，`ContentView`
+  声明的每个 `@EnvironmentObject`，`WindowRoot` 必须注入；反向也守——注入的
+  必须是真读的。这类「声明 ⇒ 注入」的漂移，靠人记必挂，靠测试钉死。
+
+顺手修了排查路上被带偏的半小时：崩溃报告的 `time:` 一直是**启动**时刻——
+现场文件是启动时预建的，`harvest` 拿文件创建时间当崩溃时间。现在信号处理器
+当场写一行 `t <unix秒>`（`gettimeofday` + 定长栈缓冲，零分配），`harvest`
+优先信它，旧格式回退创建时间。
+
+#### 测试
+
+847 → 851（+4）：装配守卫 2（先在未修代码上红、点名 `["installer"]`）
++ harvest 时间戳 2。
+
+#### 教训
+
+- **EnvironmentObject 缺失不是警告，是 SIGTRAP**；而且「仅某分支才读」的依赖
+  平时看不出来——装配守卫必须扫源码全量比对，不能靠哪次手气好没踩到。
+- 崩溃报告里的时间字段要信轨迹别信单点：`time` 与「轨迹尾 - id 时刻」对不上时，
+  先怀疑记录机制本身。
