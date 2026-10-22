@@ -45,7 +45,12 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView(
             columnVisibility: Binding(
-                get: { store.sidebarVisible ? .automatic : .detailOnly },
+                // 别用 `.automatic`：窗口不够宽时系统会自作主张把侧栏折起来，
+                // 但 `sidebarVisible` 仍是 true——菜单打着勾、快捷键按下去
+                // true→false→true，画面一个像素都不动（⌃L / ⌥S 那两次「改派无效」
+                // 其实都是它）。状态必须是唯一事实来源：开就显式展开（`.all`），
+                // 关才收起。
+                get: { store.sidebarVisible ? .all : .detailOnly },
                 set: { store.sidebarVisible = $0 != .detailOnly }
             )
         ) {
