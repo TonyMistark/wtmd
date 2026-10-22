@@ -720,3 +720,53 @@ get: { store.sidebarVisible ? .all : .detailOnly }
 - **`NavigationSplitView` 的 `.automatic` 不是「跟随状态」，是「系统说了算」**：
   想让布尔状态当事实来源，就写显式的 `.all` / `.detailOnly`。
 - 截图是最好的判据：`state` 是谁的 state、画面上到底有没有侧栏，一对就知道谁撒谎。
+
+### v0.15.14（2026-10-22）— 更新装完，人没回来（#195）
+
+用户第一次用一键更新（0.15.12 → 0.15.13）：检查、下载、安装全部正常，应用也按要求退出——
+**然后再也没打开**，得自己去 Launchpad 里点。
+
+#### 排查
+
+同 bundle id、同路径的小 app 复现「重启」那一步：
+
+```
+pid=3161 launch
+pid=3161 openApplication returned pid=3161 error=nil
+```
+
+`NSWorkspace.openApplication` 的回调里拿到的 pid **就是自己**，日志里也只有一条 `launch`。
+原因：新版本装的是同一个路径、同一个 bundle id，LaunchServices 认为这个 app 已经在运行，
+于是只「激活」那个正在退场的实例，一个新进程都没起。而旧实现先 `openApplication`、
+`sleep 0.5s`、再 `terminate`，正好把重启压在旧进程还活着的那个空档里。
+
+#### 修复
+
+把「等我们退干净，再开新版」交给一个**不 wait 的 `/bin/sh`**（父进程退出后被 launchd 收养）：
+
+```sh
+i=0; while kill -0 <pid> 2>/dev/null && [ $i -lt 75 ]; do sleep 0.2; i=$((i+1)); done
+exec /usr/bin/open -n '<新路径>'
+```
+
+- `kill -0` 只探活不杀；pid 消失（我们真退干净了）才 `open`；
+- 15 秒上限 + `-n`：旧进程卡着不退（冲突弹窗挡住退出）也强制起新实例；
+- 路径单引号包裹，`~/Applications` 带空格也不会被拆成两个参数；
+- 派生子进程被拒（沙箱）时退回 `createsNewApplicationInstance = true` 的 `openApplication`，
+  宁可两个实例短暂并存，也不给用户一片空桌面。
+
+探针复测（`new` 模式）：日志出现**新 pid 的 launch**（3161 退出 → 3236 → 3242 依次启动）。
+
+#### 测试
+
+864 → 868（+4）：新 `UpdateRelaunchTests`——脚本确实等旧 pid、等待有上限、路径含空格 /
+单引号转义得住、`relaunch` 走派生重启器并留了强制新实例的退路。反向验证：把 `relaunch`
+换回旧实现，守卫当场红。
+
+#### 教训
+
+- **「启动自己」不能用「打开这个 app」表达**：同路径同 bundle id 时，LaunchServices
+  把它读成「已经开着」，你要的是一个新进程。要新进程就得在旧进程死透之后、
+  或者显式 `-n` / `createsNewApplicationInstance`。
+- 更新这种「自己替换自己再复活」的动作，测试里全是注入闭包，真实现从没跑过——
+  注入是为了不碰真环境，但不能因此没人验；关键实现至少要有一条结构守卫 + 一次真机探针。
