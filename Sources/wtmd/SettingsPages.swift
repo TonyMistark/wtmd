@@ -221,9 +221,10 @@ struct AppSettingsView: View {
     @EnvironmentObject var updates: UpdateChecker
     @EnvironmentObject var installer: UpdateInstaller
     @EnvironmentObject var crashes: CrashStore
-    /// 界面语言。空串 = 跟随系统；`L10n.userPreference` 直接读同一个
-    /// UserDefaults 键，这里写进去那边就能看到。
-    @AppStorage("wtmd.language") private var languageChoice = ""
+    /// 界面语言。默认显示「简体中文」（出厂值），空串 = 用户显式选了
+    /// 「跟随系统」；`L10n.userPreference` 直接读同一个 UserDefaults 键，
+    /// 这里写进去那边就能看到。
+    @AppStorage("wtmd.language") private var languageChoice = Language.chinese.rawValue
 
     var body: some View {
         Form {
