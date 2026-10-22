@@ -129,7 +129,11 @@ enum CrashCatcher {
 
     // MARK: 信号
 
-    /// 被信号打死：写下信号名与栈，然后把处理权交还系统。
+    /// 被信号打死：写下信号名、**崩溃时刻**与栈，然后把处理权交还系统。
+    ///
+    /// 时刻必须当场写：现场文件是启动时预建的，`harvest` 只看得到文件的创建
+    /// 时间——那其实是**启动**时间。#181 的报告里 `time:` 因此写成了 11:09
+    /// （启动时刻），真崩在 12:46，排查时被它带偏了半小时。
     static func write(signal sig: Int32) {
         let fd = inflightFD
         guard fd >= 0 else { return }
@@ -137,6 +141,8 @@ enum CrashCatcher {
             writeText("kind signal\n", to: fd)
             writeText("signal ", to: fd)
             writeSignalName(sig, to: fd)
+            writeText("t ", to: fd)
+            writeTimestamp(to: fd)
             writeText("frames\n", to: fd)
             frames.withUnsafeMutableBufferPointer { buffer in
                 guard let base = buffer.baseAddress else { return }
@@ -162,6 +168,8 @@ enum CrashCatcher {
         var text = "kind exception\n"
         text += "exception \(exception.name.rawValue)\n"
         text += "reason \(CrashReport.oneLine(exception.reason ?? ""))\n"
+        // 不在信号上下文里，可以正常格式化时刻。
+        text += "t \(Int(Date().timeIntervalSince1970))\n"
         text += "frames\n"
         text += Thread.callStackSymbols.prefix(96).joined(separator: "\n")
         text += "\nend\n"
@@ -210,6 +218,12 @@ enum CrashCatcher {
         }
     }
 
+    /// 裸字节写：给「临时缓冲里现拼的内容」用（时间戳的数字）。
+    private static func writeText(unsafe bytes: UnsafeBufferPointer<UInt8>, to fd: Int32) {
+        guard let base = bytes.baseAddress, bytes.count > 0 else { return }
+        _ = Darwin.write(fd, base, bytes.count)
+    }
+
     /// 信号名写成字面量：`String(format:)` 要分配，处理器里不能用。
     private static func writeSignalName(_ sig: Int32, to fd: Int32) {
         switch sig {
@@ -220,6 +234,27 @@ enum CrashCatcher {
         case SIGFPE: writeText("SIGFPE\n", to: fd)
         case SIGTRAP: writeText("SIGTRAP\n", to: fd)
         default: writeText("SIG\n", to: fd)
+        }
+    }
+
+    /// 当前的 Unix 秒数，写成一行十进制（结尾没有换行，调用方自己补）。
+    ///
+    /// `gettimeofday` 与定长栈缓冲都是异步信号安全的——不碰堆，不用 `String`。
+    private static func writeTimestamp(to fd: Int32) {
+        var now = timeval()
+        gettimeofday(&now, nil)
+        var value = UInt64(max(0, now.tv_sec))
+        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 20) { buffer in
+            var count = 0
+            repeat {
+                buffer[count] = UInt8(48 + value % 10) // '0'
+                value /= 10
+                count += 1
+            } while value > 0
+            // 数字是倒着填的：从最后一位往前写出去，正好正序。
+            for index in stride(from: count - 1, through: 0, by: -1) {
+                writeText(unsafe: UnsafeBufferPointer(start: buffer.baseAddress! + index, count: 1), to: fd)
+            }
         }
     }
 

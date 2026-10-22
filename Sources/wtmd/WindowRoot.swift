@@ -24,6 +24,8 @@ struct WindowRoot: View {
             .environmentObject(model.shared.typesetting)
             .environmentObject(model.shared.printing)
             .environmentObject(model.shared.updates)
+            // 一键更新在状态栏的徽标里读它——缺了这条，徽标一出现就是 SIGTRAP（#181）。
+            .environmentObject(model.shared.installer)
             .environmentObject(model.shared.overrides)
             .environmentObject(model.shared.themeManager)
             .environmentObject(model.shared.profile)

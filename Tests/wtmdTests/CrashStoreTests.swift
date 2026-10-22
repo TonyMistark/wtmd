@@ -20,9 +20,13 @@ private func writeInflight(
     in directory: URL,
     name: String = ".inflight-999999-1790000000.raw",
     signal: String = "SIGSEGV",
+    unixSeconds: UInt64? = nil,
     frames: Bool = true
 ) throws -> URL {
-    var text = "WTMDCRASH 1\nbase 0x104000000\nkind signal\nsignal \(signal)\nframes\n"
+    var text = "WTMDCRASH 1\nbase 0x104000000\nkind signal\nsignal \(signal)\n"
+    // 新格式才有这行：崩溃时刻由信号处理器当场写下（#181 之前没有）。
+    if let unixSeconds { text += "t \(unixSeconds)\n" }
+    text += "frames\n"
     if frames {
         text += "0   wtmd   0x0000000104a1b2c3 main + 12\n"
         text += "1   wtmd   0x0000000104a1c001 start + 1\n"
@@ -39,6 +43,44 @@ private func writeBreadcrumbs(_ lines: [String], in directory: URL) throws {
 }
 
 // MARK: - 收
+
+@MainActor
+@Test("崩溃时刻取现场里写下的那行，不用文件创建时间（=启动时间）")
+func harvestPrefersTheWrittenTimestampOverTheFileCreationDate() throws {
+    let root = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    // 文件是「启动时」建的（创建时间=现在）；现场里写的崩溃时刻是三小时前。
+    let crashAt = Date().addingTimeInterval(-3 * 3600)
+    let inflight = try writeInflight(
+        in: root, unixSeconds: UInt64(crashAt.timeIntervalSince1970)
+    )
+    let createdAt = try #require(
+        inflight.resourceValues(forKeys: [.creationDateKey]).creationDate
+    )
+
+    let store = CrashStore(directory: root)
+    store.harvest()
+
+    let report = try #require(store.reports.first)
+    #expect(
+        abs(report.capturedAt.timeIntervalSince(crashAt)) < 1,
+        "崩溃时刻应来自现场那行 t（\(crashAt)），而不是文件创建时间（\(createdAt)）"
+    )
+}
+
+@MainActor
+@Test("旧格式的现场（没有 t 行）回退文件创建时间")
+func harvestFallsBackToCreationDateWithoutATimestamp() throws {
+    let root = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    try writeInflight(in: root)
+
+    let store = CrashStore(directory: root)
+    store.harvest()
+
+    let report = try #require(store.reports.first)
+    #expect(abs(report.capturedAt.timeIntervalSinceNow) < 60)
+}
 
 @MainActor
 @Test("半成品整理成报告：原件删掉，轨迹与窗口数补进去")
