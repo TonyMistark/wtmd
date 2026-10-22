@@ -18,6 +18,9 @@ enum AppActivation {
         var isSheet: Bool
         var canBecomeKey: Bool
         var isPanel: Bool
+        /// 附属窗（写作日历那扇）。它看得见、能收键，但**不当主窗**——
+        /// 点 Dock 图标该举回来的是写作窗口，不是一张只读的账。
+        var isAuxiliary: Bool = false
     }
 
     enum Action: Equatable {
@@ -35,7 +38,7 @@ enum AppActivation {
     /// 随时会消失的窗口里，比什么都不做更让人困惑。
     static func pick(from windows: [WindowInfo], lastKey: Int? = nil) -> Action? {
         let eligible = windows.indices.filter {
-            !windows[$0].isSheet && windows[$0].canBecomeKey
+            !windows[$0].isSheet && windows[$0].canBecomeKey && !windows[$0].isAuxiliary
         }
         guard !eligible.isEmpty else { return nil }
 
@@ -72,32 +75,9 @@ enum AppActivation {
     /// 面板与 sheet 不算：它们缩不了，也不该把「还有一扇看得见的窗」这件事
     /// 从眼前挡掉。
     static func defersToSystem(_ windows: [WindowInfo]) -> Bool {
-        let eligible = windows.filter { !$0.isSheet && $0.canBecomeKey }
+        let eligible = windows.filter { !$0.isSheet && $0.canBecomeKey && !$0.isAuxiliary }
         guard !eligible.isEmpty else { return false }
         return eligible.allSatisfy { $0.isMiniaturized }
-    }
-
-    /// 设置里点「打开写作日历」：挑哪扇窗来摊这张 sheet。
-    ///
-    /// **缩进 Dock 的窗也算数**——`isVisible` 对缩着的窗返回 `false`，要是
-    /// 只认它，主窗收在 Dock 里时点日历会被判成「没有窗」，兜底逻辑就会
-    /// 另开一扇重复的主窗，日历还摊在那扇新窗上。缩着的窗交给
-    /// `bringToFront` 去叫醒，正好是神灯那条路。
-    ///
-    /// 主窗优先；主窗的窗体已经不在了（⌘W 关掉）就退而求其次，从剩下的
-    /// 窗里挑一扇挂得上的。sheet 与不能当主的窗不算数，与 `pick` 同一口径。
-    static func calendarHost<Element>(
-        primary: Element?,
-        candidates: [Element],
-        info: (Element) -> WindowInfo?
-    ) -> Element? {
-        func eligible(_ element: Element) -> Bool {
-            guard let item = info(element) else { return false }
-            return item.canBecomeKey && !item.isSheet
-                && (item.isVisible || item.isMiniaturized)
-        }
-        if let primary, eligible(primary) { return primary }
-        return candidates.first(where: eligible)
     }
 
     // MARK: - 动手
@@ -209,7 +189,8 @@ enum AppActivation {
             isMiniaturized: window.isMiniaturized,
             isSheet: window.sheetParent != nil,
             canBecomeKey: window.canBecomeKey,
-            isPanel: window is NSPanel
+            isPanel: window is NSPanel,
+            isAuxiliary: window.identifier == CalendarWindow.windowIdentifier
         )
     }
 
@@ -222,50 +203,23 @@ enum AppActivation {
     }
 }
 
-/// 从别的窗口打开写作日历。
+/// 从设置窗口打开写作日历。
 ///
-/// 日历是写作窗口上的一张 sheet，挂在那个窗口的 `DocumentStore` 上；设置窗口是
-/// 独立场景，手里没有那份 store。所以入口只能反过来：按下按钮的这一边不打开
-/// 任何东西，只留一句「有人要日历」，由窗口那边接单。
-///
-/// 窗口还在（哪怕缩着）就直接摊开；一扇都没有就先记着，等窗口回来再接。
+/// 日历现在是一扇自己的窗（`CalendarWindow`），不再挂在某扇写作窗上当 sheet，
+/// 所以这里也就不用再挑「哪扇窗来摊」——只要找得到窗口表，就读得到主窗那本
+/// 字数账，把日历开出来即可。设置窗口是独立场景，手里没有 `DocumentStore`，
+/// 靠这一个弱引用回到表上取。
 @MainActor
 enum CalendarRequest {
-    /// 由窗口根视图装进来。返回 `false` 表示眼下没有能摊开它的窗。
-    static var present: (() -> Bool)?
-
-    /// 窗还没开时先记的一笔。窗口出现（`ContentView` 的 `onAppear`）再兑现。
-    private(set) static var pending = false
+    /// 窗口表。`wtmdApp` 起来时装进来——它活得比任何一扇窗都久。
+    static weak var coordinator: WindowCoordinator?
 
     static func show() {
-        if present?() == true { return }
-        pending = true
-        // 开窗是异步的：这里只负责把窗叫回来，等它落地再摊开。
-        AppActivation.openMain?()
-        waitForWindow(attempts: 20)
-    }
-
-    /// 窗口从「关着」到「能摊 sheet」之间隔着好几帧（场景重建、视图装配）。
-    /// 与其猜一个延迟，不如隔一会儿问一句——问到了就把记的那一笔划掉，免得
-    /// 窗口下次出现时又莫名其妙弹一次。
-    private static func waitForWindow(attempts: Int) {
-        guard attempts > 0 else { return }
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 100_000_000)
-            // 这笔账已经被兑现（或撤掉）了就别再问——同一次请求只摊一次。
-            guard pending else { return }
-            if present?() == true {
-                pending = false
-                return
-            }
-            waitForWindow(attempts: attempts - 1)
-        }
-    }
-
-    /// 窗口出现了：该摊开的摊开。取用即清——同一次请求不该摊两次。
-    static func consume() -> Bool {
-        defer { pending = false }
-        return pending
+        guard let coordinator else { return }
+        CalendarWindow.show(
+            store: coordinator.primary.store,
+            goal: coordinator.primary.shared.writing.dailyGoal
+        )
     }
 }
 

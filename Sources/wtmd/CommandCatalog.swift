@@ -446,7 +446,7 @@ struct CommandRuntime {
         case .openFolder: workspace.openPanel()
         case .save: store.save()
         case .showHistory: store.showHistory()
-        case .showCalendar: store.showCalendar()
+        case .showCalendar: CalendarWindow.show(store: store, goal: writing.dailyGoal)
         case .exportHTML: store.exportHTML()
         case .exportWord: store.exportWord()
         case .exportPDF: store.exportPDF()

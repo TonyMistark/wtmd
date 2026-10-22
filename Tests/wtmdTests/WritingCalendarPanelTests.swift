@@ -93,26 +93,6 @@ struct WritingCalendarPanelTests {
 
     // MARK: 接线
 
-    @MainActor
-    @Test("打开写作日历：只开这一扇面板，不碰版本历史")
-    func showCalendarOnlyOpensTheCalendar() throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("wtmd-calendar-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let store = DocumentStore(
-            draftDirectory: root,
-            autoSaveDelay: 600_000_000_000,
-            history: DocumentHistory(directory: root.appendingPathComponent("history"))
-        )
-
-        #expect(!store.calendarVisible)
-        store.showCalendar()
-        #expect(store.calendarVisible)
-        #expect(!store.historyVisible)
-    }
-
     @Test("命令目录里有它：视图段、⌘⇧Y、挨着版本历史")
     func catalogCarriesTheCalendarCommand() throws {
         let command = try #require(
