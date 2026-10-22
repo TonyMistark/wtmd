@@ -53,7 +53,52 @@ struct MenuPlacementTests {
         }
     }
 
+    @Test("目录里的每条命令都有菜单项承载——否则改派快捷键就是个哑键")
+    func everyCataloguedCommandHasAMenuItem() throws {
+        let app = try strippingComments(source("wtmdApp.swift"))
+        let ids = try commandIdentifiers()
+        let carried = try menuItemNames(in: app)
+        let systemOwned = try systemOwnedNames()
+
+        let catalogued = Set(CommandCatalog.staticCommands.map(\.kind.id))
+        var checked = 0
+        for (name, id) in ids where catalogued.contains(id) {
+            checked += 1
+            if systemOwned.contains(name) { continue }
+            #expect(
+                carried.contains(name),
+                "命令 \(name)（\(id)）在目录里、在设置里能派快捷键，却没有菜单项——按下去没人接"
+            )
+        }
+        #expect(checked >= 15, "只对上了 \(checked) 条命令，源码解析和目录脱节了")
+    }
+
     // MARK: - 从源码里抓事实
+
+    /// 菜单里真正摆出来的命令（`menuItem(.save)` → `save`）。
+    private func menuItemNames(in text: String) throws -> Set<String> {
+        let regex = try NSRegularExpression(pattern: "menuItem\\(\\.(\\w+)\\)")
+        let range = NSRange(text.startIndex..., in: text)
+        return Set(regex.matches(in: text, range: range).compactMap {
+            Range($0.range(at: 1), in: text).map { String(text[$0]) }
+        })
+    }
+
+    /// `systemOwnedKinds` 里那几条——菜单项由系统摆，键位不归我们。
+    private func systemOwnedNames() throws -> Set<String> {
+        let catalog = try strippingComments(source("CommandCatalog.swift"))
+        let regex = try NSRegularExpression(pattern: "systemOwnedKinds[^=\\n]*=\\s*\\[([^\\]]*)\\]")
+        let range = NSRange(catalog.startIndex..., in: catalog)
+        guard let match = regex.firstMatch(in: catalog, range: range),
+              let body = Range(match.range(at: 1), in: catalog)
+        else { return [] }
+        return Set(
+            catalog[body].split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { $0.hasPrefix(".") }
+                .map { String($0.dropFirst()) }
+        )
+    }
 
     /// 剥掉行注释。守卫要判的是代码，注释里提到 `.saveItem` 是在解释为什么不能
     /// 用它——第一版守卫就是被这句注释绊红的（本地先跑过，注释是之后补的）。

@@ -485,3 +485,23 @@ struct CommandRuntime {
         store.newDocument()
     }
 }
+
+// MARK: - 谁能被改派
+
+extension CommandCatalog {
+    /// 允许改派快捷键的命令 = **有菜单项承载**的那批。
+    ///
+    /// AppKit 的快捷键只由菜单项的 key equivalent 派发：没有菜单项的命令，在设置里
+    /// 派了也是哑键（⌃L 侧栏就是这样按下去没反应的）。所以「能改派」这件事得由
+    /// 菜单结构说话，不能由目录说话——目录里的命令有一半是给 ⌘K 用的。
+    static var menuCarriedKinds: Set<CommandKind> {
+        Set(staticCommands.map(\.kind)).subtracting(systemOwnedKinds)
+    }
+
+    /// 菜单项由系统摆的命令：键位不归我们，改了也不会生效，所以不列进改派表。
+    ///
+    /// 目前只有「设置…」：App 菜单里那一项由 SwiftUI 的 `Settings` 场景自己插，
+    /// ⌘, 归它。`replace(replacing: .appSettings)` 试过——系统那一项照样在，
+    /// 结果是两条「设置…」并排。
+    static let systemOwnedKinds: Set<CommandKind> = [.openSettings]
+}

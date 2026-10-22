@@ -132,10 +132,14 @@ struct ShortcutSettingsView: View {
     }
 
     /// 出厂命令按界面分组列出；主题与最近文件不参与快捷键。
+    ///
+    /// 只列**有菜单项承载**的命令：AppKit 的快捷键只由菜单项的 key equivalent 派发，
+    /// 没有菜单项的命令派了也是哑键——⌃L 侧栏那次就是（改了、存了、按下去没反应）。
     private var groups: [(section: CommandSection, commands: [AppCommand])] {
         var order: [CommandSection] = []
         var bySection: [CommandSection: [AppCommand]] = [:]
-        for command in CommandCatalog.staticCommands {
+        for command in CommandCatalog.staticCommands
+        where CommandCatalog.menuCarriedKinds.contains(command.kind) {
             if bySection[command.section] == nil { order.append(command.section) }
             bySection[command.section, default: []].append(command)
         }
