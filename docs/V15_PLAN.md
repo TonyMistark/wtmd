@@ -572,3 +572,48 @@ dev 二进制硬杀一次，下次启动就积一份「没有正常退出」。�
 
 - **开发产物和读者的数据必须分账**：dev 的崩溃、日志、临时状态混进正式目录，
   迟早会被当成「应用的 bug」。分账只要一个纯函数，比事后过滤便宜得多。
+
+### v0.15.11（2026-10-22）— ⌘S 没反应（#186）
+
+读者写稿按 ⌘S，什么都不发生；最后是在 ⌘K 面板里搜到「保存」执行，才把草稿写到磁盘上。
+这类「一个入口好、另一个入口死」的 bug，代码读一遍是看不出来的——**得把真实菜单打出来看**。
+
+探针（启动后 dump `NSApp.mainMenu`，用完即删）给的是这个：
+
+```
+DUMP [File] 4 items
+  New Document | key=n
+  ---
+  Close | key=w
+  Close All | key=⇧w
+DUMP performKeyEquivalent(⌘S) = false
+```
+
+File 菜单里根本没有 Save，连同「打开…」「打开文件夹…」「版本历史…」「导出 HTML」
+「打印」全都不在——不是禁用，是**不存在**。
+
+根因：这一组挂在 `CommandGroup(replacing: .saveItem)` 上。`.saveItem` 只在文档型应用
+（`DocumentGroup`）里由系统提供；wtmd 是手写窗口，`replacing` 一个**不存在的分组**，
+SwiftUI 不警告、不报错，整组内容静默蒸发。同一个文件里 `.appInfo` / `.newItem` /
+`.pasteboard` / `.sidebar` / `.help` 都真实存在，所以别的菜单一直好好的。
+
+修法：换成 `CommandGroup(after: .newItem)`。File 菜单 4 项 → 13 项，
+`⌘S` `⌘O` `⇧⌘O` `⌘Y` `⇧⌘E` `⌘P` 一起复活（`performKeyEquivalent(⌘S)` 从 false 变 true，
+真的弹出保存面板）。
+
+守卫（`MenuPlacementTests`，2 条）：源码里不许再出现 `.saveItem`，File 那一组必须列全
+七条文件命令；菜单点名的每条命令都得在目录里查得到。
+
+#### 测试
+
+855 → 857（+2）。
+
+#### 教训
+
+- **「菜单里有这行代码」不等于「菜单里有这一项」**：`CommandGroup(replacing:)` 对不存在
+  的分组是静默丢弃。凡是靠菜单承载的快捷键（`⌘S`/`⌘O`/`⌘P`…），都得有一次「把真实菜单
+  打出来」的实测，不能只信 SwiftUI 不吭声。
+- **守卫要判代码、不判注释**：第一版 `!app.contains(".saveItem")` 被我随后补的一行
+  「别用 .saveItem」注释绊红，本地跑在加注释之前所以没发现（CI 抓到的）。现在先剥注释再判。
+- 面板与菜单共用一个 `CommandRuntime`，只覆盖了「面板能跑」，**没有覆盖「键盘能到」**——
+  这正是它能活到用户按下去才被发现的原因。
