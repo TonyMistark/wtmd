@@ -41,7 +41,7 @@ struct FindBar: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
 
-            TextField(t("Find", "查找"), text: $find.query)
+            TextField(t("Find"), text: $find.query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .frame(width: 190)
@@ -62,18 +62,18 @@ struct FindBar: View {
 
             Button { find.previous() } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.borderless)
-                .help(t("Previous match (⇧↩)", "上一处（⇧↩）"))
+                .help(t("Previous match (⇧↩)"))
             Button { find.next() } label: { Image(systemName: "chevron.down") }
                 .buttonStyle(.borderless)
-                .help(t("Next match (↩)", "下一处（↩）"))
+                .help(t("Next match (↩)"))
 
-            optionChip("Aa", on: find.options.contains(.caseSensitive), help: t("Match case", "区分大小写")) {
+            optionChip("Aa", on: find.options.contains(.caseSensitive), help: t("Match case")) {
                 toggle(.caseSensitive)
             }
-            optionChip(t("Word", "全词"), on: find.options.contains(.wholeWord), help: t("Whole words", "全词匹配")) {
+            optionChip(t("Word"), on: find.options.contains(.wholeWord), help: t("Whole words")) {
                 toggle(.wholeWord)
             }
-            optionChip(".*", on: find.options.contains(.regex), help: t("Regular expression", "正则表达式")) {
+            optionChip(".*", on: find.options.contains(.regex), help: t("Regular expression")) {
                 toggle(.regex)
             }
 
@@ -83,16 +83,16 @@ struct FindBar: View {
                 showsReplaceOverride = !showsReplace
                 if showsReplace { focus = .replacement }
             } label: {
-                Label(t("Replace", "替换"), systemImage: showsReplace ? "chevron.down" : "chevron.right")
+                Label(t("Replace"), systemImage: showsReplace ? "chevron.down" : "chevron.right")
                     .font(.system(size: 11))
                     .labelStyle(.titleAndIcon)
             }
             .buttonStyle(.borderless)
-            .help(t("Show the replace bar (⌥⌘R)", "显示替换栏（⌥⌘R）"))
+            .help(t("Show the replace bar (⌥⌘R)"))
 
             Button { onClose() } label: { Image(systemName: "xmark") }
                 .buttonStyle(.borderless)
-                .help(t("Close (esc)", "关闭（esc）"))
+                .help(t("Close (esc)"))
         }
         .padding(.horizontal, 12)
         .frame(height: 34)
@@ -106,20 +106,20 @@ struct FindBar: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
 
-            TextField(t("Replace with", "替换为"), text: $find.replacement)
+            TextField(t("Replace with"), text: $find.replacement)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .frame(width: 190)
                 .focused($focus, equals: .replacement)
                 .onSubmit { onReplaceCurrent() }
 
-            Button(t("Replace", "替换")) { onReplaceCurrent() }
+            Button(t("Replace")) { onReplaceCurrent() }
                 .disabled(!find.hasMatches)
-            Button(t("Replace All", "全部替换")) { onReplaceAll() }
+            Button(t("Replace All")) { onReplaceAll() }
                 .disabled(!find.hasMatches)
 
             if find.options.contains(.regex) {
-                Text(t("$1 back-references work in the replacement", "替换文本支持 $1 反向引用"))
+                Text(t("$1 back-references work in the replacement"))
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
             }

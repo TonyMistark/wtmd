@@ -62,12 +62,12 @@ final class WorkspaceSearchController: ObservableObject {
 
     var statusText: String {
         guard hasQuery else { return "" }
-        if isSearching, report.isEmpty { return t("Searching…", "搜索中…") }
-        guard !report.isEmpty else { return isSearching ? t("Searching…", "搜索中…") : t("No results", "无结果") }
-        var parts = [t("\(report.hitCount) matches", "\(report.hitCount) 处")]
-        if report.truncated { parts.append(t("truncated", "已截断")) }
-        parts.append(t("\(report.scannedFiles) files", "\(report.scannedFiles) 个文件"))
-        if report.skippedFiles > 0 { parts.append(t("skipped \(report.skippedFiles)", "跳过 \(report.skippedFiles) 个")) }
+        if isSearching, report.isEmpty { return t("Searching…") }
+        guard !report.isEmpty else { return isSearching ? t("Searching…") : t("No results") }
+        var parts = [t("{} matches", report.hitCount)]
+        if report.truncated { parts.append(t("truncated")) }
+        parts.append(t("{} files", report.scannedFiles))
+        if report.skippedFiles > 0 { parts.append(t("skipped {}", report.skippedFiles)) }
         return parts.joined(separator: " · ")
     }
 

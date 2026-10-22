@@ -283,7 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         let new = NSMenuItem(
-            title: t("New Window", "新建窗口"),
+            title: t("New Window"),
             action: #selector(newWindowFromDock),
             keyEquivalent: "n"
         )
@@ -292,7 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(new)
 
         let settings = NSMenuItem(
-            title: t("Settings…", "设置…"),
+            title: t("Settings…"),
             action: #selector(openSettingsFromDock),
             keyEquivalent: ""
         )

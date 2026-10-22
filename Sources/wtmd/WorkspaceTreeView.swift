@@ -47,7 +47,7 @@ struct WorkspaceTreeView: View {
             }
             let nodes = workspace.tree?.children ?? []
             if nodes.isEmpty {
-                Text(t("This folder is empty — press ⌘N for a new document, or right-click for a new folder", "这个文件夹是空的 —— ⌘N 新建一篇，或右键新建文件夹"))
+                Text(t("This folder is empty — press ⌘N for a new document, or right-click for a new folder"))
                     .font(.callout)
                     .foregroundStyle(.tertiary)
             } else {
@@ -75,15 +75,15 @@ struct WorkspaceTreeView: View {
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
-                .help(t("Close Workspace", "关闭工作区"))
+                .help(t("Close Workspace"))
             }
             .contextMenu {
-                Button(t("New Document", "新建文稿")) { createDocument(in: nil) }
-                Button(t("New Folder", "新建文件夹")) { createFolder(in: nil) }
+                Button(t("New Document")) { createDocument(in: nil) }
+                Button(t("New Folder")) { createFolder(in: nil) }
                 Divider()
                 if let root = workspace.root {
-                    Button(t("Reveal in Finder", "在访达中显示")) { NSWorkspace.shared.activateFileViewerSelecting([root]) }
-                    Button(t("Copy Path", "拷贝路径")) { copyPath(root) }
+                    Button(t("Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([root]) }
+                    Button(t("Copy Path")) { copyPath(root) }
                 }
             }
         }
@@ -159,18 +159,18 @@ struct WorkspaceTreeView: View {
     @ViewBuilder
     private func contextMenu(for node: WorkspaceNode) -> some View {
         if node.isDirectory {
-            Button(t("New Document", "新建文稿")) { createDocument(in: node.url) }
-            Button(t("New Folder", "新建文件夹")) { createFolder(in: node.url) }
+            Button(t("New Document")) { createDocument(in: node.url) }
+            Button(t("New Folder")) { createFolder(in: node.url) }
             Divider()
         } else {
-            Button(t("Open", "打开")) { store.open(url: node.url) }
+            Button(t("Open")) { store.open(url: node.url) }
             Divider()
         }
-        Button(t("Rename…", "重命名…")) { beginRename(node.url, isDirectory: node.isDirectory) }
-        Button(t("Reveal in Finder", "在访达中显示")) { NSWorkspace.shared.activateFileViewerSelecting([node.url]) }
-        Button(t("Copy Path", "拷贝路径")) { copyPath(node.url) }
+        Button(t("Rename…")) { beginRename(node.url, isDirectory: node.isDirectory) }
+        Button(t("Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([node.url]) }
+        Button(t("Copy Path")) { copyPath(node.url) }
         Divider()
-        Button(t("Move to Trash", "移到废纸篓")) { trash(node) }
+        Button(t("Move to Trash")) { trash(node) }
     }
 
     /// 就地改名：`↩` 提交、`esc` 取消、点到别处也算提交（Finder 的习惯）。
@@ -279,7 +279,7 @@ struct WorkspaceTreeView: View {
     private func performMove(_ source: URL, into directory: URL) {
         dropTarget = nil
         guard let error = workspace.move(source, into: directory) else { return }
-        showDropError(error.errorDescription ?? t("Could not move \(source.lastPathComponent)", "移不动「\(source.lastPathComponent)」"))
+        showDropError(error.errorDescription ?? t("Could not move {}", source.lastPathComponent))
     }
 
     private func showDropError(_ message: String) {
@@ -297,8 +297,8 @@ struct WorkspaceTreeView: View {
     private func trash(_ node: WorkspaceNode) {
         guard let error = workspace.trash(node.url) else { return }
         let alert = NSAlert()
-        alert.messageText = t("Could not delete \(node.name)", "删不掉「\(node.name)」")
-        alert.informativeText = error.errorDescription ?? t("The file may be in use by another program", "文件可能正被其他程序占用")
+        alert.messageText = t("Could not delete {}", node.name)
+        alert.informativeText = error.errorDescription ?? t("The file may be in use by another program")
         alert.alertStyle = .warning
         alert.runModal()
     }}

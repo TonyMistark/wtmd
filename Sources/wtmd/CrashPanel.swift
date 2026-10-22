@@ -44,7 +44,7 @@ struct CrashPanel: View {
                 .frame(width: 32, height: 32)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(report?.headline ?? t("wtmd crashed", "wtmd 上次崩溃了"))
+                Text(report?.headline ?? t("wtmd crashed"))
                     .font(.title3.weight(.semibold))
                 if let report {
                     Text(report.summaryLine)
@@ -78,10 +78,7 @@ struct CrashPanel: View {
     /// 「还有 2 份更早的记录」——不展开，也不假装没有。
     static func extraNote(_ count: Int) -> String? {
         guard count > 0 else { return nil }
-        return t(
-            "\(count) earlier report(s) are kept in the same folder.",
-            "同一个文件夹里还留着 \(count) 份更早的记录。"
-        )
+        return t("{} earlier report(s) are kept in the same folder.", count)
     }
 
     // MARK: 细节
@@ -89,11 +86,11 @@ struct CrashPanel: View {
     private func details(_ report: CrashReport) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                Text(t("What was captured", "抓到的现场"))
+                Text(t("What was captured"))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text(t("Read-only", "只读"))
+                Text(t("Read-only"))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -120,7 +117,7 @@ struct CrashPanel: View {
 
     private var empty: some View {
         VStack(spacing: 8) {
-            Text(t("No crash report on disk.", "磁盘上没有崩溃报告。"))
+            Text(t("No crash report on disk."))
                 .font(.callout)
                 .foregroundStyle(.tertiary)
         }
@@ -132,14 +129,14 @@ struct CrashPanel: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Button(t("Reveal in Finder", "在访达中显示")) {
+                Button(t("Reveal in Finder")) {
                     if let report { reveal(report) }
                 }
                 .buttonStyle(.link)
                 .font(.caption)
                 .disabled(report == nil)
 
-                Button(t("Copy Report", "复制报告")) {
+                Button(t("Copy Report")) {
                     if let report { copy(report) }
                 }
                 .buttonStyle(.link)
@@ -148,11 +145,11 @@ struct CrashPanel: View {
 
                 Spacer()
 
-                Button(t("Ignore", "忽略"), action: dismiss)
+                Button(t("Ignore"), action: dismiss)
                     .controlSize(.small)
                     .keyboardShortcut(.cancelAction)
 
-                Button(t("Report on GitHub…", "在 GitHub 上报告…")) {
+                Button(t("Report on GitHub…")) {
                     if let report { openIssue(report) }
                 }
                 .controlSize(.small)
@@ -160,13 +157,7 @@ struct CrashPanel: View {
                 .disabled(report == nil)
             }
 
-            Text(t(
-                "The report stays on this Mac. The button opens a new GitHub issue with "
-                    + "the details filled in — nothing is posted until you press Submit. "
-                    + "It never contains text from your documents.",
-                "报告只留在这台 Mac 上。那个按钮会打开一个已经填好的新 issue 页面，"
-                    + "你按下提交才算发出去。报告里没有任何正文。"
-            ))
+            Text(t("The report stays on this Mac. The button opens a new GitHub issue with the details filled in — nothing is posted until you press Submit. It never contains text from your documents."))
             .font(.caption2)
             .foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)

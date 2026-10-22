@@ -165,10 +165,10 @@ struct AppDockMenuTests {
     func dockMenuOffersNewWindowAndSettings() throws {
         let menu = try #require(makeMenu())
         #expect(menu.items.count == 2)
-        #expect(menu.items[0].title == t("New Window", "新建窗口"))
+        #expect(menu.items[0].title == t("New Window"))
         #expect(menu.items[0].keyEquivalent == "n")
         #expect(menu.items[0].keyEquivalentModifierMask == .command)
-        #expect(menu.items[1].title == t("Settings…", "设置…"))
+        #expect(menu.items[1].title == t("Settings…"))
         // 每一项都得有人接：target 为 nil 的菜单项在 Dock 上点下去什么都不会发生。
         #expect(menu.items.allSatisfy { $0.target != nil })
         #expect(menu.items.allSatisfy { $0.action != nil })

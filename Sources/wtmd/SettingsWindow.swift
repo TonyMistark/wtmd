@@ -21,13 +21,13 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .profile: return t("Profile", "个人信息")
-        case .writing: return t("Writing", "写作")
-        case .theme: return t("Theme", "主题")
-        case .layout: return t("Layout", "版式")
-        case .printing: return t("Printing", "打印")
-        case .shortcuts: return t("Shortcuts", "快捷键")
-        case .app: return t("App", "应用")
+        case .profile: return t("Profile")
+        case .writing: return t("Writing")
+        case .theme: return t("Theme")
+        case .layout: return t("Layout")
+        case .printing: return t("Printing")
+        case .shortcuts: return t("Shortcuts")
+        case .app: return t("App")
         }
     }
 
@@ -70,10 +70,10 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .profile: return t("Profile", "个人")
-        case .writing: return t("Writing", "写作")
-        case .appearance: return t("Appearance", "外观")
-        case .app: return t("App & Help", "应用与帮助")
+        case .profile: return t("Profile")
+        case .writing: return t("Writing")
+        case .appearance: return t("Appearance")
+        case .app: return t("App & Help")
         }
     }
 
@@ -199,8 +199,8 @@ struct SettingsShell: View {
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     Text(profile.hasNickname
-                        ? t("Stored on this Mac", "只存在这台 Mac 上")
-                        : t("Add a nickname", "设个昵称"))
+                        ? t("Stored on this Mac")
+                        : t("Add a nickname"))
                         .font(.system(size: 10.5))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -216,7 +216,7 @@ struct SettingsShell: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(t("Name and picture — kept on this Mac", "昵称与头像——只留在这台 Mac 上"))
+        .help(t("Name and picture — kept on this Mac"))
         .padding(.top, 10)
     }
 
@@ -291,10 +291,10 @@ extension UpdateStatus {
     var summary: String? {
         switch self {
         case .idle: return nil
-        case .checking: return t("Checking…", "正在检查…")
-        case .upToDate(let version): return t("v\(version) is up to date", "v\(version) 已是最新")
-        case .available(let version, _, _): return t("v\(version) available", "v\(version) 可用")
-        case .failed: return t("Last check failed", "上次检查失败")
+        case .checking: return t("Checking…")
+        case .upToDate(let version): return t("v{} is up to date", version)
+        case .available(let version, _, _): return t("v{} available", version)
+        case .failed: return t("Last check failed")
         }
     }
 }

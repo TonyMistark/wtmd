@@ -70,7 +70,7 @@ final class ProfileStore: ObservableObject {
 
     /// 「我」在界面上叫什么。没设昵称时用一句中性的自称，不写「未命名」。
     var displayName: String {
-        hasNickname ? nickname.trimmingCharacters(in: .whitespacesAndNewlines) : t("Me", "我")
+        hasNickname ? nickname.trimmingCharacters(in: .whitespacesAndNewlines) : t("Me")
     }
 
     // MARK: 改

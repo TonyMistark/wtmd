@@ -122,7 +122,7 @@ struct UpdateInstallerFlowTests {
             Issue.record("该停在失败，而不是 \(installer.phase)")
             return
         }
-        #expect(reason == t("The downloaded app is not the promised version.", "下载的 app 版本不对"))
+        #expect(reason == t("The downloaded app is not the promised version."))
     }
 
     @Test("下载失败：连挂载都不碰，dmg 也没有")

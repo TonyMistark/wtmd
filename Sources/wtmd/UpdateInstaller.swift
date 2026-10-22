@@ -141,13 +141,13 @@ final class UpdateInstaller: ObservableObject {
             if let failure = error as? Failure {
                 switch failure {
                 case .noAppInVolume:
-                    return t("No app found in the downloaded image.", "下载的镜像里没有 app")
+                    return t("No app found in the downloaded image.")
                 case .copyFailed:
-                    return t("Could not stage the new app.", "新 app 暂存失败")
+                    return t("Could not stage the new app.")
                 case .verifyFailed:
-                    return t("The downloaded app is not the promised version.", "下载的 app 版本不对")
+                    return t("The downloaded app is not the promised version.")
                 case .swapFailed:
-                    return t("Could not replace the installed app.", "替换已装的 app 失败")
+                    return t("Could not replace the installed app.")
                 }
             }
             return error.localizedDescription

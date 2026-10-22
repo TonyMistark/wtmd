@@ -27,15 +27,12 @@ struct ProfileSettingsView: View {
                     ProfileAvatar(image: profile.avatar, initial: profile.initial, size: 64)
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
-                            Button(t("Choose Picture…", "选择图片…")) { choosePicture() }
+                            Button(t("Choose Picture…")) { choosePicture() }
                             if profile.avatar != nil {
-                                Button(t("Remove", "移除")) { profile.clearAvatar() }
+                                Button(t("Remove")) { profile.clearAvatar() }
                             }
                         }
-                        Text(t(
-                            "PNG, JPEG or HEIC. Kept on this Mac, never uploaded.",
-                            "PNG、JPEG 或 HEIC。只留在这台 Mac 上，不会上传。"
-                        ))
+                        Text(t("PNG, JPEG or HEIC. Kept on this Mac, never uploaded."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         if let failure {
@@ -48,18 +45,15 @@ struct ProfileSettingsView: View {
                 .padding(.vertical, 4)
 
                 TextField(
-                    t("Nickname", "昵称"),
+                    t("Nickname"),
                     text: $profile.nickname,
-                    prompt: Text(t("What should we call you?", "怎么称呼你？"))
+                    prompt: Text(t("What should we call you?"))
                 )
                 .textFieldStyle(.roundedBorder)
             }
 
             Section {
-                Text(t(
-                    "Your name and picture stay in this app's own folder. They never leave the machine and are not written into any document.",
-                    "昵称与头像只存在这个应用自己的文件夹里，不离开这台机器，也不会写进任何文档。"
-                ))
+                Text(t("Your name and picture stay in this app's own folder. They never leave the machine and are not written into any document."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }
@@ -73,12 +67,12 @@ struct ProfileSettingsView: View {
         panel.allowedContentTypes = [.png, .jpeg, .heic, .tiff, .gif, .image]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.prompt = t("Choose", "选择")
+        panel.prompt = t("Choose")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         if profile.setAvatar(from: url) {
             failure = nil
         } else {
-            failure = t("That file could not be read as a picture.", "这个文件读不成图片。")
+            failure = t("That file could not be read as a picture.")
         }
     }
 }
@@ -95,48 +89,33 @@ struct WritingSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle(t("Typewriter Mode", "打字机模式"), isOn: $writing.typewriter)
-                Toggle(t("Focus Mode", "专注模式"), isOn: $writing.focusMode)
-                Toggle(t("Daily character goal", "每日字数目标"), isOn: goalEnabled)
+                Toggle(t("Typewriter Mode"), isOn: $writing.typewriter)
+                Toggle(t("Focus Mode"), isOn: $writing.focusMode)
+                Toggle(t("Daily character goal"), isOn: goalEnabled)
                 if writing.dailyGoal > 0 {
                     Stepper(value: $writing.dailyGoal, in: 100...10_000, step: 100) {
-                        Text(t(
-                            "\(writing.dailyGoal.formatted()) characters a day",
-                            "每天 \(writing.dailyGoal.formatted()) 字"
-                        ))
+                        Text(t("{} characters a day", writing.dailyGoal.formatted()))
                         .monospacedDigit()
                     }
                 }
-                Text(t(
-                    "Typewriter keeps the caret line centred; focus dims everything outside the current paragraph. Both can be on at once.",
-                    "打字机让光标行停在屏幕中部；专注把当前段落之外的内容退成浅灰。两者可同时开启。"
-                ))
+                Text(t("Typewriter keeps the caret line centred; focus dims everything outside the current paragraph. Both can be on at once."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
-                Text(t(
-                    "The goal counts net characters: deleting takes them back off. It shows up in the status bar only once a goal is set.",
-                    "目标算的是净增：删字会扣回去。设了目标之后，状态栏才会出现今日进度。"
-                ))
+                Text(t("The goal counts net characters: deleting takes them back off. It shows up in the status bar only once a goal is set."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }
 
             // 日历原本只有 ⇧⌘Y 一条路，设置里找不到它的人会以为功能没了。
-            Section(t("Writing Calendar", "写作日历")) {
+            Section(t("Writing Calendar")) {
                 HStack {
-                    Text(t(
-                        "A year of daily net additions, one square a day.",
-                        "一年里每天的净增，一天一格。"
-                    ))
+                    Text(t("A year of daily net additions, one square a day."))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     Spacer()
-                    Button(t("Open Calendar…", "打开日历…")) { CalendarRequest.show() }
+                    Button(t("Open Calendar…")) { CalendarRequest.show() }
                 }
-                Text(t(
-                    "Also on ⇧⌘Y, or by clicking today's progress in the status bar.",
-                    "也可以用 ⇧⌘Y 打开，或点状态栏上的今日进度。"
-                ))
+                Text(t("Also on ⇧⌘Y, or by clicking today's progress in the status bar."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }
@@ -162,9 +141,9 @@ struct LayoutSettingsView: View {
 
     var body: some View {
         Form {
-            Section(t("Reading Layout", "阅读版式")) {
+            Section(t("Reading Layout")) {
                 LayoutSliderRow(
-                    title: t("Measure", "版心宽度"),
+                    title: t("Measure"),
                     value: "\(typesetting.measure) px",
                     binding: Binding(
                         get: { Double(typesetting.measure) },
@@ -174,7 +153,7 @@ struct LayoutSettingsView: View {
                     step: 20
                 )
                 LayoutSliderRow(
-                    title: t("Text size", "正文字号"),
+                    title: t("Text size"),
                     value: "\(typesetting.fontSize) px",
                     binding: Binding(
                         get: { Double(typesetting.fontSize) },
@@ -184,21 +163,18 @@ struct LayoutSettingsView: View {
                     step: 1
                 )
                 LayoutSliderRow(
-                    title: t("Line height", "行距"),
+                    title: t("Line height"),
                     value: String(format: "%.2f", typesetting.lineHeight),
                     binding: $typesetting.lineHeight,
                     range: 1.4...2.2,
                     step: 0.05
                 )
                 HStack {
-                    Text(t(
-                        "Preview only: colours and fonts still come from the theme.",
-                        "只影响预览；颜色与字体仍由主题决定。"
-                    ))
+                    Text(t("Preview only: colours and fonts still come from the theme."))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     Spacer()
-                    Button(t("Restore Defaults", "恢复默认")) { typesetting.reset() }
+                    Button(t("Restore Defaults")) { typesetting.reset() }
                 }
             }
         }
@@ -217,18 +193,15 @@ struct PrintingSettingsView: View {
         Form {
             Section {
                 LayoutSliderRow(
-                    title: t("Page margin", "页边距"),
+                    title: t("Page margin"),
                     value: String(format: "%.0f mm", printing.marginMM),
                     binding: $printing.marginMM,
                     range: PrintLayout.marginRange,
                     step: 1
                 )
-                Toggle(t("Page numbers", "页码"), isOn: $printing.pageNumbers)
-                Toggle(t("Document title on the first page", "第一页印文档名"), isOn: $printing.showTitle)
-                Text(t(
-                    "Applies to Print / Save as PDF. Text size and line height follow the reading layout; the measure narrows to the page width.",
-                    "作用于「打印 / 存为 PDF」。字号与行距沿用阅读版式，版心按页宽归一。"
-                ))
+                Toggle(t("Page numbers"), isOn: $printing.pageNumbers)
+                Toggle(t("Document title on the first page"), isOn: $printing.showTitle)
+                Text(t("Applies to Print / Save as PDF. Text size and line height follow the reading layout; the measure narrows to the page width."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }
@@ -248,34 +221,48 @@ struct AppSettingsView: View {
     @EnvironmentObject var updates: UpdateChecker
     @EnvironmentObject var installer: UpdateInstaller
     @EnvironmentObject var crashes: CrashStore
+    /// 界面语言。空串 = 跟随系统；`L10n.userPreference` 直接读同一个
+    /// UserDefaults 键，这里写进去那边就能看到。
+    @AppStorage("wtmd.language") private var languageChoice = ""
 
     var body: some View {
         Form {
-            Section(t("Version", "版本")) {
-                LabeledContent(t("wtmd", "wtmd"), value: updates.currentVersion)
-                LabeledContent(t("System", "系统"), value: CrashEnvironment.systemDescription)
+            Section(t("Language")) {
+                Picker(t("Interface language"), selection: $languageChoice) {
+                    Text(t("Follow System")).tag("")
+                    ForEach(Language.allCases) { language in
+                        Text(language.displayName).tag(language.rawValue)
+                    }
+                }
+                Text(t(
+                    "Takes effect the next time wtmd opens — menus and windows are built at launch."
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Section(t("Version")) {
+                LabeledContent(t("wtmd"), value: updates.currentVersion)
+                LabeledContent(t("System"), value: CrashEnvironment.systemDescription)
                 HStack {
-                    Text(updates.status.summary ?? t("Not checked yet", "还没检查过"))
+                    Text(updates.status.summary ?? t("Not checked yet"))
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     Spacer()
                     updateAction
-                    Button(updates.isChecking ? t("Checking…", "正在检查…") : t("Check Now", "立即检查")) {
+                    Button(updates.isChecking ? t("Checking…") : t("Check Now")) {
                         Task { await updates.check(force: true) }
                     }
                     .disabled(updates.isChecking || installer.phase.isWorking)
                 }
             }
 
-            Section(t("About", "关于")) {
-                Button(t("About wtmd", "关于 wtmd")) { AboutPanel.show() }
-                Button(t("Show Crash Reports", "打开崩溃报告文件夹")) {
+            Section(t("About")) {
+                Button(t("About wtmd")) { AboutPanel.show() }
+                Button(t("Show Crash Reports")) {
                     NSWorkspace.shared.open(crashes.directory)
                 }
-                Text(t(
-                    "Reports are kept on this Mac. Nothing is sent unless you press the button that opens an issue.",
-                    "报告只存在这台 Mac 上。除非你按下那个开 issue 的按钮，否则不会被发出去。"
-                ))
+                Text(t("Reports are kept on this Mac. Nothing is sent unless you press the button that opens an issue."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }
@@ -290,7 +277,7 @@ struct AppSettingsView: View {
     private var updateAction: some View {
         switch (updates.status, installer.phase) {
         case (.available(let version, let url, let asset), .idle):
-            Button(t("Update…", "现在更新…")) {
+            Button(t("Update…")) {
                 if let asset {
                     Task { await installer.run(asset: asset, version: version, releaseURL: url) }
                 } else {
@@ -298,17 +285,17 @@ struct AppSettingsView: View {
                 }
             }
         case (_, .downloading(let fraction)):
-            Text(t("Downloading \(Int(fraction * 100))%", "下载中 \(Int(fraction * 100))%"))
+            Text(t("Downloading {}%", Int(fraction * 100)))
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
         case (_, .installing):
             HStack(spacing: 6) {
                 ProgressView().controlSize(.mini).scaleEffect(0.7)
-                Text(t("Installing…", "正在安装…")).font(.callout).foregroundStyle(.secondary)
+                Text(t("Installing…")).font(.callout).foregroundStyle(.secondary)
             }
         case (_, .failed(let reason)):
             if installer.downloadedDMG != nil {
-                Button(t("Reveal Download", "在访达中显示")) {
+                Button(t("Reveal Download")) {
                     installer.revealFallback()
                 }
                 .help(reason)
@@ -334,10 +321,7 @@ enum AboutPanel {
         paragraph.alignment = .center
 
         let credits = NSMutableAttributedString(
-            string: t(
-                "A local-first Markdown writing and reading tool for macOS.\n",
-                "本地优先的 macOS Markdown 写作与阅读工具。\n"
-            ) + "github.com/TonyMistark/wtmd",
+            string: t("A local-first Markdown writing and reading tool for macOS.\n") + "github.com/TonyMistark/wtmd",
             attributes: [
                 .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
                 .foregroundColor: NSColor.secondaryLabelColor,

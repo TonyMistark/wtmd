@@ -73,7 +73,7 @@ final class ConflictArchive: ObservableObject {
 
         return ConflictArchiveEntry(
             fileURL: target,
-            originalName: originalURL?.lastPathComponent ?? t("Untitled.md", "未命名.md"),
+            originalName: originalURL?.lastPathComponent ?? t("Untitled.md"),
             originalPath: originalURL?.path,
             savedAt: stamp
         )
@@ -136,12 +136,12 @@ final class ConflictArchive: ObservableObject {
 
     /// `稿.md` → `稿`；`/` 与 `:` 在文件名里不能出现（Finder 会把 `:` 显示成 `/`）。
     static func stem(for url: URL?) -> String {
-        let raw = url?.deletingPathExtension().lastPathComponent ?? t("Untitled", "未命名")
+        let raw = url?.deletingPathExtension().lastPathComponent ?? t("Untitled")
         let cleaned = raw
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? t("Untitled", "未命名") : cleaned
+        return cleaned.isEmpty ? t("Untitled") : cleaned
     }
 
     /// 同一秒里存两份同名副本时不能互相覆盖——那正好是「连切两次」会发生的事。

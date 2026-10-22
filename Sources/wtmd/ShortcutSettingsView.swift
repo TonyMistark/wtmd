@@ -16,7 +16,7 @@ struct ShortcutSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Text(t("Click Record, then press the new combination — it takes effect at once. esc cancels.", "点「录入」后按下新的组合键，立即生效。esc 取消录入。"))
+                Text(t("Click Record, then press the new combination — it takes effect at once. esc cancels."))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 if let message {
@@ -37,7 +37,7 @@ struct ShortcutSettingsView: View {
             Section {
                 HStack {
                     Spacer()
-                    Button(t("Reset All", "全部恢复默认")) {
+                    Button(t("Reset All")) {
                         overrides.resetAll()
                         recordingID = nil
                         message = nil
@@ -66,15 +66,15 @@ struct ShortcutSettingsView: View {
                         overrides.overrides[command.kind.id] != nil ? Color.accentColor : Color.secondary
                     )
                     .monospaced()
-                    .help(overrides.overrides[command.kind.id] != nil ? t("Reassigned — reset to restore the default", "已改派，恢复默认可回到出厂设置") : t("Factory default", "出厂设置"))
+                    .help(overrides.overrides[command.kind.id] != nil ? t("Reassigned — reset to restore the default") : t("Factory default"))
 
                 if overrides.overrides[command.kind.id] != nil {
-                    Button(t("Reset", "恢复默认")) {
+                    Button(t("Reset")) {
                         _ = overrides.assign(nil, for: command.kind)
                         message = nil
                     }
                 }
-                Button(t("Record", "录入")) {
+                Button(t("Record")) {
                     recordingID = command.kind.id
                     message = nil
                     // 状态先落地，焦点随后跟上；没有焦点时点输入框照样能录
@@ -88,7 +88,7 @@ struct ShortcutSettingsView: View {
     /// 正在录入时的那个小框：按下的键不会写进文本（`onKeyPress` 返回 .handled），
     /// 只被拿去改派。
     private var recorder: some View {
-        TextField(t("Press a combination…", "按下组合键…"), text: .constant(""))
+        TextField(t("Press a combination…"), text: .constant(""))
             .textFieldStyle(.roundedBorder)
             .frame(width: 150)
             .focused($recorderFocused)
@@ -127,8 +127,8 @@ struct ShortcutSettingsView: View {
     }
 
     private func label(for command: AppCommand) -> String {
-        guard let shortcut = overrides.effectiveShortcut(for: command.kind) else { return t("None", "无") }
-        return RecordedShortcut(shortcut)?.label ?? t("None", "无")
+        guard let shortcut = overrides.effectiveShortcut(for: command.kind) else { return t("None") }
+        return RecordedShortcut(shortcut)?.label ?? t("None")
     }
 
     /// 出厂命令按界面分组列出；主题与最近文件不参与快捷键。

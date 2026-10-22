@@ -165,11 +165,11 @@ extension Theme {
     """
 
     static let builtIns: [Theme] = [
-        Theme(id: defaultID, name: t("wtmd Default", "wtmd 默认"), author: "wtmd", isBuiltIn: true,
+        Theme(id: defaultID, name: t("wtmd Default"), author: "wtmd", isBuiltIn: true,
               light: defaultLight, dark: defaultDark),
-        Theme(id: "builtin.paperInk", name: t("Paper & Ink", "纸墨"), author: "wtmd", isBuiltIn: true,
+        Theme(id: "builtin.paperInk", name: t("Paper & Ink"), author: "wtmd", isBuiltIn: true,
               light: paperInkLight, dark: paperInkDark),
-        Theme(id: "builtin.terminal", name: t("Terminal", "终端"), author: "wtmd", isBuiltIn: true,
+        Theme(id: "builtin.terminal", name: t("Terminal"), author: "wtmd", isBuiltIn: true,
               light: nil, dark: terminalDark),
     ]
 }
@@ -248,22 +248,22 @@ struct ThemeSettingsView: View {
 
     var body: some View {
         Form {
-            Picker(t("Theme", "主题"), selection: themeSelection) {
+            Picker(t("Theme"), selection: themeSelection) {
                 ForEach(themeManager.themes) { theme in
                     Text(theme.name).tag(theme.id)
                 }
             }
 
             if !themeManager.currentTheme.isBuiltIn {
-                LabeledContent(t("Source", "来源"), value: t("Custom", "自定义"))
+                LabeledContent(t("Source", context: "theme"), value: t("Custom"))
             }
-            LabeledContent(t("Author", "作者"), value: themeManager.currentTheme.author.isEmpty ? "—" : themeManager.currentTheme.author)
-            LabeledContent(t("Appearance", "外观"), value: appearanceDescription)
+            LabeledContent(t("Author"), value: themeManager.currentTheme.author.isEmpty ? "—" : themeManager.currentTheme.author)
+            LabeledContent(t("Appearance"), value: appearanceDescription)
 
             HStack {
-                Button(t("Open Themes Folder…", "打开主题文件夹…")) { themeManager.openThemesFolder() }
+                Button(t("Open Themes Folder…")) { themeManager.openThemesFolder() }
                 Spacer()
-                Button(t("Rescan", "重新扫描")) { themeManager.reload() }
+                Button(t("Rescan")) { themeManager.reload() }
             }
         }
         .formStyle(.grouped)
@@ -280,9 +280,9 @@ struct ThemeSettingsView: View {
     private var appearanceDescription: String {
         let theme = themeManager.currentTheme
         switch (theme.hasLight, theme.hasDark) {
-        case (true, true): return t("Light / Dark (follows system)", "浅色 / 深色（跟随系统）")
-        case (true, false): return t("Light only", "仅浅色")
-        case (false, true): return t("Dark", "常暗")
+        case (true, true): return t("Light / Dark (follows system)")
+        case (true, false): return t("Light only")
+        case (false, true): return t("Dark")
         case (false, false): return "—"
         }
     }

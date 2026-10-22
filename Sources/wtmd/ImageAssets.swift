@@ -92,7 +92,7 @@ struct ImageAssets {
             panel.canChooseFiles = false
             panel.canChooseDirectories = true
             panel.canCreateDirectories = true
-            panel.message = t("Choose where images are stored (an assets subfolder will be created)", "选择图片存放目录（将创建 assets 子目录）")
+            panel.message = t("Choose where images are stored (an assets subfolder will be created)")
             guard panel.runModal() == .OK, let url = panel.url else { return nil }
             baseDir = url
         }
