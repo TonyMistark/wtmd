@@ -24,19 +24,26 @@ final class CrashStore: ObservableObject {
     let maxReports: Int
     /// 超过这么久的自动清掉。
     let maxAge: TimeInterval
+    /// 正式版的账本里不显示开发版留下的报告（`version: dev`）。
+    ///
+    /// 开发时被 `kill -9`、被重编译挤掉都是常态，那些「没有正常退出」不是
+    /// 读者的事（#147）。开发版自己跑起来时这个开关是关的——它要看得见自己的现场。
+    let hidesDevelopmentReports: Bool
 
     init(
         directory: URL? = nil,
         clock: @escaping () -> Date = Date.init,
         fileManager: FileManager = .default,
         maxReports: Int = 20,
-        maxAge: TimeInterval = 90 * 86_400
+        maxAge: TimeInterval = 90 * 86_400,
+        hidesDevelopmentReports: Bool = !CrashEnvironment.isDevelopmentBuild
     ) {
         self.directory = directory ?? Self.defaultDirectory
         self.clock = clock
         self.fileManager = fileManager
         self.maxReports = maxReports
         self.maxAge = maxAge
+        self.hidesDevelopmentReports = hidesDevelopmentReports
     }
 
     static var defaultDirectory: URL {
@@ -46,7 +53,15 @@ final class CrashStore: ObservableObject {
                 .appendingPathComponent("Library/Application Support", isDirectory: true)
         return base
             .appendingPathComponent("wtmd", isDirectory: true)
-            .appendingPathComponent("crashes", isDirectory: true)
+            .appendingPathComponent(directoryName(forVersion: CrashEnvironment.appVersion), isDirectory: true)
+    }
+
+    /// 开发版与正式版各记一本账：`crashes` 是读者的，`crashes-dev` 是我们的。
+    ///
+    /// 混在一起的代价是实打实的：#147 那份 `vdev` 的「没有正常退出」在读者面板里
+    /// 长得就像应用崩了，还一路提交成了 issue。开发时被杀是日常，不该让读者收尸。
+    static func directoryName(forVersion version: String) -> String {
+        version.isEmpty || version == "dev" ? "crashes-dev" : "crashes"
     }
 
     // MARK: - 读
@@ -122,6 +137,8 @@ final class CrashStore: ObservableObject {
                   let text = try? String(contentsOf: url, encoding: .utf8),
                   let report = CrashReport.parse(text, fileURL: url)
             else { continue }
+            // 开发版的现场不进读者的账本（#147）。文件留着，只是不列出来。
+            if hidesDevelopmentReports, report.appVersion == "dev" { continue }
             loaded.append(report)
         }
         reports = loaded.sorted { $0.capturedAt > $1.capturedAt }
