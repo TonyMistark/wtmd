@@ -935,3 +935,77 @@ override（测试钉值）> 用户偏好 > 出厂值中文
 - **`nil` 与 `""` 是两种语义**：一个是「没选过」，一个是「明确选了跟随」。
   存储层把它们当同一件事，功能就会悄悄失灵——这种区分要在解析函数里
   写清楚，并用测试钉住。
+
+### v0.15.18（2026-10-23）— 「打开方式」里终于有 wtmd（#208）
+
+读者问：对着 `.md` 右键 › 打开方式，列表里没有 wtmd，是不是要注册点什么？
+
+是。而且**两层都要**：注册（系统知道它能开）+ 接住（收到文件后真的打开）。
+
+#### 根因
+
+| 缺什么 | 表现 |
+| --- | --- |
+| `Info.plist` 没有 `CFBundleDocumentTypes` | LaunchServices 不知道 wtmd 能开 `.md`，菜单里不列它 |
+| 没有 `application(_:open:)` | 就算列进去了，系统送来文件也只是激活一个空窗 |
+
+#### 注册
+
+- `CFBundleDocumentTypes`：`CFBundleTypeRole = Editor`、`LSHandlerRank = Alternate`
+  ——出现在菜单里，但不抢别人已经认领的默认程序；
+- `LSItemContentTypes` 同时列 `net.daringfireball.markdown`（系统已有的 Markdown
+  类型，Xcode 声明的那份）和自 export 的 `cn.wtmd.markdown`；
+- `UTExportedTypeDeclarations` 声明 `cn.wtmd.markdown`：conforms
+  `public.plain-text`，tags `.md` / `.markdown` / `.mdown` / `.mkd` /
+  `text/markdown`——没装 Xcode 的机器上，扩展名映射靠这份；
+- `CFBundleTypeExtensions` 留着兼容只看扩展名的旧路径。
+
+#### 接住
+
+`AppDelegate.application(_:open:)` → `OpenRequest.open(_:)`。判断收成纯函数
+`plan(index:sameDocumentAlreadyOpen:currentWindowIsUntouched:owner:)`：
+
+| 情况 | 落在哪 |
+| --- | --- |
+| 这篇在别的窗开着 | 把那扇窗带到前面，不再开第二份 |
+| 前台窗就是这篇 | 什么都不做 |
+| 前台窗还是欢迎页/空白 | 装进当前窗 |
+| 前台窗正在写别的 | 另开一扇（多选时第二篇起都是这条） |
+| 目录 / 失效路径 | 直接筛掉 |
+
+两个坑，都是真机探针才发现的：
+
+- **欢迎页的文案存在 `text` 里**。只看 `text.isEmpty`，刚起来的窗会被判成
+  「有未保存的稿子」，于是每打开一个文件都多开一扇空窗。新加
+  `DocumentStore.isUntouched`：`fileURL == nil && !hasStartedWriting` 且正文
+  是空的或就是 `welcomeMarkdown`。
+- **`raiseFrontWindow()` 返回 false 不等于没有窗**。刚启动时主窗已建好、只是
+  还没露脸，这时候 `openWindow(id:)` 会新增一个 `WindowGroup` 实例：屏幕上
+  一扇空欢迎页、一扇有稿子。改成「一扇能当主的窗都没有」才开新窗。
+
+#### 怎么验证「打开方式」里真的有它
+
+`NSWorkspace.shared.urlsForApplications(toOpen:)` 就是 Finder 那个菜单用的
+API，一个十行脚本就能把候选列表打出来：
+
+```swift
+let apps = NSWorkspace.shared.urlsForApplications(toOpen: url)
+```
+
+顺带查出位置这件事：**同样的 bundle 注册在 `/tmp` 下不进列表**，放到
+`~/Applications` 立刻出现。LaunchServices 只把常规位置当候选。装到「应用程序」
+之后若菜单还没刷新，`lsregister -f /Applications/wtmd.app` 一次即可。
+
+#### 测试
+
+884 → 891（+7）：`OpenRequestTests` 6 条（空窗复用、有稿另开、多选各开一扇、
+已在别窗则跳转、同篇不动、目录筛掉）+ `DocumentStore.isUntouched` 1 条。
+真机复测：干净草稿下 `open -a wtmd file.md` 只留一扇窗，轨迹是
+`open route=reuseCurrent` → `doc file.md`。
+
+#### 教训
+
+- **「打开方式」是一个两段式功能**：声明类型只解决「看得见」，事件处理才解决
+  「打得开」。只做前一半，用户点一下会发现「菜单里有、点了没反应」。
+- 判断「有没有窗口」不能用「看得见」：启动早期窗口存在但还没露脸，
+  按「看得见」判就会多开一扇。这类「存在 ≠ 可见」的区分在 #175 也踩过。
