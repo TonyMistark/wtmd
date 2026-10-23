@@ -441,8 +441,7 @@ struct ContentView: View {
             }
             updateBadge
             writingModeToggles
-            Text(store.fileURL?.lastPathComponent ?? t("Draft"))
-                .foregroundStyle(.tertiary)
+            fileLocationBadge
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -451,6 +450,25 @@ struct ContentView: View {
         .background(.bar)
         .overlay(alignment: .top) {
             Divider()
+        }
+    }
+
+    /// 状态栏右下角的文件名：悬停看得到它在哪儿，点一下 Finder 就亮出它。
+    /// 草稿还没有落盘，只是个名字。
+    @ViewBuilder
+    private var fileLocationBadge: some View {
+        if let url = store.fileURL {
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            } label: {
+                Text(url.lastPathComponent)
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .help(t("Full path: {}", (url.path as NSString).abbreviatingWithTildeInPath))
+        } else {
+            Text(t("Draft"))
+                .foregroundStyle(.tertiary)
         }
     }
 

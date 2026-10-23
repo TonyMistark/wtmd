@@ -44,6 +44,10 @@ enum CommandKind: Hashable {
     case openFolder
     /// Save (or save-as for an untitled document).
     case save
+    /// Reveal the current file in Finder.
+    case showInFinder
+    /// Copy the current file's full path to the clipboard.
+    case copyFilePath
     /// Browse the versions kept for the current document.
     case showHistory
     /// Show the writing calendar: a year of daily net additions.
@@ -97,6 +101,8 @@ enum CommandKind: Hashable {
         case .openDocument: return "file.open"
         case .openFolder: return "file.openFolder"
         case .save: return "file.save"
+        case .showInFinder: return "file.reveal"
+        case .copyFilePath: return "file.copyPath"
         case .showHistory: return "file.history"
         case .showCalendar: return "view.calendar"
         case .exportHTML: return "file.exportHTML"
@@ -181,6 +187,18 @@ enum CommandCatalog {
             kind: .save, title: t("Save"), section: .file,
             symbol: "square.and.arrow.down", shortcut: KeyboardShortcut("s", modifiers: .command),
             keywords: ["save", "write"], subtitle: nil
+        ),
+        AppCommand(
+            kind: .showInFinder, title: t("Reveal in Finder"), section: .file,
+            symbol: "folder", shortcut: KeyboardShortcut("r", modifiers: [.command, .shift]),
+            keywords: ["finder", "reveal", "folder", "location", "show", "访达", "文件夹", "位置", "所在位置"],
+            subtitle: nil
+        ),
+        AppCommand(
+            kind: .copyFilePath, title: t("Copy File Path"), section: .file,
+            symbol: "link", shortcut: nil,
+            keywords: ["copy", "path", "location", "clipboard", "复制", "路径", "地址", "剪贴板"],
+            subtitle: nil
         ),
         AppCommand(
             kind: .showHistory, title: t("Version History…"), section: .file,
@@ -430,6 +448,9 @@ struct CommandRuntime {
             // 没有名字的草稿没有历史（它没有稳定身份）；有名字就让它可点——
             // 面板自己会说「还没有留下旧版」，比灰着一个不说原因的菜单好。
             return store.fileURL != nil
+        case .showInFinder, .copyFilePath:
+            // 草稿还没有落在磁盘上，无处可寻、无路可抄。
+            return store.fileURL != nil
         case .openRecent(let url):
             // A recent file may have been moved away. Greying it out beats
             // doing nothing when clicked.
@@ -445,6 +466,8 @@ struct CommandRuntime {
         case .openDocument: store.openPanel()
         case .openFolder: workspace.openPanel()
         case .save: store.save()
+        case .showInFinder: revealInFinder()
+        case .copyFilePath: copyFilePath()
         case .showHistory: store.showHistory()
         case .showCalendar: CalendarWindow.show(store: store, goal: writing.dailyGoal)
         case .exportHTML: store.exportHTML()
@@ -468,6 +491,21 @@ struct CommandRuntime {
         case .reportProblem: store.reportProblem()
         case .openRecent(let url): store.open(url: url)
         }
+    }
+
+    /// 在 Finder 里亮出这篇文件：不打开文件夹自己——选中它。
+    private func revealInFinder() {
+        guard let url = store.fileURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    /// 把完整路径放进剪贴板。状态栏悬停看得到 `~/…` 缩写，复制出去的
+    /// 必须是机器认的全路径——终端、脚本都吃这个。
+    private func copyFilePath() {
+        guard let url = store.fileURL else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(url.path, forType: .string)
     }
 
     /// 新建 = 另起一桌。

@@ -327,6 +327,51 @@ import Testing
     }
 }
 
+/// 「在 Finder 中显示 / 复制路径」都吃一个落在磁盘上的文件：草稿灰掉，
+/// 打开了才可用；复制出去的是机器认的全路径。
+@MainActor
+@Test func revealAndCopyPathWorkOnRealFilesOnly() throws {
+    try preservingRecentFiles {
+        let harness = try CommandHarness()
+        defer { harness.cleanup() }
+        let reveal = try #require(CommandCatalog.command(for: .showInFinder))
+        let copy = try #require(CommandCatalog.command(for: .copyFilePath))
+
+        // 欢迎页、未命名草稿都没有路径可给。
+        harness.store.textDidChange("")
+        #expect(harness.store.showsWelcome)
+        #expect(!harness.runtime.isEnabled(reveal))
+        #expect(!harness.runtime.isEnabled(copy))
+
+        let file = try write("位置.md", in: harness.directory, content: "# 在哪儿")
+        harness.store.open(url: file)
+        #expect(harness.runtime.isEnabled(reveal))
+        #expect(harness.runtime.isEnabled(copy))
+
+        // 复制是纯剪贴板操作，可以真跑；「显示」会把 Finder 拽到前台，测试不真按。
+        harness.runtime.run(copy)
+        #expect(
+            NSPasteboard.general.string(forType: .string) == file.path,
+            "复制出去的必须是完整路径，不是 ~ 缩写"
+        )
+    }
+}
+
+/// 注册表是菜单与 ⌘K 的单一来源：这两条必须登记在文件分组，搜「Finder」「路径」才到得了。
+@Test func revealAndCopyPathAreRegisteredInTheFileSection() throws {
+    let reveal = try #require(CommandCatalog.command(for: .showInFinder))
+    let copy = try #require(CommandCatalog.command(for: .copyFilePath))
+
+    #expect(reveal.section == .file)
+    #expect(reveal.kind.id == "file.reveal")
+    #expect(reveal.shortcut != nil, "给个出厂键位，否则只有翻菜单的人才找得到")
+    #expect(CommandSearch.filter("finder", in: [reveal]).count == 1)
+
+    #expect(copy.section == .file)
+    #expect(copy.kind.id == "file.copyPath")
+    #expect(CommandSearch.filter("路径", in: [copy]).count == 1)
+}
+
 // MARK: - 辅助
 
 /// 造一条只用于搜索测试的命令。用标题当主题 id，这样每条命令的 id 唯一。
