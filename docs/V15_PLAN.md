@@ -1115,3 +1115,42 @@ let apps = NSWorkspace.shared.urlsForApplications(toOpen: url)
 `isVisible == false`（旧 helper 让它俩并存，等于在假数据上测真逻辑）；
 `DockGenieTests` 重写为 `DockReopenTests`，装配守卫反向钉住——
 `defersToSystem` 与兜底计时器**不得再现于源码**。
+
+### v0.15.22 — 检查更新双源：GitHub 主源 + Gitee 备源（#220）
+
+GitHub 直连在国内不稳，DMG 下载慢。Gitee（`gitee.com/Micestark/wtmd`）作为
+备份发布源：**开发全流程不动**（全在 GitHub），只在发布链末尾同步一次
+release；应用内检查更新查双源，用户自己挑从哪儿下载。
+
+#### 方案
+
+- **双源并发检查**：`UpdateChecker.Configuration.sources` 每源一个查询
+  endpoint（GitHub API 与 Gitee API v5 同构）。检查时并发查全部、都等到
+  结果再比，取**版本更高**者；单源失败回退另一个，全失败才报「检查失败」。
+  返回的源序按配置序——并发完成顺序不定，不能让它决定「首选源是谁」。
+- **宽容解码**：Gitee 的 release JSON 缺 `html_url`/`draft`/`prerelease`，
+  一律宽容（缺省 false）；release 页缺了从源配置的模板拼
+  （`https://gitee.com/…/releases/tag/{}`）。
+- **换源下载**：`UpdateStatus.available` 改带 `[UpdateSource]`（名称 + dmg
+  直链 + release 页）。状态栏徽标点一下 = 首选源一键装，长按出菜单换源；
+  设置页给「换个下载源…」入口。失败降级打开对应源的 release 页。
+- **发布同步**（`sync-gitee-release.sh`）：推 tag 快照 → 用 GitHub 的标题
+  说明建 release → 传 dmg。幂等；令牌读 `$GITEE_TOKEN` 或
+  `~/.config/wtmd/gitee-token`，没有则打印手工上传指引并退出 0——
+  **缺令牌绝不阻塞 GitHub 发布**。Gitee 仓库只收 tag 快照与 release，
+  不参与开发。
+
+#### 教训
+
+- **并发回来的结果没有顺序**——TaskGroup 谁先完成谁先到，多源场景里
+  「首选源」必须由配置顺序决定，收完再排，不能听天由命。
+- **守卫扫源码是全局的**：ContentView 里新写的 `menuIndicator(.automatic)`
+  被「侧栏禁用 `.automatic`」的守卫当场拦下——装配守卫看的是整个文件，
+  新代码也要守它的规矩。
+
+#### 测试
+
+902 → 909（+7，`UpdateDualSourceTests`）：双源同版本带全源、高版本胜出
+（哪怕来自备源）、单源失败回退、全失败报错、Gitee 载荷宽容解码 + 模板
+拼页、徽标换源菜单装配守卫。反向验证：把「取更高版本」改成取更低，
+双源用例当场变红。
