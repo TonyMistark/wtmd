@@ -353,7 +353,8 @@ struct ContentView: View {
             findCurrent: store.find.currentMatch,
             findSeekToken: store.find.seekToken,
             replaceRequest: store.replaceRequest,
-            onReplaceApplied: { store.consumeReplaceRequest() }
+            onReplaceApplied: { store.consumeReplaceRequest() },
+            editorTheme: EditorThemeStyle(theme: themeManager.currentTheme)
         )
         .overlay(alignment: .topLeading) {
             if store.text.isEmpty {

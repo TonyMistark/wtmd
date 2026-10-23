@@ -33,6 +33,12 @@ struct EditorTextView: NSViewRepresentable {
     /// 不清的话，下一次视图重建（`⌘/`、窄窗降级）会拿到同一个请求**再执行一遍**——
     /// 那时文本已经变了，区间指向的是别的字。
     var onReplaceApplied: (() -> Void)?
+    /// 编辑器取用的主题。nil = 系统外观（默认行为，离屏测试的旧世界）。
+    ///
+    /// 预览是 WebView，整份 CSS 说换就换；编辑器是 AppKit，主题只能拆出
+    /// 底色、字色和等宽字族喂进来。换了主题（或明暗外观变了）会重铺整串
+    /// 高亮，字体与颜色都从主题里来。
+    var editorTheme: EditorThemeStyle?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -45,6 +51,11 @@ struct EditorTextView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         let coordinator = context.coordinator
         coordinator.parent = self
+
+        // 主题先于文本：syncText 换文档时会重铺高亮，字体得先就位
+        if coordinator.appliedThemeStyle != editorTheme {
+            coordinator.applyTheme(editorTheme)
+        }
 
         coordinator.syncText(text)
 
@@ -105,6 +116,50 @@ struct EditorTextView: NSViewRepresentable {
         }
     }
 
+    // MARK: - 主题取用
+
+    /// 编辑器的一对字体：正文与加粗。主题给了等宽字族就跟着主题走，
+    /// 字族不存在（没装、名字写错）回落系统等宽——能写字永远优先。
+    ///
+    /// `NSFont(name:)` 对没装的字族**不返回 nil**，而是悄悄给一个替代字体，
+    /// 所以必须先对可用字族清单验明正身，否则「回落」永远不会发生。
+    struct EditorFonts {
+        let regular: NSFont
+        let bold: NSFont
+
+        static let system = EditorFonts(family: nil)
+
+        init(family: String?) {
+            // 大小写不敏感地核对可用字族（availableFontFamilies 是字族名清单，
+            // availableFonts 是 PostScript 名——"Menlo" 只在前者里）。
+            let installed = family.flatMap { name in
+                NSFontManager.shared.availableFontFamilies.first {
+                    $0.caseInsensitiveCompare(name) == .orderedSame
+                }
+            } ?? nil
+            if let installed, let base = NSFont(name: installed, size: Self.baseSize) {
+                regular = base
+                bold = NSFontManager.shared.convert(base, toHaveTrait: .boldFontMask)
+            } else {
+                regular = .monospacedSystemFont(ofSize: Self.baseSize, weight: .regular)
+                bold = .monospacedSystemFont(ofSize: Self.baseSize, weight: .semibold)
+            }
+        }
+
+        static let baseSize: CGFloat = 13.5
+
+        /// 标题行：同字族放大加粗。走 NSFontManager 缩放——系统等宽的隐藏
+        /// 字体名不能直接喂 `NSFont(name:)`，会产出错误的字重。
+        func heading(_ level: Int) -> NSFont {
+            let size = CGFloat(max(13.5, 13.5 + Double(4 - level) * 1.2))
+            if regular.fontName.hasPrefix(".") {
+                return .monospacedSystemFont(ofSize: size, weight: .bold)
+            }
+            let scaled = NSFontManager.shared.convert(regular, toSize: size)
+            return NSFontManager.shared.convert(scaled, toHaveTrait: .boldFontMask)
+        }
+    }
+
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -135,6 +190,10 @@ struct EditorTextView: NSViewRepresentable {
         var appliedFindCurrent: NSRange?
         var appliedFindSeek = 0
         var appliedReplaceID = ""
+        /// 已经生效的编辑器主题（nil = 系统外观）。
+        var appliedThemeStyle: EditorThemeStyle?
+        /// 当前生效的字体对：正文/加粗都从这一对来，主题换了就整体换。
+        var fonts: EditorFonts = .system
 
         init(_ parent: EditorTextView) {
             self.parent = parent
@@ -202,6 +261,46 @@ struct EditorTextView: NSViewRepresentable {
             rebuildLineStarts()
         }
 
+        // MARK: 主题
+
+        /// 把主题铺到编辑器上：底色、字色、光标、字体对，再整串重铺高亮。
+        ///
+        /// 颜色用动态供应商造（按绘制时的 appearance 在明暗两套变量里挑），
+        /// 系统切深浅色时 NSTextView 重绘即换装，不需要任何人通知。
+        /// nil 回落系统语义色——与没有主题字段时的旧世界完全一致。
+        func applyTheme(_ style: EditorThemeStyle?) {
+            appliedThemeStyle = style
+            guard let style else {
+                textView.backgroundColor = .textBackgroundColor
+                textView.textColor = .labelColor
+                textView.insertionPointColor = .labelColor
+                fonts = .system
+                textView.font = fonts.regular
+                EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor)
+                return
+            }
+
+            textView.backgroundColor = NSColor(name: nil) { appearance in
+                let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                let hex = dark
+                    ? (style.darkBackground ?? style.lightBackground)
+                    : (style.lightBackground ?? style.darkBackground)
+                return Theme.color(hex: hex ?? "") ?? .textBackgroundColor
+            }
+            let foreground = NSColor(name: nil) { appearance in
+                let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                let hex = dark
+                    ? (style.darkForeground ?? style.lightForeground)
+                    : (style.lightForeground ?? style.darkForeground)
+                return Theme.color(hex: hex ?? "") ?? .labelColor
+            }
+            textView.textColor = foreground
+            textView.insertionPointColor = foreground
+            fonts = EditorFonts(family: style.monoFontFamily)
+            textView.font = fonts.regular
+            EditorTextView.highlight(textView, fonts: fonts, textColor: foreground)
+        }
+
         static let font = NSFont.monospacedSystemFont(ofSize: 13.5, weight: .regular)
         static let boldFont = NSFont.monospacedSystemFont(ofSize: 13.5, weight: .semibold)
 
@@ -226,7 +325,7 @@ struct EditorTextView: NSViewRepresentable {
             }
             guard textView.string != text else { return }
             textView.string = text
-            EditorTextView.highlight(textView)
+            EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor)
             rebuildLineStarts()
             // `string` 赋值会把光标送到文档末尾。换文档时应该从文首开始——
             // 视图重建（⌘/ 切回来）也走这条路，回填会随后把光标放回原位。
@@ -247,7 +346,7 @@ struct EditorTextView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             isEditing = true
             parent.text = textView.string
-            EditorTextView.highlight(textView)
+            EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor)
             rebuildLineStarts()
             // 高亮重建了整串属性，压暗层要重新铺一遍
             applyFocusFull()
@@ -299,7 +398,7 @@ struct EditorTextView: NSViewRepresentable {
             textView.insertText(snippet, replacementRange: range)
             isEditing = true
             parent.text = textView.string
-            EditorTextView.highlight(textView)
+            EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor)
             rebuildLineStarts()
             applyFocusFull()
             recenter()
@@ -718,7 +817,14 @@ struct EditorTextView: NSViewRepresentable {
     /// 就瞬移到文末；打字机模式再把它居中，整篇文档就滚到底。
     ///
     /// 属性编辑不改变字符长度，光标原地不动，顺带省掉一次整串字符替换的布局失效。
-    static func highlight(_ textView: NSTextView) {
+    ///
+    /// `fonts`/`textColor` 由调用方给：Coordinator 传主题取用的那对，离屏
+    /// 测试与旧调用点不传，回落系统等宽与 `labelColor`。
+    static func highlight(
+        _ textView: NSTextView,
+        fonts: EditorFonts = .system,
+        textColor: NSColor? = nil
+    ) {
         let content = NSString(string: textView.string)
         guard content.length < 400_000 else { return }
         guard let storage = textView.textStorage else { return }
@@ -726,7 +832,7 @@ struct EditorTextView: NSViewRepresentable {
         let full = NSRange(location: 0, length: content.length)
         storage.beginEditing()
         storage.setAttributes(
-            [.font: Coordinator.font, .foregroundColor: NSColor.labelColor],
+            [.font: fonts.regular, .foregroundColor: textColor ?? NSColor.labelColor],
             range: full
         )
 
@@ -747,7 +853,7 @@ struct EditorTextView: NSViewRepresentable {
 
             if isFenceLine {
                 storage.addAttribute(.foregroundColor, value: NSColor.systemPurple, range: lineRange)
-                storage.addAttribute(.font, value: Coordinator.font, range: lineRange)
+                storage.addAttribute(.font, value: fonts.regular, range: lineRange)
                 inFence.toggle()
                 lineStart = lineEnd
                 if lineStart >= content.length { break }
@@ -763,9 +869,7 @@ struct EditorTextView: NSViewRepresentable {
 
             // 标题行
             if trimmed.hasPrefix("#"), let level = headingLevel(trimmed) {
-                let size = CGFloat(max(13.5, 13.5 + Double(4 - level) * 1.2))
-                let headingFont = NSFont.monospacedSystemFont(ofSize: size, weight: .bold)
-                storage.addAttribute(.font, value: headingFont, range: lineRange)
+                storage.addAttribute(.font, value: fonts.heading(level), range: lineRange)
                 storage.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: lineRange)
             }
             // 引用行
@@ -798,7 +902,7 @@ struct EditorTextView: NSViewRepresentable {
                     )
                 }
 
-                apply(lineNS, to: storage, base: lineRange.location)
+                apply(lineNS, to: storage, base: lineRange.location, fonts: fonts)
             }
 
             if lineEnd >= content.length { break }
@@ -808,7 +912,7 @@ struct EditorTextView: NSViewRepresentable {
         storage.endEditing()
     }
 
-    private static func apply(_ line: NSString, to storage: NSMutableAttributedString, base: Int) {
+    private static func apply(_ line: NSString, to storage: NSMutableAttributedString, base: Int, fonts: EditorFonts) {
         func add(_ pattern: String, _ attrs: [NSAttributedString.Key: Any]) {
             guard let re = try? NSRegularExpression(pattern: pattern) else { return }
             re.enumerateMatches(in: line as String, range: NSRange(location: 0, length: line.length)) { m, _, _ in
@@ -822,7 +926,7 @@ struct EditorTextView: NSViewRepresentable {
             .foregroundColor: NSColor.systemTeal,
             .backgroundColor: NSColor.quaternaryLabelColor.withAlphaComponent(0.12),
         ])
-        add(#"\*\*[^*\n]+\*\*|__[^_\n]+__"#, [.font: Coordinator.boldFont])
+        add(#"\*\*[^*\n]+\*\*|__[^_\n]+__"#, [.font: fonts.bold])
         add(#"\*[^*\n]+\*|(?<![\w_])_[^_\n]+_(?![\w_])"#, [.obliqueness: 0.18])
         add(#"~~[^~\n]+~~"#, [
             .strikethroughStyle: NSUnderlineStyle.single.rawValue,
