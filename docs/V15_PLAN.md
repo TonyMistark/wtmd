@@ -1042,3 +1042,40 @@ let apps = NSWorkspace.shared.urlsForApplications(toOpen: url)
   `/Users/ice/Documents/…`。展示与复制分开实现，别拿缩写去喂脚本。
 - 菜单命令的可用性边界跟着**数据是否存在**走，不跟着按钮走——
   `isEnabled` 是唯一裁判，⌘K、菜单、状态栏三处入口自动一致。
+
+### v0.15.20 — 编辑器跟随主题（#214）
+
+主题 CSS 只喂了预览的 WebView。写作区是 `NSTextView`，底色/字色钉死在系统
+语义色、字体固定系统等宽——**编辑器从未跟随过主题**。split 模式下预览半边
+换肤、写作半边不动，纸墨主题下尤其扎眼；用户报的是 split，实际是全模式通病。
+
+#### 方案
+
+- `EditorThemeStyle` 从主题变量层拆出 `--bg`/`--fg`/`--font-mono`（明暗两套），
+  只存原始数据（id、字族、hex 字符串）——SwiftUI 每次刷新都重新求值这个
+  结构体，拿 NSColor 做相等比较会让编辑器每敲一个键都重铺高亮。
+- 颜色用 `NSColor(name:dynamicProvider:)` 动态供应商：绘制时按 appearance
+  自己挑明/暗那套，系统切深浅色不需要任何人通知。
+- `EditorFonts` 派生加粗与标题字号；`highlight(_:fonts:textColor:)` 让语法
+  高亮的正文属性跟随 textView 当前字体/字色，旧调用点回落系统。
+- 换主题 → `updateNSView` 检测 style 变化 → 重铺四件套 + 整串高亮。
+
+#### 真机/测试挖出的三个坑
+
+- **`NSFont(name:)` 对没装的字族不返回 nil**，悄悄给替代字体——「回落系统
+  等宽」必须先对 `availableFontFamilies`（**字族名**清单）把关；
+  `availableFonts` 是 PostScript 名清单（`Menlo-Regular`），拿它查
+  "Menlo" 永远落空。
+- **系统等宽的隐藏字体名（`.` 开头）不能喂 `NSFont(name:)`**，会产出错误
+  字重；标题行走 NSFontManager `toSize` + bold，隐藏名直接
+  `monospacedSystemFont(ofSize:weight:.bold)`。
+- **`NSTextView.font`/`textColor` 的 getter 跟着选区属性走**——选区停在
+  标题行时读到标题字体和 controlAccentColor。断言要看 `coordinator.fonts`
+  与 textStorage 属性，别碰选区敏感的 getter。
+
+#### 测试
+
+893 → 902（+9，`EditorThemeTests`）：变量解析、hex 全长度取色与坏值、
+字族栈解析、明暗借用（终端这类只有暗色变体的主题）、真视图应用（底色
+解析值/正文字色/光标/字族）、高亮跟随主题字体、清主题回落、字族不存在
+回落。反向验证：拆掉字体应用，3 条断言当场变红。
