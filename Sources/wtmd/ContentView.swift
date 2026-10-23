@@ -702,13 +702,6 @@ struct ContentView: View {
                 Label(t("Export"), systemImage: "square.and.arrow.up")
             }
 
-            Button {
-                store.save()
-            } label: {
-                Label(t("Save"), systemImage: "square.and.arrow.down")
-            }
-            .disabled(!isEnabled(.save))
-
             // 一处门：写作、外观、应用与帮助全在设置窗口里，从这枚头像进去。
             // 头像就是「我是谁」——设了图片就画图片，没设就画昵称首字。
             Button {
