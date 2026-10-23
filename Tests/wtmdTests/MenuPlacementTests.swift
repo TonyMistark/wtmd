@@ -14,7 +14,7 @@ import Testing
 /// 且每条菜单命令都真的能在目录里查到。
 @MainActor
 struct MenuPlacementTests {
-    @Test("File 菜单挂在存在的分组上，七条命令一个不少")
+    @Test("File 菜单挂在存在的分组上，九条命令一个不少")
     func theFileMenuIsPlacedInAGroupThatExists() throws {
         // 只看代码：注释里写着「别用 .saveItem」是好事，不该因此判红。
         let app = try strippingComments(source("wtmdApp.swift"))
@@ -28,6 +28,7 @@ struct MenuPlacementTests {
         let group = try block(startingAt: "CommandGroup(after: .newItem)", in: app)
         for kind in [
             "openDocument", "openFolder", "save", "showHistory",
+            "showInFinder", "copyFilePath",
             "exportHTML", "exportWord", "exportPDF",
         ] {
             #expect(group.contains("menuItem(.\(kind))"), "File 菜单里没有 \(kind)——那条快捷键就是个哑键")

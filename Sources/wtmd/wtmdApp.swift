@@ -100,6 +100,8 @@ struct AppMenus: Commands {
             menuItem(.save)
             Divider()
             menuItem(.showHistory)
+            menuItem(.showInFinder)
+            menuItem(.copyFilePath)
             Divider()
             menuItem(.exportHTML)
             menuItem(.exportWord)
