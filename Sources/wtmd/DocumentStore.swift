@@ -155,6 +155,18 @@ final class DocumentStore: ObservableObject {
         text.isEmpty && fileURL == nil && !hasStartedWriting
     }
 
+    /// 这扇窗里还没有读者自己的字吗？
+    ///
+    /// 欢迎页的文案也存在 `text` 里（`welcomeMarkdown`），所以「没字」不能只看
+    /// `text.isEmpty`——`hasStartedWriting` 才是「读者动过这一篇」的准确标记。
+    ///
+    /// 从 Finder 打开文件时用它判断能不能占用当前窗：判错了就是把别人没保存的
+    /// 稿子顶掉，或者明明有一扇空窗却另开一扇。
+    var isUntouched: Bool {
+        guard fileURL == nil, !hasStartedWriting else { return false }
+        return text.isEmpty || text == Self.welcomeMarkdown
+    }
+
     let recentFiles: RecentFiles
     /// 主题是应用的，不是窗口的：所有窗口共用一份，切主题时一起变。
     let themeManager: ThemeManager

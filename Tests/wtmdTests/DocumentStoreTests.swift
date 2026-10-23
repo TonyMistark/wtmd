@@ -55,6 +55,33 @@ import Testing
     #expect(store.showsWelcome)
 }
 
+/// 从 Finder 打开文件时靠它判断「能不能占用这扇窗」。
+///
+/// 欢迎页的文案就存在 `text` 里，所以「有没有字」必须靠 `hasStartedWriting`
+/// 说话；只看 `text.isEmpty` 会把刚起来的窗当成「有未保存的稿子」，
+/// 于是每打开一个文件都多开一扇空窗。
+@MainActor
+@Test func isUntouchedMeansTheWelcomePageIsStillUntouched() throws {
+    let dir = try makeTempDraftDirectory()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let store = DocumentStore(draftDirectory: dir)
+
+    #expect(store.text == DocumentStore.welcomeMarkdown)
+    #expect(store.isUntouched)
+
+    store.textDidChange("# 我的稿子")
+    #expect(!store.isUntouched)
+
+    // 打开过文件的窗也不算空窗——哪怕那篇是空的。
+    let other = try makeTempDraftDirectory()
+    defer { try? FileManager.default.removeItem(at: other) }
+    let opened = DocumentStore(draftDirectory: other)
+    let file = other.appendingPathComponent("a.md")
+    try "# a".write(to: file, atomically: true, encoding: .utf8)
+    opened.open(url: file)
+    #expect(!opened.isUntouched)
+}
+
 /// 新建文档清掉的是「未保存的草稿」——既有设计（也是草稿文件会消失的原因），
 /// 顺带守住注入的目录边界：清理只发生在自己的目录里。
 @MainActor

@@ -1,0 +1,112 @@
+import AppKit
+import Foundation
+
+/// Finder 的「打开方式」、把文件拖到 Dock 图标、`open -a wtmd note.md`——都从这里进来。
+///
+/// 系统以前为什么不列 wtmd：`Info.plist` 里没有 `CFBundleDocumentTypes`，
+/// LaunchServices 根本不知道它能打开 `.md`，右键菜单自然找不到它。声明类型之后，
+/// 文件会交到 `AppDelegate.application(_:open:)`，剩下的问题是「交给哪扇窗」。
+@MainActor
+enum OpenRequest {
+    /// 窗口表。`wtmdApp` 起来时装进来——它活得比任何一扇窗都久。
+    static weak var coordinator: WindowCoordinator?
+
+    /// 系统投递来的一批文件（Finder 里多选打开时一次好几个）。
+    static func open(_ urls: [URL]) {
+        // 文件夹（系统也能把目录投过来）没有可编辑的正文，交给 `readDocument`
+        // 只会静默失败；这里先筛掉，别让它占掉一扇窗。
+        let files = urls.filter(isEditableFile)
+        guard !files.isEmpty, let coordinator else { return }
+
+        // 先把人叫回来：从 Finder 打开文件，窗口得在眼前。
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        // 一扇看得见的写作窗都没有（⌘W 关光、后台启动、系统还在恢复现场）：
+        // 先摆一扇出来，否则文件打开了也没人看得见。
+        //
+        // 但**存在的窗**不能算没有：刚启动时主窗已经建好、只是还没露脸，
+        // 这时候再 `openWindow(id:)` 会多开一个 `WindowGroup` 实例——屏幕上
+        // 一扇空欢迎页、一扇有稿子，看起来像「打开一个文件却开了两个窗」。
+        let windows = NSApplication.shared.windows
+        let keyable = windows.filter { !($0 is NSPanel) && $0.canBecomeKey }
+        let raised = AppActivation.raiseFrontWindow()
+        CrashBreadcrumbs.note(
+            "open files=\(files.count) windows=\(windows.count) keyable=\(keyable.count) raised=\(raised)"
+        )
+        if !raised, keyable.isEmpty {
+            AppActivation.openMain?()
+        }
+
+        for (index, url) in files.enumerated() {
+            let current = coordinator.activeModel(focused: nil)
+            let route = plan(
+                index: index,
+                sameDocumentAlreadyOpen: current.store.fileURL.map {
+                    PathKey.isSame($0, url)
+                } ?? false,
+                currentWindowIsUntouched: current.store.isUntouched,
+                owner: coordinator.shared.openDocuments.owner(of: url)
+            )
+            CrashBreadcrumbs.note("open route=\(route)")
+            switch route {
+            case .leaveAsIs:
+                break
+            case .reveal(let window):
+                // 这篇在别的窗里开着：跳过去，不再开第二份（两窗各写一份，
+                // 谁后落盘谁赢）。
+                coordinator.shared.openDocuments.reveal?(window, url, nil)
+            case .reuseCurrent:
+                current.store.open(url: url)
+            case .newWindow:
+                if let id = coordinator.openNewWindow(inheriting: nil),
+                   let model = coordinator.model(for: id) {
+                    model.store.open(url: url)
+                } else {
+                    // 开窗通道还没装好（启动早期）：先装进当前窗，总比什么都不做强。
+                    current.store.open(url: url)
+                }
+            }
+        }
+    }
+
+    /// 一篇文件该往哪儿放。
+    enum Plan: Equatable {
+        /// 这篇在前台窗里已经开着：什么也不用做。
+        case leaveAsIs
+        /// 前台窗还是空白的：直接装进去。
+        case reuseCurrent
+        /// 另开一扇——手上的稿子不能被换掉。
+        case newWindow
+        /// 这篇在另一扇窗里开着：把那扇窗带到前面。
+        case reveal(UUID)
+    }
+
+    /// 只收真的能编辑的文件：目录、失效的路径都筛掉。
+    static func isEditableFile(_ url: URL) -> Bool {
+        guard url.isFileURL else { return false }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+            return false
+        }
+        return !isDirectory.boolValue
+    }
+
+    /// 抽成纯函数：测试不必真开窗，也不必造一整个 `NSApplication`。
+    ///
+    /// - Parameters:
+    ///   - index: 这一批里的第几篇。只有第一篇配占用现成的空窗。
+    ///   - sameDocumentAlreadyOpen: 前台窗此刻开着的就是这篇。
+    ///   - currentWindowIsUntouched: 前台窗里既没有文件、也没有没名字的字。
+    ///   - owner: 这篇正被哪扇窗占着（`OpenDocuments` 的答案）。
+    static func plan(
+        index: Int,
+        sameDocumentAlreadyOpen: Bool,
+        currentWindowIsUntouched: Bool,
+        owner: UUID?
+    ) -> Plan {
+        if sameDocumentAlreadyOpen { return .leaveAsIs }
+        if let owner { return .reveal(owner) }
+        // 多选打开时第二篇起各开一扇，否则后一篇会把前一篇顶掉。
+        if index == 0, currentWindowIsUntouched { return .reuseCurrent }
+        return .newWindow
+    }
+}

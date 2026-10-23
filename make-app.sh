@@ -58,8 +58,51 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>NSHighResolutionCapable</key> <true/>
     <key>NSSupportsAutomaticTermination</key> <false/>
     <key>NSSupportsSuddenTermination</key>   <false/>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>       <string>Markdown Document</string>
+            <key>CFBundleTypeRole</key>       <string>Editor</string>
+            <!-- Alternate：列进「打开方式」，但不抢别人已经认领的默认程序。
+                 想让它当默认，右键 › 显示简介 › 打开方式 › 全部更改 即可。 -->
+            <key>LSHandlerRank</key>          <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <!-- 系统认识的 Markdown 类型（Xcode 声明的那份）；有它就够列进菜单。 -->
+                <string>net.daringfireball.markdown</string>
+                <!-- 自己声明的类型：没装 Xcode 的机器上，扩展名映射由这份保证。 -->
+                <string>cn.wtmd.markdown</string>
+            </array>
+            <!-- 旧版 LaunchServices 只看扩展名，留着不碍事。 -->
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>md</string>
+                <string>markdown</string>
+                <string>mdown</string>
+                <string>mkd</string>
+            </array>
+        </dict>
+    </array>
     <key>UTExportedTypeDeclarations</key>
     <array>
+        <dict>
+            <key>UTTypeIdentifier</key>      <string>cn.wtmd.markdown</string>
+            <key>UTTypeDescription</key>     <string>Markdown Document</string>
+            <key>UTTypeConformsTo</key>
+            <array><string>public.plain-text</string></array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>md</string>
+                    <string>markdown</string>
+                    <string>mdown</string>
+                    <string>mkd</string>
+                </array>
+                <key>public.mime-type</key>
+                <array><string>text/markdown</string></array>
+            </dict>
+        </dict>
         <dict>
             <key>UTTypeIdentifier</key>      <string>cn.wtmd.workspace-row</string>
             <key>UTTypeDescription</key>     <string>wtmd workspace row</string>
