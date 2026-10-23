@@ -515,8 +515,8 @@ struct ContentView: View {
                 .scaleEffect(0.7)
                 .frame(width: 12, height: 12)
                 .help(t("Checking for updates…"))
-        case .available(let version, let url, let asset):
-            updateAvailableBadge(version: version, url: url, asset: asset)
+        case .available(let version, let sources):
+            updateAvailableBadge(version: version, sources: sources)
         case .upToDate(let version):
             Text(t("v{} is up to date", version))
                 .foregroundStyle(.tertiary)
@@ -528,10 +528,10 @@ struct ContentView: View {
         }
     }
 
-    /// 有新版时的那枚徽标。装得动就一键装；下载中的进度写在原地，
-    /// 失败了退回两条老路——再点重试，或者去 Release 页手动下载。
+    /// 有新版时的那枚徽标。点一下用首选源一键装；长按出菜单挑下载源——
+    /// GitHub 抽风或国内网络差的时候，还有 Gitee 那条路。
     @ViewBuilder
-    private func updateAvailableBadge(version: String, url: URL, asset: UpdateAsset?) -> some View {
+    private func updateAvailableBadge(version: String, sources: [UpdateSource]) -> some View {
         switch installer.phase {
         case .downloading(let fraction):
             Text(t("Downloading {}%", Int(fraction * 100)))
@@ -549,7 +549,7 @@ struct ContentView: View {
             .help(t("Swapping the new app into /Applications"))
         case .failed(let reason):
             Button {
-                NSWorkspace.shared.open(url)
+                if let primary = sources.first { NSWorkspace.shared.open(primary.releaseURL) }
             } label: {
                 Label(t("Update failed"), systemImage: "exclamationmark.arrow.circlepath")
                     .foregroundStyle(.secondary)
@@ -558,27 +558,53 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .help(t("Retry from the release page. {}", reason))
         case .idle:
-            Button {
-                startUpdate(version: version, url: url, asset: asset)
-            } label: {
-                Label(t("v{} available", version), systemImage: "arrow.down.circle")
-                    .foregroundStyle(Color.accentColor)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(asset == nil
-                ? t("Open the download page: {}", url.absoluteString)
-                : t("Download and install v{}, then relaunch", version))
+            updateSourceMenu(version: version, sources: sources)
         }
     }
 
+    /// 一键装 + 换源菜单。点徽标本体 = 首选源；菜单里每个源两条路：
+    /// 直接下载安装，或打开它的 release 页自己拖。
+    @ViewBuilder
+    private func updateSourceMenu(version: String, sources: [UpdateSource]) -> some View {
+        let primary = sources.first
+        Menu {
+            ForEach(sources, id: \.name) { source in
+                if source.asset != nil {
+                    Button(t("Download from {}", source.name)) {
+                        startUpdate(source: source, version: version)
+                    }
+                }
+                Button(t("Open {} release page", source.name)) {
+                    NSWorkspace.shared.open(source.releaseURL)
+                }
+            }
+        } label: {
+            Label(t("v{} available", version), systemImage: "arrow.down.circle")
+                .foregroundStyle(Color.accentColor)
+                .contentShape(Rectangle())
+        } primaryAction: {
+            if let primary {
+                startUpdate(source: primary, version: version)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .help(updateHelp(version: version, primary: primary))
+    }
+
+    private func updateHelp(version: String, primary: UpdateSource?) -> String {
+        guard let primary else { return t("v{} available", version) }
+        return primary.asset == nil
+            ? t("Open the download page: {}", primary.releaseURL.absoluteString)
+            : t("Download and install v{}, then relaunch", version)
+    }
+
     /// 有 dmg 就一键装；没有（Release 没挂附件）就退回打开下载页。
-    private func startUpdate(version: String, url: URL, asset: UpdateAsset?) {
-        guard let asset else {
-            NSWorkspace.shared.open(url)
+    private func startUpdate(source: UpdateSource, version: String) {
+        guard let asset = source.asset else {
+            NSWorkspace.shared.open(source.releaseURL)
             return
         }
-        Task { await installer.run(asset: asset, version: version, releaseURL: url) }
+        Task { await installer.run(asset: asset, version: version, releaseURL: source.releaseURL) }
     }
 
     /// 两个写作模式的开关：界面越安静，越容易待在里面。

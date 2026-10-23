@@ -278,12 +278,31 @@ struct AppSettingsView: View {
     @ViewBuilder
     private var updateAction: some View {
         switch (updates.status, installer.phase) {
-        case (.available(let version, let url, let asset), .idle):
-            Button(t("Update…")) {
-                if let asset {
-                    Task { await installer.run(asset: asset, version: version, releaseURL: url) }
-                } else {
-                    NSWorkspace.shared.open(url)
+        case (.available(let version, let sources), .idle):
+            if let primary = sources.first {
+                Button(t("Update…")) {
+                    if let asset = primary.asset {
+                        Task { await installer.run(asset: asset, version: version, releaseURL: primary.releaseURL) }
+                    } else {
+                        NSWorkspace.shared.open(primary.releaseURL)
+                    }
+                }
+                // 备源入口：默认源下载慢或失败时，换个地方拿同一个 dmg
+                if sources.count > 1 {
+                    Menu(t("Or download from…")) {
+                        ForEach(sources, id: \.name) { source in
+                            if source.asset != nil {
+                                Button(t("Download from {}", source.name)) {
+                                    if let asset = source.asset {
+                                        Task { await installer.run(asset: asset, version: version, releaseURL: source.releaseURL) }
+                                    }
+                                }
+                            }
+                            Button(t("Open {} release page", source.name)) {
+                                NSWorkspace.shared.open(source.releaseURL)
+                            }
+                        }
+                    }
                 }
             }
         case (_, .downloading(let fraction)):
