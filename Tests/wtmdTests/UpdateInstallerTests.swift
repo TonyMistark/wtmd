@@ -401,7 +401,15 @@ struct UpdateInstallerAssemblyTests {
     func theBadgeInstalls() throws {
         let content = try source("ContentView.swift")
         #expect(content.contains("installer.run(asset:"))
-        #expect(content.contains("case .available(let version, let url, let asset):"))
+        #expect(content.contains("case .available(let version, let sources):"))
+    }
+
+    @Test("徽标带着换源菜单：双源时用户能挑下载地")
+    func theBadgeOffersSourceChoice() throws {
+        let content = try source("ContentView.swift")
+        #expect(content.contains("Download from {}"), "菜单里没有「从某源下载」")
+        #expect(content.contains("Open {} release page"), "菜单里没有「打开发布页」")
+        #expect(content.contains("primaryAction"), "点徽标本体得还是一键装")
     }
 
     @Test("设置页也有一条更新的动作")

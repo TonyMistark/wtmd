@@ -82,9 +82,10 @@ enum UpdateStatus: Equatable {
     case idle
     case checking
     case upToDate(version: String)
-    /// `asset` 是 dmg 的下载地址与大小；Release 里没挂 dmg 时为 nil，
+    /// 有新版。`sources` 是所有报出这个版本的下载源（GitHub / Gitee），
+    /// 首个是徽标一键装的默认源；Release 里没挂 dmg 的源 `asset` 为 nil，
     /// 界面此时退回「打开 Release 页」的老路。
-    case available(version: String, releaseURL: URL, asset: UpdateAsset?)
+    case available(version: String, sources: [UpdateSource])
     case failed
 }
 
@@ -112,23 +113,51 @@ struct UpdateAsset: Equatable {
     }
 }
 
+/// 一个能下载到更新的地方：名字给人看（GitHub / Gitee），asset 用来
+/// 一键装，release 页是「装不动」时的退路。同一个版本可能两个源都有
+/// ——挑哪个由用户点。
+struct UpdateSource: Equatable {
+    let name: String
+    let asset: UpdateAsset?
+    let releaseURL: URL
+}
+
 // MARK: - 检查器
 
-/// 每天最多查一次 GitHub Release，发现新版本就在状态栏提示。
+/// 每天最多查一次发布源，发现新版本就在状态栏提示。
 ///
 /// 三条刻意的克制：
-/// 1. **不做内置下载器**——只把用户送到 Release 页，保持零依赖；
+/// 1. **不做内置下载器**——只把用户送到 Release 页或直链下载，保持零依赖；
 /// 2. **失败完全静默**——写作工具不该在离线时弹窗；
 /// 3. **节流**——成功后 24 小时内不再查，失败 1 小时后才重试。
 ///
+/// 发布源可以有多个（GitHub 主源 + Gitee 备源）：检查时**并发**查、都等到
+/// 结果再比较，取版本更高者；一个源挂了就用另一个，全挂才算检查失败。
 /// 网络、当前版本、时钟、UserDefaults 全部注入，测试不碰真实网络。
 @MainActor
 final class UpdateChecker: ObservableObject {
-    typealias Fetch = () async throws -> (Data, URLResponse)
+    typealias Fetch = @Sendable (Configuration.Source) async throws -> (Data, URLResponse)
 
     struct Configuration {
+        struct Source {
+            /// 名字给人看：徽标菜单、设置页上按这个名字挑下载地。
+            let name: String
+            /// 「最新 release」的查询地址（GitHub 与 Gitee API v5 同构）。
+            let endpoint: URL
+            /// release 页地址的兜底模板（`{}` 换成 tag）。Gitee 的 JSON
+            /// 不带 `html_url`，页面地址从这里拼；GitHub 自带就用它的。
+            var pageTemplate: String = ""
+
+            /// 这个源上某个 tag 的 release 页。
+            func page(forTag tag: String) -> URL? {
+                guard !pageTemplate.isEmpty else { return nil }
+                return URL(string: pageTemplate.replacingOccurrences(of: "{}", with: tag))
+            }
+        }
+
         var currentVersion: String
-        var endpoint: URL
+        /// 所有发布源。检查时并发查全部，取版本更高的那个。
+        var sources: [Source]
         /// 成功检查后的静默期。
         var interval: TimeInterval
         /// 失败后的重试间隔（比成功短，但足以避免每次启动都撞墙）。
@@ -136,7 +165,17 @@ final class UpdateChecker: ObservableObject {
 
         static let `default` = Configuration(
             currentVersion: UpdateChecker.bundleVersion(),
-            endpoint: URL(string: "https://api.github.com/repos/TonyMistark/wtmd/releases/latest")!,
+            sources: [
+                Source(
+                    name: "GitHub",
+                    endpoint: URL(string: "https://api.github.com/repos/TonyMistark/wtmd/releases/latest")!
+                ),
+                Source(
+                    name: "Gitee",
+                    endpoint: URL(string: "https://gitee.com/api/v5/repos/Micestark/wtmd/releases/latest")!,
+                    pageTemplate: "https://gitee.com/Micestark/wtmd/releases/tag/{}"
+                ),
+            ],
             interval: 24 * 60 * 60,
             retryInterval: 60 * 60
         )
@@ -187,36 +226,80 @@ final class UpdateChecker: ObservableObject {
         resetTask?.cancel()
         status = .checking
 
-        do {
-            let (data, response) = try await fetch()
-            guard let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else {
-                throw UpdateError.badResponse
+        // 并发查所有源：一个源的失败不该拖垮、也不该掩盖另一个源的结果。
+        // 全都失败才算检查失败；只要有活口，就按「版本更高者」出结果。
+        var found: [(source: Configuration.Source, release: RemoteRelease)] = []
+        await withTaskGroup(of: (Configuration.Source, Result<RemoteRelease, Error>).self) { group in
+            for source in configuration.sources {
+                group.addTask { [fetch] in
+                    do {
+                        let (data, response) = try await fetch(source)
+                        guard let http = response as? HTTPURLResponse,
+                              (200..<300).contains(http.statusCode) else {
+                            throw UpdateError.badResponse
+                        }
+                        return (source, .success(try JSONDecoder().decode(RemoteRelease.self, from: data)))
+                    } catch {
+                        return (source, .failure(error))
+                    }
+                }
             }
-            let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
-            recordAttempt(succeeded: true)
-            evaluate(release)
-        } catch {
+            for await (source, result) in group {
+                if let release = try? result.get() { found.append((source, release)) }
+            }
+        }
+
+        guard !found.isEmpty else {
             recordAttempt(succeeded: false)
             flash(.failed)
+            return
         }
+        recordAttempt(succeeded: true)
+        evaluate(found)
     }
 
     // MARK: - 判定
 
-    private func evaluate(_ release: GitHubRelease) {
-        guard !release.draft, !release.prerelease,
-              let latest = AppVersion(release.tagName) else {
-            // 预发布或 tag 不可解析：当作「没有可用的正式版」，不打扰用户
-            flash(.upToDate(version: configuration.currentVersion))
-            return
-        }
+    /// 源在配置里的位置；配置外的源排到最后（不该发生，兜底而已）。
+    private func index(of source: Configuration.Source) -> Int {
+        configuration.sources.firstIndex { $0.endpoint == source.endpoint } ?? .max
+    }
+
+    private func evaluate(_ releases: [(source: Configuration.Source, release: RemoteRelease)]) {
         guard let current = AppVersion(configuration.currentVersion) else {
             flash(.failed)
             return
         }
+
+        // 多源可能不同步（忘了传 Gitee、或 Gitee 先挂了新版）：谁的版本高听谁的；
+        // 报出同一版本的源全部带回来，用户挑一个下载。顺序按配置里的源序——
+        // 并发回来的完成顺序不定，不能让它决定「首选源是谁」。
+        var bestVersion: AppVersion?
+        var sources: [UpdateSource] = []
+        for piece in releases.sorted(by: {
+            index(of: $0.source) < index(of: $1.source)
+        }) {
+            guard !piece.release.draft, !piece.release.prerelease,
+                  let version = AppVersion(piece.release.tagName) else { continue }
+            if let best = bestVersion {
+                if version > best {
+                    bestVersion = version
+                    sources = [piece.release.updateSource(on: piece.source)]
+                } else if version == best {
+                    sources.append(piece.release.updateSource(on: piece.source))
+                }
+            } else {
+                bestVersion = version
+                sources = [piece.release.updateSource(on: piece.source)]
+            }
+        }
+        // 预发布 / tag 不可解析：当作「没有可用的正式版」，不打扰用户
+        guard let latest = bestVersion else {
+            flash(.upToDate(version: configuration.currentVersion))
+            return
+        }
         if latest > current {
-            status = .available(version: latest.description, releaseURL: release.htmlURL, asset: release.asset)
+            status = .available(version: latest.description, sources: sources)
         } else {
             flash(.upToDate(version: current.description))
         }
@@ -250,11 +333,11 @@ final class UpdateChecker: ObservableObject {
 
     // MARK: - 默认网络实现
 
-    nonisolated private static func fetchLatestRelease() async throws -> (Data, URLResponse) {
-        var request = URLRequest(url: Configuration.default.endpoint)
+    nonisolated private static func fetchLatestRelease(from source: Configuration.Source) async throws -> (Data, URLResponse) {
+        var request = URLRequest(url: source.endpoint)
         request.timeoutInterval = 15
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        // GitHub 要求带 User-Agent，否则直接 403
+        // GitHub 要求带 User-Agent，否则直接 403；Gitee 不挑，带上也无妨
         request.setValue("wtmd/\(Configuration.default.currentVersion)", forHTTPHeaderField: "User-Agent")
         return try await URLSession.shared.data(for: request)
     }
@@ -266,11 +349,46 @@ final class UpdateChecker: ObservableObject {
 
 // MARK: - 网络载荷
 
-private struct GitHubRelease: Decodable {
+/// GitHub 与 Gitee 的 release JSON 同构但都不完整：Gitee 不带
+/// `html_url`/`draft`，字段缺席一律宽容——缺了不等于坏消息。
+struct RemoteRelease: Decodable {
     let tagName: String
-    let htmlURL: URL
+    let htmlURL: URL?
     let draft: Bool
     let prerelease: Bool
+    private let assets: [Asset]?
+
+    init(tagName: String, htmlURL: URL? = nil, draft: Bool = false, prerelease: Bool = false, assets: [Asset]? = nil) {
+        self.tagName = tagName
+        self.htmlURL = htmlURL
+        self.draft = draft
+        self.prerelease = prerelease
+        self.assets = assets
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tagName = try container.decode(String.self, forKey: .tagName)
+        htmlURL = try? container.decode(URL.self, forKey: .htmlURL)
+        draft = (try? container.decode(Bool.self, forKey: .draft)) ?? false
+        prerelease = (try? container.decode(Bool.self, forKey: .prerelease)) ?? false
+        assets = try? container.decode([Asset].self, forKey: .assets)
+    }
+
+    /// 这个 release 在某个源上的下载入口。
+    func updateSource(on source: UpdateChecker.Configuration.Source) -> UpdateSource {
+        UpdateSource(
+            name: source.name,
+            asset: asset,
+            releaseURL: htmlURL ?? source.page(forTag: tagName) ?? htmlFallback
+        )
+    }
+
+    /// 模板也没配、JSON 也没带：把人带到仓库首页，总比没有强。
+    private var htmlFallback: URL {
+        URL(string: "https://github.com/TonyMistark/wtmd/releases")!
+    }
+
     var asset: UpdateAsset? {
         UpdateAsset.dmg(
             named: (assets ?? []).compactMap { piece in
@@ -281,8 +399,6 @@ private struct GitHubRelease: Decodable {
         )
     }
 
-    private var assets: [GitHubAsset]?
-
     enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
         case htmlURL = "html_url"
@@ -291,8 +407,8 @@ private struct GitHubRelease: Decodable {
         case assets
     }
 
-    private struct GitHubAsset: Decodable {
-        // 附件字段缺了不算错：GitHub 偶尔挂非 dmg 的东西，跳过它就好
+    struct Asset: Decodable {
+        // 附件字段缺了不算错：两个平台都会挂非 dmg 的东西，跳过它就好
         let name: String?
         let size: Int?
         let downloadURL: URL?

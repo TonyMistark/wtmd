@@ -437,12 +437,15 @@ private final class CommandHarness {
             updates: UpdateChecker(
                 configuration: UpdateChecker.Configuration(
                     currentVersion: "0.0.0",
-                    endpoint: URL(string: "https://example.invalid/latest")!,
+                    sources: [UpdateChecker.Configuration.Source(
+                        name: "GitHub",
+                        endpoint: URL(string: "https://example.invalid/latest")!
+                    )],
                     interval: 0,
                     retryInterval: 0
                 ),
                 defaults: defaults,
-                fetch: { throw URLError(.notConnectedToInternet) }
+                fetch: { _ in throw URLError(.notConnectedToInternet) }
             )
         )
     }

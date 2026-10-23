@@ -56,19 +56,38 @@ import Testing
 
 /// 测试替身故意不加 `@MainActor`：注入的闭包不是隔离的，替身保持普通类型最简单。
 private final class UpdateStub {
+    /// 按源名回话：双源检查时 GitHub 与 Gitee 各答各的。
     var calls = 0
     var now = Date(timeIntervalSince1970: 1_700_000_000)
-    var result: Result<(Data, URLResponse), Error> = .failure(URLError(.notConnectedToInternet))
+    var replies: [String: Result<(Data, URLResponse), Error>] = [:]
 
-    func reply(tag: String, draft: Bool = false, prerelease: Bool = false, status: Int = 200) throws {
-        let url = try #require(URL(string: "https://github.com/TonyMistark/wtmd/releases/tag/\(tag)"))
-        let body: [String: Any] = [
-            "tag_name": tag,
-            "html_url": url.absoluteString,
-            "draft": draft,
-            "prerelease": prerelease,
-        ]
-        let data = try JSONSerialization.data(withJSONObject: body)
+    func reply(
+        _ source: String = "GitHub", tag: String, draft: Bool = false, prerelease: Bool = false,
+        assetName: String? = nil, assetSize: Int? = nil, status: Int = 200
+    ) throws {
+        var body: [String: Any] = ["tag_name": tag]
+        if let url = URL(string: "https://example.invalid/\(source.lowercased())/releases/tag/\(tag)") {
+            body["html_url"] = url.absoluteString
+        }
+        body["draft"] = draft
+        body["prerelease"] = prerelease
+        if let assetName {
+            body["assets"] = [[
+                "name": assetName,
+                "size": assetSize ?? 0,
+                "browser_download_url": "https://example.invalid/\(source.lowercased())/dl/\(assetName)",
+            ]]
+        }
+        try setReply(source, json: body, status: status)
+    }
+
+    /// 模拟 Gitee 的 JSON：没有 `html_url`、没有 `draft`/`prerelease` 字段。
+    func replyGiteeLike(tag: String, status: Int = 200) throws {
+        try setReply("Gitee", json: ["tag_name": tag], status: status)
+    }
+
+    private func setReply(_ source: String, json: [String: Any], status: Int) throws {
+        let data = try JSONSerialization.data(withJSONObject: json)
         let response = try #require(
             HTTPURLResponse(
                 url: URL(string: "https://example.invalid/latest")!,
@@ -77,7 +96,7 @@ private final class UpdateStub {
                 headerFields: nil
             )
         )
-        result = .success((data, response))
+        replies[source] = .success((data, response))
     }
 
     func replyRaw(_ text: String, status: Int = 200) throws {
@@ -89,7 +108,15 @@ private final class UpdateStub {
                 headerFields: nil
             )
         )
-        result = .success((Data(text.utf8), response))
+        replies["GitHub"] = .success((Data(text.utf8), response))
+    }
+
+    /// 默认全员「连接失败」。
+    var defaultFailure: Result<(Data, URLResponse), Error> = .failure(URLError(.notConnectedToInternet))
+
+    func answer(_ source: UpdateChecker.Configuration.Source) throws -> (Data, URLResponse) {
+        calls += 1
+        return try (replies[source.name] ?? defaultFailure).get()
     }
 }
 
@@ -107,22 +134,38 @@ private final class UpdateHarness {
         defaults.removePersistentDomain(forName: suite)
     }
 
-    func checker(interval: TimeInterval = 24 * 3600, retryInterval: TimeInterval = 3600) -> UpdateChecker {
+    func checker(sources: [UpdateChecker.Configuration.Source]? = nil, interval: TimeInterval = 24 * 3600, retryInterval: TimeInterval = 3600) -> UpdateChecker {
         let stub = stub
         return UpdateChecker(
             configuration: UpdateChecker.Configuration(
                 currentVersion: currentVersion,
-                endpoint: URL(string: "https://example.invalid/latest")!,
+                sources: sources ?? [UpdateChecker.Configuration.Source(
+                    name: "GitHub",
+                    endpoint: URL(string: "https://example.invalid/latest")!
+                )],
                 interval: interval,
                 retryInterval: retryInterval
             ),
             defaults: defaults,
             now: { stub.now },
-            fetch: {
-                stub.calls += 1
-                return try stub.result.get()
-            }
+            fetch: { source in try stub.answer(source) }
         )
+    }
+
+    /// GitHub + Gitee 双源，端点与默认配置同构（测试替身域）。
+    func dualChecker() -> UpdateChecker {
+        checker(sources: [
+            UpdateChecker.Configuration.Source(
+                name: "GitHub",
+                endpoint: URL(string: "https://example.invalid/github/latest")!,
+                pageTemplate: "https://example.invalid/github/releases/tag/{}"
+            ),
+            UpdateChecker.Configuration.Source(
+                name: "Gitee",
+                endpoint: URL(string: "https://example.invalid/gitee/latest")!,
+                pageTemplate: "https://example.invalid/gitee/releases/tag/{}"
+            ),
+        ])
     }
 
     func cleanup() {
@@ -138,8 +181,10 @@ private final class UpdateHarness {
     let checker = harness.checker()
     await checker.check(force: true)
 
-    let expectedURL = try #require(URL(string: "https://github.com/TonyMistark/wtmd/releases/tag/v0.4.0"))
-    #expect(checker.status == .available(version: "0.4.0", releaseURL: expectedURL, asset: nil))
+    let expectedURL = try #require(URL(string: "https://example.invalid/github/releases/tag/v0.4.0"))
+    #expect(checker.status == .available(version: "0.4.0", sources: [
+        UpdateSource(name: "GitHub", asset: nil, releaseURL: expectedURL),
+    ]))
     #expect(harness.stub.calls == 1)
 }
 
@@ -282,7 +327,10 @@ private final class UpdateHarness {
     let checker = harness.checker()
     await checker.checkIfDue()
     #expect(harness.stub.calls == 2)
-    #expect(checker.status == .available(version: "0.4.0", releaseURL: try #require(URL(string: "https://github.com/TonyMistark/wtmd/releases/tag/v0.4.0")), asset: nil))
+    #expect(checker.status == .available(version: "0.4.0", sources: [
+        UpdateSource(name: "GitHub", asset: nil,
+                     releaseURL: try #require(URL(string: "https://example.invalid/github/releases/tag/v0.4.0"))),
+    ]))
 }
 
 @Test @MainActor func manualCheckBypassesThrottle() async throws {
@@ -296,6 +344,105 @@ private final class UpdateHarness {
     // 手动「检查更新…」不受 24 小时静默期限制
     await harness.checker().check(force: true)
     #expect(harness.stub.calls == 2)
+}
+
+// MARK: - 双源
+
+/// GitHub 主源 + Gitee 备源：并发查、取版本更高者、单源失败回退。
+/// 这些规则钉在这里，双源才不会悄悄变成「谁的响应快听谁的」。
+@Suite("检查更新双源")
+struct UpdateDualSourceTests {
+    @Test @MainActor func bothSourcesAtSameVersionOfferBothForDownload() async throws {
+        let harness = try UpdateHarness(currentVersion: "0.3.0")
+        defer { harness.cleanup() }
+        try harness.stub.reply("GitHub", tag: "v0.4.0", assetName: "wtmd-0.4.0.dmg", assetSize: 3_200_000)
+        try harness.stub.reply("Gitee", tag: "v0.4.0", assetName: "wtmd-0.4.0.dmg", assetSize: 3_200_000)
+
+        let checker = harness.dualChecker()
+        await checker.check(force: true)
+
+        guard case .available(let version, let sources) = checker.status else {
+            Issue.record("expected available, got \(checker.status)")
+            return
+        }
+        #expect(version == "0.4.0")
+        #expect(sources.map(\.name) == ["GitHub", "Gitee"])
+        #expect(sources.allSatisfy { $0.asset?.name == "wtmd-0.4.0.dmg" })
+    }
+
+    @Test @MainActor func higherVersionWinsEvenIfItComesFromTheBackup() async throws {
+        let harness = try UpdateHarness(currentVersion: "0.3.0")
+        defer { harness.cleanup() }
+        try harness.stub.reply("GitHub", tag: "v0.4.0")
+        try harness.stub.reply("Gitee", tag: "v0.5.0")
+
+        let checker = harness.dualChecker()
+        await checker.check(force: true)
+
+        guard case .available(let version, let sources) = checker.status else {
+            Issue.record("expected available, got \(checker.status)")
+            return
+        }
+        // 版本不同步（主源落后）：听高的那个，且只带报出该版本的源
+        #expect(version == "0.5.0")
+        #expect(sources.map(\.name) == ["Gitee"])
+    }
+
+    @Test @MainActor func failingBackupDoesNotBreakThePrimary() async throws {
+        let harness = try UpdateHarness(currentVersion: "0.3.0")
+        defer { harness.cleanup() }
+        try harness.stub.reply("GitHub", tag: "v0.4.0")
+        // Gitee 没配回话 = 连接失败
+
+        let checker = harness.dualChecker()
+        await checker.check(force: true)
+
+        #expect(checker.status == .available(version: "0.4.0", sources: [
+            UpdateSource(name: "GitHub", asset: nil,
+                         releaseURL: try #require(URL(string: "https://example.invalid/github/releases/tag/v0.4.0"))),
+        ]))
+    }
+
+    @Test @MainActor func failingPrimaryFallsBackToTheBackup() async throws {
+        let harness = try UpdateHarness(currentVersion: "0.3.0")
+        defer { harness.cleanup() }
+        try harness.stub.reply("Gitee", tag: "v0.4.0")
+
+        let checker = harness.dualChecker()
+        await checker.check(force: true)
+
+        guard case .available(let version, let sources) = checker.status else {
+            Issue.record("expected available, got \(checker.status)")
+            return
+        }
+        #expect(version == "0.4.0")
+        #expect(sources.map(\.name) == ["Gitee"])
+    }
+
+    @Test @MainActor func allSourcesFailingIsAFailure() async throws {
+        let harness = try UpdateHarness(currentVersion: "0.3.0")
+        defer { harness.cleanup() }
+
+        let checker = harness.dualChecker()
+        await checker.check(force: true)
+
+        #expect(checker.status == .failed)
+    }
+
+    @Test @MainActor func giteePayloadWithoutHtmlURLStillGetsAPageFromTheTemplate() async throws {
+        let harness = try UpdateHarness(currentVersion: "0.3.0")
+        defer { harness.cleanup() }
+        try harness.stub.replyGiteeLike(tag: "v0.4.0")
+
+        let checker = harness.dualChecker()
+        await checker.check(force: true)
+
+        // Gitee JSON 没有 html_url / draft / prerelease：页面从模板拼，draft 宽容为 false
+        #expect(checker.status == .available(version: "0.4.0", sources: [
+            UpdateSource(name: "Gitee", asset: nil,
+                         releaseURL: try #require(URL(string: "https://example.invalid/gitee/releases/tag/v0.4.0"))),
+        ]))
+    }
 }
 
 // MARK: - 命令注册
