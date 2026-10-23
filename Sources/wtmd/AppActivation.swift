@@ -241,6 +241,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Finder「打开方式」、把文件拖到 Dock 图标、`open -a wtmd note.md`：
+    /// 系统把文件交到这里。以前没有这个方法，`Info.plist` 里也没声明文档类型，
+    /// 于是右键菜单里根本没有 wtmd——两件事缺一不可。
+    func application(_ application: NSApplication, open urls: [URL]) {
+        OpenRequest.open(urls)
+    }
+
     /// 返回值是「这件事我处理完了」。举不出一扇窗（全关了）就返回 false，
     /// 让系统按自己的规矩开一扇新的。
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
