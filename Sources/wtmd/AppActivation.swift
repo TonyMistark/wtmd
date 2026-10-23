@@ -31,11 +31,19 @@ enum AppActivation {
 
     // MARK: - 挑哪一扇
 
+    /// 这扇窗「还在」吗？缩在 Dock 里的也算——`isVisible` 对缩着的窗返回
+    /// false（#175），只看它会把关在 Dock 里的窗当成已经关掉。
+    ///
+    /// - Parameter index: 窗口在数组里的位置。
+    private static func stillThere(_ window: WindowInfo) -> Bool {
+        window.isVisible || window.isMiniaturized
+    }
+
     /// - Parameter lastKey: 最近一次成为 key 的那扇在数组里的位置。
     ///
-    /// 顺序是有讲究的：**看得见的普通窗口** > 看得见的面板 > 缩着的。
-    /// 面板排在后面，是因为它多半是临时的（查找条、面板），把人塞进一个
-    /// 随时会消失的窗口里，比什么都不做更让人困惑。
+    /// 顺序是有讲究的：**看得见的普通窗口** > 看得见的面板 > 缩着的普通窗 >
+    /// 缩着的面板。面板排在后面，是因为它多半是临时的（查找条、面板），把人
+    /// 塞进一个随时会消失的窗口里，比什么都不做更让人困惑。
     static func pick(from windows: [WindowInfo], lastKey: Int? = nil) -> Action? {
         let eligible = windows.indices.filter {
             !windows[$0].isSheet && windows[$0].canBecomeKey && !windows[$0].isAuxiliary
@@ -43,41 +51,28 @@ enum AppActivation {
         guard !eligible.isEmpty else { return nil }
 
         // 上一次用的那扇：人点 Dock 想让回来的通常就是它。
-        // 但它可能已经关掉了——关掉的窗再举一次，屏幕上什么都不会发生。
-        if let lastKey, eligible.contains(lastKey), windows[lastKey].isVisible {
+        // 它可能已经关掉了——关掉的窗再举一次，屏幕上什么都不会发生；
+        // 缩在 Dock 里的不算关掉，把它叫醒就好。
+        if let lastKey, eligible.contains(lastKey), stillThere(windows[lastKey]) {
             return action(at: lastKey, in: windows)
         }
 
-        let visible = eligible.filter { windows[$0].isVisible }
+        let present = eligible.filter { stillThere(windows[$0]) }
         let groups: [[Int]] = [
-            visible.filter { !windows[$0].isMiniaturized && !windows[$0].isPanel },
-            visible.filter { !windows[$0].isMiniaturized },
-            visible.filter { windows[$0].isMiniaturized && !windows[$0].isPanel },
-            visible.filter { windows[$0].isMiniaturized },
+            present.filter { windows[$0].isVisible && !windows[$0].isPanel },
+            present.filter { windows[$0].isVisible },
+            present.filter { !windows[$0].isVisible && !windows[$0].isPanel },
+            present.filter { !windows[$0].isVisible },
         ]
         for group in groups {
             if let index = group.first { return action(at: index, in: windows) }
         }
-        // 一扇看得见的都没有：交给调用方去开一扇新的。
+        // 一扇窗都没有（没关的就是缩着的都数过了）：交给调用方去开一扇新的。
         return nil
     }
 
     private static func action(at index: Int, in windows: [WindowInfo]) -> Action {
         windows[index].isMiniaturized ? .deminiaturize(index) : .raise(index)
-    }
-
-    /// 所有能当主的窗口都缩在 Dock 里吗？
-    ///
-    /// 是的话，这件事该让系统来做：**只有系统那条路能给出「神灯」动画**——
-    /// 窗口从 Dock 里长出来。自己 `deminiaturize` 得到的是「啪」地出现，
-    /// 收起来有动画、放出来没有，一样是两个动作不一样的手感。
-    ///
-    /// 面板与 sheet 不算：它们缩不了，也不该把「还有一扇看得见的窗」这件事
-    /// 从眼前挡掉。
-    static func defersToSystem(_ windows: [WindowInfo]) -> Bool {
-        let eligible = windows.filter { !$0.isSheet && $0.canBecomeKey && !$0.isAuxiliary }
-        guard !eligible.isEmpty else { return false }
-        return eligible.allSatisfy { $0.isMiniaturized }
     }
 
     // MARK: - 动手
@@ -248,19 +243,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         OpenRequest.open(urls)
     }
 
-    /// 返回值是「这件事我处理完了」。举不出一扇窗（全关了）就返回 false，
-    /// 让系统按自己的规矩开一扇新的。
+    /// 返回值是「这件事我处理完了」。举不出一扇窗（全关了）就自己开一扇新的。
+    ///
+    /// 曾经「全缩着时交回系统」去换神灯动画——但 SwiftUI WindowGroup 应用里
+    /// 系统接手 reopen 开的是**一扇新窗**，不是把缩着的放出来（#217）。宁可
+    /// 要正确：一律自己举，缩着的自己叫醒（没有神灯动画，但出来的就是那扇）。
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        let windows = sender.windows
-        // 所有窗口都缩在 Dock 里：交回系统。只有系统那条路能从 Dock 把窗口
-        // **神灯式**放大出来；自己 deminiaturize 只能「啪」地摆出来。收起来有
-        // 动画、放出来没有，同一件事两个手感。
-        if AppActivation.defersToSystem(windows.map(AppActivation.info)) {
-            deferToSystemFallback()
-            CrashBreadcrumbs.note("reopen deferred to system hasVisible=\(flag)")
-            return false
-        }
-
         let raised = AppActivation.raiseFrontWindow()
         // 留一行轨迹：这个 bug 只在某些状态之后出现，下次复发时针眼在这里。
         CrashBreadcrumbs.note("reopen hasVisible=\(flag) raised=\(raised)")
@@ -268,19 +256,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let open = AppActivation.openMain else { return false }
         open()
         return true
-    }
-
-    /// 交给系统之后仍要留一条后路：系统只认「它记得的那扇」，那扇要是不在
-    /// 列表里，屏幕上一个像素都不会动。半秒后还没人出来，就自己把窗口拎出来
-    /// ——没有动画总比没反应强。
-    private func deferToSystemFallback() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            let visible = NSApplication.shared.windows.contains {
-                $0.isVisible && !($0 is NSPanel) && $0.canBecomeKey
-            }
-            guard !visible else { return }
-            _ = AppActivation.raiseFrontWindow()
-        }
     }
 
     /// 右键 Dock 图标那一下：系统默认只给「显示所有窗口」与窗口列表。

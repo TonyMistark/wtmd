@@ -17,8 +17,9 @@ struct AppActivationPickTests {
         canBecomeKey: Bool = true,
         panel: Bool = false
     ) -> AppActivation.WindowInfo {
+        // 贴近真实 NSWindow：`isVisible` 对缩着的窗返回 false（#175）。
         .init(
-            isVisible: visible,
+            isVisible: visible && !miniaturized,
             isMiniaturized: miniaturized,
             isSheet: sheet,
             canBecomeKey: canBecomeKey,
@@ -32,7 +33,17 @@ struct AppActivationPickTests {
         #expect(AppActivation.pick(from: windows, lastKey: 2) == .raise(2))
     }
 
-    @Test("上次那扇关了：挑一扇看得见的，而不是对着关掉的空举")
+    @Test("上次用的那扇缩进了 Dock：叫醒它，而不是当它关了再开一扇新的")
+    func lastKeyMiniaturizedStillChosen() {
+        let windows = [info(miniaturized: true)]
+        #expect(AppActivation.pick(from: windows, lastKey: 0) == .deminiaturize(0))
+
+        // 后面还有一扇看得见的：lastKey 缩着也算「还在」，人的意图是回那扇
+        #expect(AppActivation.pick(from: [info(miniaturized: true), info()], lastKey: 0)
+                == .deminiaturize(0))
+    }
+
+    @Test("上次那扇真关了：挑一扇看得见的，而不是对着关掉的空举")
     func skipsClosedLastKeyWindow() {
         let windows = [info(), info(visible: false), info()]
         #expect(AppActivation.pick(from: windows, lastKey: 1) == .raise(0))
@@ -41,6 +52,12 @@ struct AppActivationPickTests {
     @Test("缩进 Dock 的那扇：叫醒它，不是当它不存在")
     func deminiaturizesWhenOnlyMinimized() {
         let windows = [info(miniaturized: true)]
+        #expect(AppActivation.pick(from: windows) == .deminiaturize(0))
+    }
+
+    @Test("多扇都缩着：按顺序叫醒第一扇")
+    func firstMinimizedInOrderWins() {
+        let windows = [info(miniaturized: true), info(miniaturized: true)]
         #expect(AppActivation.pick(from: windows) == .deminiaturize(0))
     }
 
@@ -305,61 +322,45 @@ struct CalendarRequestTests {
     }
 }
 
-// MARK: - 神灯动画
+// MARK: - Dock 点击的归宿
 
-/// 收进 Dock 有动画、放出来没有，是最容易被察觉的不对称：点最小化，窗口
-/// 缩进 Dock；点 Dock 图标，窗口「啪」地出现。差别来自谁动手——系统的
-/// 恢复带着从 Dock 长出来的动画，自己的 `deminiaturize` 只有终点。
-@Suite("Dock 缩放的动画")
-struct DockGenieTests {
-    private func info(miniaturized: Bool, sheet: Bool = false, canBecomeKey: Bool = true) -> AppActivation.WindowInfo {
-        .init(
-            isVisible: !miniaturized,
-            isMiniaturized: miniaturized,
-            isSheet: sheet,
-            canBecomeKey: canBecomeKey,
-            isPanel: false
-        )
+/// 点 Dock 图标，人要的是「我刚才那扇窗回来」。曾经在「全缩着」时把 reopen
+/// 交回系统去换神灯动画——但 SwiftUI WindowGroup 应用里系统接手开的是
+/// **一扇新窗**，缩着的原窗纹丝不动（#217）。这组钉住现在的规矩：
+/// 自己举，缩着的自己叫醒；真的一扇都没有才开新的。
+@Suite("Dock 点击的归宿")
+struct DockReopenTests {
+    @Test("缩着的窗是自己叫醒的候选，不是新开一扇的理由")
+    func minimizedWindowsAreCandidates() {
+        #expect(AppActivation.pick(from: [AppActivation.WindowInfo(
+            isVisible: false, isMiniaturized: true, isSheet: false,
+            canBecomeKey: true, isPanel: false
+        )]) == .deminiaturize(0))
     }
 
-    @Test("全缩着：交回系统，让它做神灯")
-    func allMinimizedGoesToTheSystem() {
-        #expect(AppActivation.defersToSystem([info(miniaturized: true)]))
-        #expect(AppActivation.defersToSystem([info(miniaturized: true), info(miniaturized: true)]))
+    @Test("真的一扇都没有（连缩着的都没有）：返回 nil，调用方开新窗")
+    func nothingAtAllOpensANewOne() {
+        #expect(AppActivation.pick(from: []) == nil)
+        #expect(AppActivation.pick(from: [AppActivation.WindowInfo(
+            isVisible: false, isMiniaturized: false, isSheet: false,
+            canBecomeKey: true, isPanel: false
+        )]) == nil)
     }
 
-    @Test("有一扇看得见的：自己举，别等系统")
-    func oneVisibleWindowHandlesItself() {
-        #expect(!AppActivation.defersToSystem([info(miniaturized: true), info(miniaturized: false)]))
-        #expect(!AppActivation.defersToSystem([info(miniaturized: false)]))
-    }
-
-    @Test("sheet 与不能当主的窗不算数：它们不会把「全缩着」变成「有窗」")
-    func sheetsAndPanelsDoNotCount() {
-        #expect(AppActivation.defersToSystem([
-            info(miniaturized: true),
-            info(miniaturized: false, sheet: true),
-            info(miniaturized: false, canBecomeKey: false),
-        ]))
-    }
-
-    @Test("一扇窗都没有：谈不上交给系统")
-    func noWindowsAtAll() {
-        #expect(!AppActivation.defersToSystem([]))
-        #expect(!AppActivation.defersToSystem([info(miniaturized: false, sheet: true)]))
-    }
-
-    @Test("装配：reopen 先问「该不该交给系统」，并且留了兜底")
-    func reopenDefersBeforeRaising() throws {
+    @Test("装配：reopen 一律自己举，不再交给系统")
+    func reopenHandlesItself() throws {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("Sources/wtmd/AppActivation.swift")
         let source = try String(contentsOf: url, encoding: .utf8)
-        #expect(source.contains("defersToSystem(windows.map(AppActivation.info))"))
-        #expect(source.contains("deferToSystemFallback()"))
-        // 放出来之后不该再 order front：那一下会把动画拽到终点。
+        // 交给系统的旧路已被拔掉：系统在 SwiftUI 应用里会开一扇新窗（#217）
+        #expect(!source.contains("defersToSystem"), "reopen 还留着「交给系统」的捷径")
+        #expect(!source.contains("deferToSystemFallback"), "兜底计时器还留着")
+        #expect(source.contains("raiseFrontWindow()"), "reopen 里没有举窗")
+        #expect(source.contains("deminiaturize"), "缩着的窗没被叫醒")
+        // 放出来之后不该再 order front：那一下会把还没跑完的动画拽到终点。
         #expect(!source.contains("deminiaturize(nil)\n            windows[index].makeKeyAndOrderFront"))
     }
 }

@@ -103,6 +103,5 @@ struct CalendarWindowTests {
 
         // 只剩它一扇：pick 挑不出人，调用方会去开一扇写作窗——而不是把账本举上来。
         #expect(AppActivation.pick(from: [info]) == nil)
-        #expect(!AppActivation.defersToSystem([info]), "账本缩不了，也不该挡住「全缩着」的判断")
     }
 }
