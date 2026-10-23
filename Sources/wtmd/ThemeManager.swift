@@ -241,6 +241,111 @@ final class ThemeManager: ObservableObject {
     }
 }
 
+// MARK: - 编辑器取用
+
+extension Theme {
+    /// 解析某份变量层文本里的 `--x: value;` 行。主题文本除了变量还可能带
+    /// 整条规则（如终端主题的 blockquote），这里只要变量。
+    static func parseVariables(_ raw: String?) -> [String: String] {
+        guard let raw else { return [:] }
+        var result: [String: String] = [:]
+        for line in raw.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("--") else { continue }
+            let body = trimmed.dropFirst(2)
+            guard let colon = body.firstIndex(of: ":") else { continue }
+            let key = String(body[body.startIndex..<colon]).trimmingCharacters(in: .whitespaces)
+            var value = String(body[body.index(after: colon)...])
+            if let semicolon = value.firstIndex(of: ";") { value = String(value[..<semicolon]) }
+            let value_ = value.trimmingCharacters(in: .whitespaces)
+            guard !key.isEmpty, !value_.isEmpty else { continue }
+            result[key] = value_
+        }
+        return result
+    }
+
+    /// `#rgb` / `#rgba` / `#rrggbb` / `#rrggbbaa` → 颜色。认不出就给 nil，
+    /// 调用方回落系统语义色——主题是数据，坏一个值不能弄瞎编辑器。
+    static func color(hex: String) -> NSColor? {
+        var body = hex.trimmingCharacters(in: .whitespaces)
+        guard body.hasPrefix("#") else { return nil }
+        body.removeFirst()
+        guard [3, 4, 6, 8].contains(body.count), let value = UInt64(body, radix: 16) else { return nil }
+
+        func byte(_ shift: Int) -> CGFloat { CGFloat((value >> shift) & 0xFF) / 255.0 }
+        /// `#rgb` 里的每一位顶四位用：`f` → 255。
+        func nibble(_ digitIndex: Int) -> CGFloat {
+            let digits = Array(body.reversed())
+            guard let v = UInt64(String(digits[digitIndex]), radix: 16) else { return 0 }
+            return CGFloat(v) / 15.0
+        }
+        switch body.count {
+        case 3:
+            return NSColor(srgbRed: nibble(2), green: nibble(1), blue: nibble(0), alpha: 1)
+        case 4:
+            return NSColor(srgbRed: nibble(3), green: nibble(2), blue: nibble(1), alpha: nibble(0))
+        case 6:
+            return NSColor(srgbRed: byte(16), green: byte(8), blue: byte(0), alpha: 1)
+        default:
+            return NSColor(srgbRed: byte(24), green: byte(16), blue: byte(8), alpha: byte(0))
+        }
+    }
+
+    /// CSS 字体栈里的第一个真实字族名，跳过通用关键字（monospace 等）。
+    static func firstFontFamily(inCSSStack stack: String) -> String? {
+        let generic: Set<String> = [
+            "ui-monospace", "monospace", "ui-serif", "serif", "sans-serif",
+            "ui-rounded", "system-ui", "cursive", "fantasy",
+        ]
+        for part in stack.split(separator: ",") {
+            var name = part.trimmingCharacters(in: .whitespaces)
+            if name.hasPrefix("'") || name.hasPrefix("\"") {
+                name = name.trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+            }
+            guard !name.isEmpty else { continue }
+            if generic.contains(name.lowercased()) { continue }
+            return name
+        }
+        return nil
+    }
+}
+
+/// 编辑器从主题里取的那一份：预览吃整份 CSS，编辑器（`NSTextView`）只能拿
+/// 背景色、前景色和等宽字族。明暗两套都留着，由动态颜色供应商在绘制时
+/// 按当时的 appearance 自己挑——系统切深浅色不用谁通知谁。
+///
+/// 只存原始数据（主题 id、字族、hex 字符串），颜色对象在应用那一刻才造：
+/// 这个结构体在每次 SwiftUI 刷新时都会重新求值，拿 NSColor 做 Equatable
+/// 的话动态供应商每次都是新实例，编辑器就会每敲一个键都重铺一遍高亮。
+struct EditorThemeStyle: Equatable {
+    var themeID: String
+    var monoFontFamily: String?
+    var lightBackground: String?
+    var lightForeground: String?
+    var darkBackground: String?
+    var darkForeground: String?
+
+    init?(theme: Theme) {
+        let light = Theme.parseVariables(theme.light)
+        let dark = Theme.parseVariables(theme.dark)
+        // 连一份变量都没有的主题不参与（内置主题至少有其一）。
+        guard !light.isEmpty || !dark.isEmpty else { return nil }
+
+        // 一侧缺色时借用另一侧：只有暗色变体的主题（终端）在浅色 appearance
+        // 下照样用它的深底，跟预览的行为一致。
+        let bg = light["bg"] ?? dark["bg"]
+        let fg = light["fg"] ?? dark["fg"]
+        themeID = theme.id
+        monoFontFamily = Theme.firstFontFamily(
+            inCSSStack: light["font-mono"] ?? dark["font-mono"] ?? ""
+        )
+        lightBackground = bg
+        lightForeground = fg
+        darkBackground = dark["bg"] ?? light["bg"]
+        darkForeground = dark["fg"] ?? light["fg"]
+    }
+}
+
 // MARK: - 偏好设置面板
 
 struct ThemeSettingsView: View {
