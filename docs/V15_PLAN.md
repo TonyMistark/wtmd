@@ -1286,3 +1286,31 @@ v0.15.24 的教训这次用上了。
 914 → 915（`cssTextDeclaresColorSchemeForNativeScrollbars`）。CI 上
 `WorkspaceSearchController` 两条 flake（记忆在案的 rerun 即绿），重跑后
 双绿。
+
+### v0.15.28 — 代码块 Word Wrap 开关：版式层下发折行规则（#238）
+
+预览里代码块只有横向滚动一种展示：超宽行（长 URL、深层缩进、宽表格代码）
+要来回拖滚动条。行业里对这件事有成熟的叫法与语义——Vim 的 `:set wrap` /
+VS Code 的 "Word Wrap"：折行只影响显示，实际文本一字不动。
+
+#### 方案
+
+设置 › 版式新增「代码块」一节，一个 **Word Wrap（自动换行）** 开关：
+
+- **关（默认）**：与 v0.1 起行为一致——`pre { overflow: auto }`，保持排版、
+  横向滚动。
+- **开**：版式层下发
+  `pre { white-space: pre-wrap; overflow-wrap: anywhere; }`——`pre-wrap`
+  保留原有换行与缩进，`overflow-wrap: anywhere` 兜住无空格的超长标识符
+  与 URL。
+
+不发变量、直接发规则：折行是二值的展示模式，做成变量再由基础样式表分支
+反而多一层。规则走既有版式层（`<style id="wtmd-layout">`）——晚于基础
+样式表生效，切主题互不牵连；预览经 `applyLayout` 热更新，HTML 导出与
+打印 PDF 自带同一规则，三端一致。
+
+#### 测试
+
+915 → 920（`TypesettingSettingsTests`）：默认关且 CSS 静默、开启后规则
+生效、跨启动持久化、reset 归位、关掉后规则彻底消失（反向守卫——关了
+开关 CSS 里就不能再有一丝 `pre-wrap`，否则横向滚动名存实亡）。
