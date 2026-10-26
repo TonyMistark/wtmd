@@ -38,7 +38,7 @@ struct WorkspaceTreeView: View {
 
     @ViewBuilder
     private var workspaceSection: some View {
-        Section {
+        Section(isExpanded: $workspace.sectionExpanded) {
             if let dropError {
                 Text(dropError)
                     .font(.caption2)
@@ -68,15 +68,13 @@ struct WorkspaceTreeView: View {
                         acceptDrop(providers, into: workspace.root)
                     }
                 Spacer(minLength: 4)
-                Button {
-                    workspace.close()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-                .help(t("Close Workspace"))
             }
+            // 整行都是开关：双击收起 / 放出这组文件树。收放不该藏在
+            // 一颗按钮里，更不该跟「删掉工作区」共用一颗按钮。
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) { workspace.sectionExpanded.toggle() }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint(t("Double-click to collapse or expand the workspace section"))
             .contextMenu {
                 Button(t("New Document")) { createDocument(in: nil) }
                 Button(t("New Folder")) { createFolder(in: nil) }
@@ -85,7 +83,24 @@ struct WorkspaceTreeView: View {
                     Button(t("Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([root]) }
                     Button(t("Copy Path")) { copyPath(root) }
                 }
+                Divider()
+                // 关工作区只把它从侧栏拿走，不碰磁盘——但整棵树当场消失，
+                // 看上去足够像「删库」，值得一道确认。
+                Button(t("Close Workspace…"), role: .destructive) { confirmCloseWorkspace() }
             }
+        }
+    }
+
+    /// 关工作区的二次确认：弹窗把「不删文件」说清楚，避免误会的最后一步。
+    private func confirmCloseWorkspace() {
+        let alert = NSAlert()
+        alert.messageText = t("Close this workspace?")
+        alert.informativeText = t("The folder will disappear from the sidebar. No files will be deleted.")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: t("Close Workspace"))
+        alert.addButton(withTitle: t("Cancel"))
+        if alert.runModal() == .alertFirstButtonReturn {
+            workspace.close()
         }
     }
 
@@ -114,6 +129,11 @@ struct WorkspaceTreeView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .contentShape(Rectangle())
+                            // 双击整行也切换展开/收起——箭头只有几像素宽，
+                            // 整行都该是开关（与工作区标题行同一习惯）。
+                            .onTapGesture(count: 2) {
+                                workspace.setExpanded(node.url, to: !workspace.isExpanded(node.url))
+                            }
                             .dropHighlight(dropTarget == node.url)
                             .onDrag { WorkspaceDrag.provider(for: node.url) }
                             .onDrop(
