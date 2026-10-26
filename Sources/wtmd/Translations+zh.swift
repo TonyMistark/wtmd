@@ -170,6 +170,7 @@ extension Translations {
         "Opens as an untitled document — decide where to save it yourself": "作为未命名文档打开，内容进编辑器后自行决定存到哪里",
         "Open…": "打开…",
         "Outline": "大纲",
+        "Workspaces": "工作区",
         "Page margin": "页边距",
         "Page numbers": "页码",
         "Paper & Ink": "纸墨",

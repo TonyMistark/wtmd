@@ -72,6 +72,7 @@ struct WorkspaceTreeView: View {
             // 整行都是开关：双击收起 / 放出这组文件树。收放不该藏在
             // 一颗按钮里，更不该跟「删掉工作区」共用一颗按钮。
             .contentShape(Rectangle())
+            .pressFeedback()
             .onTapGesture(count: 2) { workspace.sectionExpanded.toggle() }
             .accessibilityAddTraits(.isButton)
             .accessibilityHint(t("Double-click to collapse or expand the workspace section"))
@@ -129,6 +130,7 @@ struct WorkspaceTreeView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .contentShape(Rectangle())
+                            .pressFeedback()
                             // 双击整行也切换展开/收起——箭头只有几像素宽，
                             // 整行都该是开关（与工作区标题行同一习惯）。
                             .onTapGesture(count: 2) {
@@ -161,6 +163,7 @@ struct WorkspaceTreeView: View {
                         .truncationMode(.middle)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
+                        .pressFeedback()
                         .foregroundStyle(
                             workspace.selection == node.url ? Color.accentColor : Color.primary
                         )

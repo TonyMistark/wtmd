@@ -202,8 +202,13 @@ struct ContentView: View {
     @ViewBuilder
     private var sidebar: some View {
         List {
+            // 「工作区」是分类头：下面这片都是用户 add 进来的工作区，
+            // 与「大纲」「最近文件」同一套侧栏节头。真正的分区头（文件夹名、
+            // 双击收放、右键菜单）仍由 WorkspaceTreeView 自己的 Section 承担。
             if workspace.isOpen {
-                WorkspaceTreeView()
+                Section(t("Workspaces")) {
+                    WorkspaceTreeView()
+                }
             }
 
             Section(t("Outline")) {
@@ -231,7 +236,7 @@ struct ContentView: View {
                             )
                             .lineLimit(1)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(SidebarRowButtonStyle())
                         .foregroundStyle(.primary)
                     }
                 }
@@ -262,7 +267,7 @@ struct ContentView: View {
                 .padding(.leading, CGFloat(item.level - 1) * 11)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SidebarRowButtonStyle())
         .foregroundStyle(
             store.currentOutlineSlug == item.slug
                 ? Color.accentColor
