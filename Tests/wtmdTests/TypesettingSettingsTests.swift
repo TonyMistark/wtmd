@@ -86,6 +86,64 @@ private func makeSettings() -> (TypesettingSettings, UserDefaults, String) {
     #expect(settings.lineHeight == 1.75)
 }
 
+// MARK: - 代码块 Word Wrap（#238）
+
+/// 默认关：与 v0.1 起的行为一致——保持排版、横向滚动，CSS 里不出现折行规则。
+@MainActor
+@Test func codeWrapDefaultsOffAndCSSStaysSilent() throws {
+    let (settings, defaults, suite) = makeSettings()
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    #expect(settings.codeWrap == false)
+    #expect(!settings.css.contains("pre-wrap"))
+}
+
+/// 开启后折行规则进版式层：pre-wrap 折行、overflow-wrap 兜住超长无空格串。
+@MainActor
+@Test func codeWrapOnEmitsTheWrapRule() throws {
+    let (settings, defaults, suite) = makeSettings()
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    settings.codeWrap = true
+    let css = settings.css
+    #expect(css.contains("pre { white-space: pre-wrap; overflow-wrap: anywhere; }"))
+}
+
+@MainActor
+@Test func codeWrapSurvivesARelaunch() throws {
+    let suite = "wtmd.tests.typeset.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    let first = TypesettingSettings(defaults: defaults)
+    first.codeWrap = true
+    let second = TypesettingSettings(defaults: defaults)
+    #expect(second.codeWrap == true)
+}
+
+@MainActor
+@Test func resetTurnsCodeWrapBackOff() throws {
+    let (settings, defaults, suite) = makeSettings()
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    settings.codeWrap = true
+    settings.reset()
+    #expect(settings.codeWrap == false)
+}
+
+/// 关闭时绝不能发半条折行规则：横向滚动的行为靠 overflow: auto，
+/// 一旦 pre-wrap 混进来，关了开关也不生效（守卫反向验证）。
+@MainActor
+@Test func turningCodeWrapOffRemovesTheRuleAgain() throws {
+    let (settings, defaults, suite) = makeSettings()
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    settings.codeWrap = true
+    #expect(settings.css.contains("pre-wrap"))
+    settings.codeWrap = false
+    #expect(!settings.css.contains("pre-wrap"))
+}
+
 // MARK: - 样式层
 
 /// 版式层只在给了 CSS 时出现；导出（不传 layoutCSS）的文档与从前逐字一致。
