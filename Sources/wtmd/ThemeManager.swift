@@ -354,7 +354,7 @@ final class ThemeManager: ObservableObject {
         }
     }
 
-    static var themesDirectory: URL {
+    nonisolated static var themesDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("wtmd/Themes", isDirectory: true)
     }
@@ -515,14 +515,42 @@ struct ThemeSettingsView: View {
             LabeledContent(t("Appearance"), value: appearanceDescription)
 
             HStack {
-                Button(t("Open Themes Folder…")) { themeManager.openThemesFolder() }
+                Button(t("New Theme…")) {
+                    editing = EditingDraft(
+                        draft: ThemeDraft(basedOn: themeManager.currentTheme),
+                        baseID: themeManager.currentThemeID
+                    )
+                }
+                Button(t("Edit Theme…")) {
+                    editing = EditingDraft(
+                        draft: ThemeDraft(basedOn: themeManager.currentTheme, editing: true),
+                        baseID: themeManager.currentThemeID
+                    )
+                }
+                .disabled(themeManager.currentTheme.isBuiltIn)
                 Spacer()
+                Button(t("Open Themes Folder…")) { themeManager.openThemesFolder() }
                 Button(t("Rescan")) { themeManager.reload() }
             }
         }
         .formStyle(.grouped)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .sheet(item: $editing) { item in
+            ThemeEditorView(
+                model: ThemeEditorModel(draft: item.draft, baseID: item.baseID)
+            )
+            .environmentObject(themeManager)
+        }
     }
+
+    /// sheet(item:) 要 Identifiable；草稿本身没有身份，套一层。
+    private struct EditingDraft: Identifiable {
+        let id = UUID()
+        let draft: ThemeDraft
+        let baseID: String
+    }
+
+    @State private var editing: EditingDraft?
 
     private var themeSelection: Binding<String> {
         Binding(
