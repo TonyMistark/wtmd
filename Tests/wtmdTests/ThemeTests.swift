@@ -7,7 +7,7 @@ import Testing
 @Test func cssTextWrapping() {
     let both = StyleSheet.cssText(light: "--bg: #fff;", dark: "--bg: #000;")
     #expect(both != nil)
-    #expect(both!.contains(":root {\n--bg: #fff;"))
+    #expect(both!.contains(":root {\ncolor-scheme: light;\n--bg: #fff;"))
     #expect(both!.contains("@media (prefers-color-scheme: dark)"))
     #expect(both!.contains("--bg: #000;"))
 
@@ -25,6 +25,23 @@ import Testing
     // 非法：两者皆无 / 空白
     #expect(StyleSheet.cssText(light: nil, dark: nil) == nil)
     #expect(StyleSheet.cssText(light: "  \n ", dark: "") == nil)
+}
+
+/// 原生滚动条（页面级与 pre/table 的横向滚动槽）的明暗由 `color-scheme`
+/// 决定，不声明时 WebKit 一律按浅色画——深色主题下就是一条白底滚动槽。
+/// 每个变量块都必须带上与自身明暗匹配的 `color-scheme`。
+@Test func cssTextDeclaresColorSchemeForNativeScrollbars() {
+    let both = StyleSheet.cssText(light: "--bg: #fff;", dark: "--bg: #000;")!
+    #expect(both.contains(":root {\ncolor-scheme: light;"), "浅色块缺 color-scheme: light")
+    if let mediaRange = both.range(of: "@media") {
+        let darkBlock = String(both[mediaRange.lowerBound...])
+        #expect(darkBlock.contains("color-scheme: dark"), "深色 media 块缺 color-scheme: dark")
+    } else {
+        Issue.record("双变体输出缺 @media 块")
+    }
+
+    #expect(StyleSheet.cssText(light: nil, dark: "--bg: #000;")!.contains("color-scheme: dark"))
+    #expect(StyleSheet.cssText(light: "--bg: #fff;", dark: nil)!.contains("color-scheme: light"))
 }
 
 @Test func fullDocumentContainsTwoStyleLayers() {

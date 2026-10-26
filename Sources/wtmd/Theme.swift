@@ -580,6 +580,11 @@ enum StyleSheet {
     /// - 两者皆有：浅色进 `:root`，深色进 `prefers-color-scheme: dark`
     /// - 仅一份：直接进 `:root`（常亮）
     /// - 皆无：返回 nil（非法主题）
+    ///
+    /// 每个块都带 `color-scheme`：WKWebView 的原生滚动条（页面级与
+    /// `pre`/`table` 的横向滚动槽）按该属性的明暗绘制——只改颜色变量
+    /// 改不了滚动条，不声明时 WebKit 一律按浅色画，深色主题下就是
+    /// 一条白底的滚动槽。
     static func cssText(light: String?, dark: String?) -> String? {
         let l = light?.trimmingCharacters(in: .whitespacesAndNewlines)
         let d = dark?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -589,11 +594,11 @@ enum StyleSheet {
         case (false, false):
             return nil
         case (true, false):
-            return ":root {\n\(l!)\n}\n"
+            return ":root {\ncolor-scheme: light;\n\(l!)\n}\n"
         case (false, true):
-            return ":root {\n\(d!)\n}\n"
+            return ":root {\ncolor-scheme: dark;\n\(d!)\n}\n"
         case (true, true):
-            return ":root {\n\(l!)\n}\n@media (prefers-color-scheme: dark) {\n  :root {\n\(d!)\n  }\n}\n"
+            return ":root {\ncolor-scheme: light;\n\(l!)\n}\n@media (prefers-color-scheme: dark) {\n  :root {\n  color-scheme: dark;\n\(d!)\n  }\n}\n"
         }
     }
 
