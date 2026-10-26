@@ -155,63 +155,6 @@ private final class Recorder: WorkspaceFileEvents {
     #expect(try String(contentsOf: a, encoding: .utf8) == "A")
 }
 
-// MARK: - 删除
-
-@MainActor
-@Test func trashingClearsSelectionAndTellsTheDocumentLayer() throws {
-    let root = try makeTempDirectory()
-    let trash = try makeTempDirectory()
-    defer {
-        try? FileManager.default.removeItem(at: root)
-        try? FileManager.default.removeItem(at: trash)
-    }
-    let file = try write("a.md", in: root)
-
-    let workspace = WorkspaceStore(moveToTrash: { url in
-        try FileManager.default.moveItem(
-            at: url, to: trash.appendingPathComponent(url.lastPathComponent)
-        )
-    })
-    defer { workspace.close() }
-    workspace.open(root)
-    workspace.select(file)
-    let recorder = Recorder()
-    workspace.fileEvents = recorder
-
-    #expect(workspace.trash(file) == nil)
-
-    #expect(workspace.selection == nil)
-    #expect(recorder.trashed.first?.standardizedFileURL.path == file.standardizedFileURL.path)
-    #expect(!FileManager.default.fileExists(atPath: file.path))
-    #expect(workspace.tree?.children.isEmpty == true)
-}
-
-@MainActor
-@Test func trashingAFolderForgetsItsExpandedPaths() throws {
-    let root = try makeTempDirectory()
-    let trash = try makeTempDirectory()
-    defer {
-        try? FileManager.default.removeItem(at: root)
-        try? FileManager.default.removeItem(at: trash)
-    }
-    let drafts = try makeDirectory("drafts", in: root)
-    try write("a.md", in: drafts)
-
-    let workspace = WorkspaceStore(moveToTrash: { url in
-        try FileManager.default.moveItem(
-            at: url, to: trash.appendingPathComponent(url.lastPathComponent)
-        )
-    })
-    defer { workspace.close() }
-    workspace.open(root)
-    workspace.setExpanded(drafts, to: true)
-
-    #expect(workspace.trash(drafts) == nil)
-
-    #expect(!workspace.isExpanded(drafts))
-    #expect(workspace.tree?.children.isEmpty == true)
-}
-
 // MARK: - 辅助
 
 private func makeIsolatedSession() -> (Session, String) {

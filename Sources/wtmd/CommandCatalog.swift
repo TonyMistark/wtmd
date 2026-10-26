@@ -264,9 +264,9 @@ enum CommandCatalog {
             subtitle: nil
         ),
         AppCommand(
-            kind: .closeWorkspace, title: t("Close Workspace"), section: .view,
+            kind: .closeWorkspace, title: t("Detach Workspace"), section: .view,
             symbol: "xmark.circle", shortcut: nil,
-            keywords: ["close", "workspace", "folder"], subtitle: nil
+            keywords: ["close", "detach", "unbind", "workspace", "folder", "解除"], subtitle: nil
         ),
         AppCommand(
             kind: .toggleTypewriter, title: t("Typewriter Mode"), section: .writing,

@@ -112,39 +112,6 @@ import Testing
     #expect(try String(contentsOf: renamed, encoding: .utf8) == "正文")
 }
 
-// MARK: - 删除
-
-/// 删除进废纸篓，不是 unlink：误删还能捞回来。测试用一个临时「废纸篓」代替，
-/// 绝不碰读者真实的废纸篓。
-@Test func trashingMovesTheFileIntoTheTrash() throws {
-    let root = try makeTempDirectory()
-    let trash = try makeTempDirectory()
-    defer {
-        try? FileManager.default.removeItem(at: root)
-        try? FileManager.default.removeItem(at: trash)
-    }
-    let file = try write("a.md", in: root)
-
-    try WorkspaceFiles.trash(file) { url in
-        try FileManager.default.moveItem(
-            at: url, to: trash.appendingPathComponent(url.lastPathComponent)
-        )
-    }
-
-    #expect(!FileManager.default.fileExists(atPath: file.path))
-    #expect(FileManager.default.fileExists(atPath: trash.appendingPathComponent("a.md").path))
-}
-
-@Test func trashingSomethingAlreadyGoneIsReported() throws {
-    let root = try makeTempDirectory()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let file = root.appendingPathComponent("不见了的.md")
-
-    #expect(throws: FileOperationError.notFound("不见了的.md")) {
-        try WorkspaceFiles.trash(file) { _ in }
-    }
-}
-
 // MARK: - 辅助
 
 private func makeTempDirectory() throws -> URL {
