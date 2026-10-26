@@ -22,12 +22,15 @@ final class TypesettingSettings: ObservableObject {
         static let measure = 760
         static let fontSize = 16
         static let lineHeight = 1.75
+        /// 代码块默认横向滚动（保持排版），与 v0.1 起的行为一致。
+        static let codeWrap = false
     }
 
     private enum Key {
         static let measure = "wtmd.typeset.measure"
         static let fontSize = "wtmd.typeset.fontSize"
         static let lineHeight = "wtmd.typeset.lineHeight"
+        static let codeWrap = "wtmd.typeset.codeWrap"
     }
 
     private let defaults: UserDefaults
@@ -47,23 +50,37 @@ final class TypesettingSettings: ObservableObject {
         didSet { defaults.set(lineHeight, forKey: Key.lineHeight) }
     }
 
+    /// 代码块 Word Wrap（自动换行）：开 = 超长行折行显示（Vim `:set wrap`）；
+    /// 关 = 保持排版、横向滚动。只影响显示，不改实际文本。
+    @Published var codeWrap: Bool {
+        didSet { defaults.set(codeWrap, forKey: Key.codeWrap) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         measure = defaults.object(forKey: Key.measure) as? Int ?? Standard.measure
         fontSize = defaults.object(forKey: Key.fontSize) as? Int ?? Standard.fontSize
         lineHeight = defaults.object(forKey: Key.lineHeight) as? Double ?? Standard.lineHeight
+        codeWrap = defaults.object(forKey: Key.codeWrap) as? Bool ?? Standard.codeWrap
     }
 
     /// 注入预览的变量层。越界值在这里收敛——界面只给区间，但记忆里的旧值、
     /// 手改过的 defaults 不该把版面撑坏。
     var css: String {
-        """
+        var text = """
         :root {
           --wtmd-measure: \(Self.clamp(measure, to: Limits.measure))px;
           --wtmd-font-size: \(Self.clamp(fontSize, to: Limits.fontSize))px;
           --wtmd-line-height: \(String(format: "%.2f", Self.clamp(lineHeight, to: Limits.lineHeight)));
         }
         """
+        // Word Wrap 开启：折行规则走版式层，晚于基础样式表生效，无需改样式表本身。
+        // overflow-wrap: anywhere 兜住无空格的超长标识符/URL；pre-wrap 保留原有
+        // 换行与缩进。关闭时不发规则，横向滚动（overflow: auto）照旧。
+        if codeWrap {
+            text += "\npre { white-space: pre-wrap; overflow-wrap: anywhere; }\n"
+        }
+        return text
     }
 
     /// 回到立项时的样子。
@@ -71,6 +88,7 @@ final class TypesettingSettings: ObservableObject {
         measure = Standard.measure
         fontSize = Standard.fontSize
         lineHeight = Standard.lineHeight
+        codeWrap = Standard.codeWrap
     }
 
     nonisolated static func clamp(_ value: Int, to range: ClosedRange<Int>) -> Int {

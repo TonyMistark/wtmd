@@ -177,6 +177,13 @@ struct LayoutSettingsView: View {
                     Button(t("Restore Defaults")) { typesetting.reset() }
                 }
             }
+
+            Section(t("Code Blocks")) {
+                Toggle(t("Word Wrap"), isOn: $typesetting.codeWrap)
+                Text(t("On: long lines wrap inside the block, like Vim's :set wrap. Off: the block keeps its layout and scrolls horizontally. Display only — the text itself is never changed."))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .settingsPage()
