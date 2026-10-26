@@ -122,6 +122,8 @@ final class WindowModel: ObservableObject, Identifiable {
         workspace.fileEvents = store
         store.typesetting = shared.typesetting
         store.printSettings = shared.printing
+        // 新建文档要点亮专注模式：开关是应用级的，store 只借来按一下。
+        store.writing = shared.writing
 
         // 第二扇窗口从空页开始：不是欢迎页，也不是主窗口那篇。
         if startsBlank {
