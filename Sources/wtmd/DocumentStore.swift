@@ -175,6 +175,9 @@ final class DocumentStore: ObservableObject {
     var typesetting: TypesettingSettings?
     /// 纸上版式（页边距/页码/标题）。同上。
     var printSettings: PrintSettings?
+    /// 打字机/专注/每日目标。App 启动时接上（同 `typesetting`，store 不拥有它）；
+    /// `nil`（测试默认）表示新建文档不碰这些开关。
+    var writing: WritingSettings?
     /// 每日净增字数的账本。`nil`（测试默认）表示不记账，绝不写真实的 preferences。
     let writingStats: WritingStats?
     /// 跨视图重建的位置账本：`⌘/` 会销毁并重建编辑器/预览，位置得存在视图之外。
@@ -340,6 +343,12 @@ final class DocumentStore: ObservableObject {
         recomputeNow()
         if let restoredPosition, let storedURL {
             seedPosition(from: restoredPosition, for: storedURL, generation: renderGeneration)
+        }
+        // 启动恢复的也是「打开一篇非空的稿子」：与 `open(url:)` 同一条默认——
+        // 先看成文（阅读）。欢迎页与未保存草稿不算，那些是要写的。
+        if restored != nil,
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            mode = .preview
         }
         observeExitForPendingEdits()
 
@@ -618,6 +627,9 @@ final class DocumentStore: ObservableObject {
         documentEpoch += 1
         recomputeNow()
         mode = .edit
+        // 新开一篇 = 要写了：专注模式点亮（当前段落之外退成浅灰）。
+        // 读者之前手动关过也照开——「新建」这个动作本身就是进入写作的意图。
+        writing?.focusMode = true
         clearDraft()
         session?.setOpenFile(nil)
         resetFind()
@@ -692,6 +704,13 @@ final class DocumentStore: ObservableObject {
         hasStartedWriting = true
         renderGeneration += 1
         documentEpoch += 1
+        // 打开一篇有字的稿子，最常见的意图是读：默认先进成文（阅读）。
+        // 已在分栏/预览的不抢读者当前的选择；空文件没有可读的预览，留在思绪。
+        if request == nil,
+           !document.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           mode == .edit {
+            mode = .preview
+        }
         if let request {
             // 行列只存在于源码里：预览没有行号可落
             if mode == .preview { mode = .edit }
