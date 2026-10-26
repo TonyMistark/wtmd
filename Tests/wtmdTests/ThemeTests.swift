@@ -129,7 +129,7 @@ import Testing
 // MARK: - 内置主题
 
 @Test func builtInThemesValid() {
-    #expect(Theme.builtIns.count == 3)
+    #expect(Theme.builtIns.count == 13)
     for theme in Theme.builtIns {
         #expect(!theme.name.isEmpty)
         #expect(StyleSheet.cssText(light: theme.light, dark: theme.dark) != nil)
@@ -142,6 +142,62 @@ import Testing
     let def = Theme.builtIns.first { $0.id == Theme.defaultID }
     #expect(def?.hasLight == true)
     #expect(def?.hasDark == true)
+    // 主题名是设置里唯一的辨认依据，撞名等于选不中
+    #expect(Set(Theme.builtIns.map(\.name)).count == Theme.builtIns.count)
+}
+
+// MARK: - base16 内置主题
+
+/// 色槽 → 变量的映射是整套外部兼容的地基：错了，230 套社区配色全错位。
+@Test func base16CSSMapsSlotsToVariables() throws {
+    let colors = (0..<16).map { String(format: "#%02x%02x%02x", $0, $0, $0) }
+    let css = try #require(Theme.base16CSS(colors))
+
+    #expect(css.contains("--bg: #000000;"), "base00 该是页面底色")
+    #expect(css.contains("--fg: #050505;"), "base05 该是正文色")
+    #expect(css.contains("--secondary: #040404;"), "base04 该是次级文字")
+    #expect(css.contains("--border: #020202;"), "base02 该是边框")
+    #expect(css.contains("--accent: #0d0d0d;"), "base0D 该是强调/链接")
+    #expect(css.contains("--code-bg: #010101;"), "base01 该是行内代码底")
+    #expect(css.contains("--hl-keyword: #0e0e0e;"), "base0E 该是关键字")
+    #expect(css.contains("--hl-string: #0b0b0b;"), "base0B 该是字符串")
+    #expect(css.contains("--hl-comment: #030303;"), "base03 该是注释")
+    // 一行一个变量，不多不少（漏了会静默回落默认色，比报错更难查）
+    #expect(css.split(separator: "\n").count == Theme.base16Map.count)
+}
+
+@Test func base16CSSRejectsBadInput() {
+    #expect(Theme.base16CSS([]) == nil)
+    #expect(Theme.base16CSS(Array(repeating: "#000000", count: 15)) == nil)
+    #expect(Theme.base16CSS(Array(repeating: "#000000", count: 17)) == nil)
+
+    var bad = Array(repeating: "#000000", count: 16)
+    bad[7] = "not-a-color"
+    #expect(Theme.base16CSS(bad) == nil, "一个坏色值就该整套拒绝，不出一半颜色的残废主题")
+
+    var shortHex = Array(repeating: "#000000", count: 16)
+    shortHex[2] = "#abc" // 三位简写也是合法 CSS 色
+    #expect(Theme.base16CSS(shortHex) != nil)
+}
+
+@Test func base16BuiltInsAreUsable() {
+    #expect(Theme.base16BuiltIns.count == 10)
+    #expect(Set(Theme.base16BuiltIns.map(\.id)).count == 10, "id 撞了会选中错主题")
+
+    for theme in Theme.base16BuiltIns {
+        #expect(theme.isBuiltIn)
+        #expect(theme.isBase16)
+        #expect(!theme.name.isEmpty)
+        // 一套配色只带一侧，另一侧留空由单变体逻辑兜住
+        #expect(theme.hasLight != theme.hasDark)
+        #expect(StyleSheet.cssText(light: theme.light, dark: theme.dark) != nil)
+        #expect(theme.cssText.contains("--bg:"))
+        #expect(theme.cssText.contains("--font-mono:") == false, "base16 不管字体，别覆盖默认栈")
+    }
+
+    // 明暗两个方向都得有样本：全暗会让浅色外观的选择失去参照
+    #expect(Theme.base16BuiltIns.contains { $0.hasLight })
+    #expect(Theme.base16BuiltIns.contains { $0.hasDark })
 }
 
 // MARK: - 辅助

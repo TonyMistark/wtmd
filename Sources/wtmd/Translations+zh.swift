@@ -34,6 +34,7 @@ extension Translations {
         "Autosave is paused. Save the content as a new file, or keep it as a draft.": "自动保存已暂停。另存为一个新文件，或把内容留作草稿。",
         "Autosave is paused; the version on disk was not overwritten.": "自动保存已暂停，磁盘上的版本没有被覆盖。",
         "Best Day": "最高单日",
+        "Built-in": "内置",
         "Call stack": "调用栈",
         "Cancel": "取消",
         "Cannot move {} into itself": "不能把「{}」移到它自己里面",

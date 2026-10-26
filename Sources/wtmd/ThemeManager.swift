@@ -19,6 +19,9 @@ struct Theme: Identifiable, Equatable, Hashable {
 
     var hasLight: Bool { !(light?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }
     var hasDark: Bool { !(dark?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) }
+
+    /// 设置里的分组用：内置手写、base16 社区配色、用户自己装的三类分开列。
+    var isBase16: Bool { id.hasPrefix("builtin.base16.") }
 }
 
 // MARK: - .wttheme 格式加载（纯函数，可单测）
@@ -164,6 +167,135 @@ extension Theme {
     blockquote { border-left: 3px double var(--quote-bar); }
     """
 
+    // MARK: base16
+
+    /// base16 的色槽语义跨应用固定（base0D 在 Vim 里是函数、在终端里是蓝色
+    /// ANSI），所以一张映射表就能吃下整个社区配色库——它也是外部主题转换的
+    /// 唯一依据，详见 docs/THEMES.md。
+    static let base16Map: [(variable: String, slot: String)] = [
+        ("bg", "base00"),
+        ("fg", "base05"),
+        ("secondary", "base04"),
+        ("border", "base02"),
+        ("accent", "base0D"),
+        ("link", "base0D"),
+        ("code-bg", "base01"),
+        ("pre-bg", "base01"),
+        ("pre-border", "base02"),
+        ("th-bg", "base01"),
+        ("quote-bar", "base03"),
+        ("quote-fg", "base04"),
+        ("hl-keyword", "base0E"),
+        ("hl-string", "base0B"),
+        ("hl-number", "base09"),
+        ("hl-comment", "base03"),
+        ("hl-type", "base0A"),
+        ("hl-meta", "base0C"),
+    ]
+
+    /// 16 个槽按 base00…base0F 顺序给出，转成主题变量层。槽数不对、色值不像
+    /// hex 就整体返回 nil——宁可不出这套主题，也不出一半颜色的残废主题。
+    static func base16CSS(_ colors: [String]) -> String? {
+        guard colors.count == 16 else { return nil }
+        var slots: [String: String] = [:]
+        for (index, raw) in colors.enumerated() {
+            let hex = raw.hasPrefix("#") ? raw : "#" + raw
+            guard isHexColor(hex) else { return nil }
+            slots[String(format: "base%02X", index)] = hex
+        }
+        var lines: [String] = []
+        for (variable, slot) in base16Map {
+            guard let hex = slots[slot] else { return nil }
+            lines.append("--\(variable): \(hex);")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func isHexColor(_ value: String) -> Bool {
+        let body = value.hasPrefix("#") ? value.dropFirst() : Substring(value)
+        guard [3, 4, 6, 8].contains(body.count) else { return false }
+        return body.allSatisfy(\.isHexDigit)
+    }
+
+    /// tinted-theming/schemes 里 base16/ 目录字母序前十套；色值顺序即
+    /// base00…base0F。换一批主题只改这张表，别处不用动。
+    private static let base16Schemes: [(slug: String, name: String, author: String, isDark: Bool, colors: [String])] = [
+        ("0x96f", "0x96f", "Filip Janevski", true, [
+            "#262427", "#3b393c", "#514f52", "#676567",
+            "#7c7b7d", "#fcfcfc", "#eae9eb", "#fcfcfc",
+            "#ff7272", "#fc9d6f", "#ffca58", "#bcdf59",
+            "#aee8f4", "#49cae4", "#a093e2", "#ff8787",
+        ]),
+        ("3024", "3024", "Jan T. Sott", true, [
+            "#090300", "#3a3432", "#4a4543", "#5c5855",
+            "#807d7c", "#a5a2a2", "#d6d5d4", "#f7f7f7",
+            "#db2d20", "#e8bbd0", "#fded02", "#01a252",
+            "#b5e4f4", "#01a0e4", "#a16a94", "#cdab53",
+        ]),
+        ("apathy", "Apathy", "Jannik Siebert", true, [
+            "#031A16", "#0B342D", "#184E45", "#2B685E",
+            "#5F9C92", "#81B5AC", "#A7CEC8", "#D2E7E4",
+            "#3E9688", "#3E7996", "#3E4C96", "#883E96",
+            "#963E4C", "#96883E", "#4C963E", "#3E965B",
+        ]),
+        ("apprentice", "Apprentice", "Romain Lafourcade", true, [
+            "#262626", "#303030", "#3A3A3A", "#444444",
+            "#6C6C6C", "#BCBCBC", "#DFDFDF", "#FFFFFF",
+            "#AF5F5F", "#FF8700", "#87875F", "#5F875F",
+            "#5F8787", "#5F87AF", "#5F5F87", "#AF5F5F",
+        ]),
+        ("arroz-con-dulce-dark", "Arroz con Dulce Dark", "Richard Martinez", true, [
+            "#21140F", "#2C1A13", "#3B241A", "#A98568",
+            "#C8A77A", "#F2DFC0", "#F8EBD3", "#FFF8E7",
+            "#E07A8A", "#E68A4A", "#D9A441", "#D47A50",
+            "#D98276", "#B99AC8", "#D58AB4", "#B97755",
+        ]),
+        ("arroz-con-dulce", "Arroz con Dulce", "Richard Martinez", false, [
+            "#FFF8E7", "#F7EBD3", "#EAD6B8", "#C8A77A",
+            "#765B45", "#4A2C20", "#321C14", "#21110B",
+            "#A11D48", "#A3470A", "#855500", "#A2380C",
+            "#98263E", "#5940A0", "#8C1F68", "#653221",
+        ]),
+        ("ascendancy", "Ascendancy", "EmergentMind", true, [
+            "#282828", "#212F3D", "#504945", "#928374",
+            "#BDAE93", "#D5C7A1", "#EBDBB2", "#FBF1C7",
+            "#D05000", "#FE8019", "#FFCC1B", "#B8BB26",
+            "#8F3F71", "#458588", "#FABD2F", "#B59B4D",
+        ]),
+        ("ashes", "Ashes", "Jannik Siebert", true, [
+            "#1C2023", "#393F45", "#565E65", "#747C84",
+            "#ADB3BA", "#C7CCD1", "#DFE2E5", "#F3F4F5",
+            "#C7AE95", "#C7C795", "#AEC795", "#95C7AE",
+            "#95AEC7", "#AE95C7", "#C795AE", "#C79595",
+        ]),
+        ("atelier-cave-light", "Atelier Cave Light", "Bram de Haan", false, [
+            "#EFECF4", "#E2DFE7", "#8B8792", "#7E7887",
+            "#655F6D", "#585260", "#26232A", "#19171C",
+            "#BE4678", "#AA573C", "#A06E3B", "#2A9292",
+            "#398BC6", "#576DDB", "#955AE7", "#BF40BF",
+        ]),
+        ("atelier-cave", "Atelier Cave", "Bram de Haan", true, [
+            "#19171C", "#26232A", "#585260", "#655F6D",
+            "#7E7887", "#8B8792", "#E2DFE7", "#EFECF4",
+            "#BE4678", "#AA573C", "#A06E3B", "#2A9292",
+            "#398BC6", "#576DDB", "#955AE7", "#BF40BF",
+        ]),
+    ]
+
+    /// base16 主题只带一侧：浅色方案进 light，深色方案进 dark，另一侧留空
+    /// （单变体主题在两种外观下都用它，与内置「终端」同一个道理）。
+    static let base16BuiltIns: [Theme] = base16Schemes.compactMap { scheme in
+        guard let css = base16CSS(scheme.colors) else { return nil }
+        return Theme(
+            id: "builtin.base16.\(scheme.slug)",
+            name: scheme.name,
+            author: scheme.author,
+            isBuiltIn: true,
+            light: scheme.isDark ? nil : css,
+            dark: scheme.isDark ? css : nil
+        )
+    }
+
     static let builtIns: [Theme] = [
         Theme(id: defaultID, name: t("wtmd Default"), author: "wtmd", isBuiltIn: true,
               light: defaultLight, dark: defaultDark),
@@ -171,7 +303,7 @@ extension Theme {
               light: paperInkLight, dark: paperInkDark),
         Theme(id: "builtin.terminal", name: t("Terminal"), author: "wtmd", isBuiltIn: true,
               light: nil, dark: terminalDark),
-    ]
+    ] + base16BuiltIns
 }
 
 // MARK: - 主题管理器
@@ -200,6 +332,11 @@ final class ThemeManager: ObservableObject {
     }
 
     var currentThemeCSS: String { currentTheme.cssText }
+
+    /// 设置里的三段：内置手写 / base16 社区 / 用户装上的。
+    var builtInThemes: [Theme] { themes.filter { $0.isBuiltIn && !$0.isBase16 } }
+    var base16Themes: [Theme] { themes.filter(\.isBase16) }
+    var customThemes: [Theme] { themes.filter { !$0.isBuiltIn } }
 
     func select(_ id: String) {
         guard themes.contains(where: { $0.id == id }) else { return }
@@ -354,14 +491,26 @@ struct ThemeSettingsView: View {
     var body: some View {
         Form {
             Picker(t("Theme"), selection: themeSelection) {
-                ForEach(themeManager.themes) { theme in
-                    Text(theme.name).tag(theme.id)
+                Section(t("Built-in")) {
+                    ForEach(themeManager.builtInThemes) { theme in
+                        Text(theme.name).tag(theme.id)
+                    }
+                }
+                Section("base16") {
+                    ForEach(themeManager.base16Themes) { theme in
+                        Text(theme.name).tag(theme.id)
+                    }
+                }
+                if !themeManager.customThemes.isEmpty {
+                    Section(t("Custom")) {
+                        ForEach(themeManager.customThemes) { theme in
+                            Text(theme.name).tag(theme.id)
+                        }
+                    }
                 }
             }
 
-            if !themeManager.currentTheme.isBuiltIn {
-                LabeledContent(t("Source", context: "theme"), value: t("Custom"))
-            }
+            LabeledContent(t("Source", context: "theme"), value: sourceDescription)
             LabeledContent(t("Author"), value: themeManager.currentTheme.author.isEmpty ? "—" : themeManager.currentTheme.author)
             LabeledContent(t("Appearance"), value: appearanceDescription)
 
@@ -380,6 +529,12 @@ struct ThemeSettingsView: View {
             get: { themeManager.currentThemeID },
             set: { themeManager.select($0) }
         )
+    }
+
+    private var sourceDescription: String {
+        let theme = themeManager.currentTheme
+        if theme.isBase16 { return "base16" }
+        return theme.isBuiltIn ? t("Built-in") : t("Custom")
     }
 
     private var appearanceDescription: String {
