@@ -45,13 +45,23 @@ struct WorkspaceHeaderTests {
         #expect(code.contains("workspace.setExpanded(node.url, to: !workspace.isExpanded(node.url))"), "文件夹行的双击切换不见了")
     }
 
-    @Test("关闭工作区要过右键菜单与二次确认")
-    func closeAsksForConfirmation() {
+    @Test("树行与工作区都没有删除入口")
+    func noDeleteAnywhere() {
+        let tree = Self.code(of: Self.treeViewURL)
+        #expect(!tree.contains("Move to Trash"), "树行右键的「移到废纸篓」又回来了")
+        let store = Self.code(of: Self.workspaceURL)
+        #expect(!store.contains("func trash("), "WorkspaceStore 的 trash 又回来了")
+        let files = Self.code(of: Self.sourceURL("WorkspaceFiles.swift"))
+        #expect(!files.contains("defaultMoveToTrash"), "废纸篓链路又回来了")
+    }
+
+    @Test("解除工作区要过右键菜单与二次确认")
+    func detachAsksForConfirmation() {
         let code = Self.code(of: Self.treeViewURL)
-        #expect(code.contains("func confirmCloseWorkspace()"), "没有二次确认入口")
+        #expect(code.contains("func confirmDetachWorkspace()"), "没有二次确认入口")
         #expect(code.contains("NSAlert()"), "确认没用弹窗")
-        #expect(code.contains("No files will be deleted"), "确认弹窗没把「不删文件」说清楚")
-        #expect(code.contains("Close Workspace…"), "右键菜单里没有关闭入口")
+        #expect(code.contains("will not be touched"), "确认弹窗没把「文件不会有任何改动」说清楚")
+        #expect(code.contains("Detach Workspace…"), "右键菜单里没有解除入口")
     }
 
     @Test("分组展开状态住在 WorkspaceStore 里，重建树不弹回")

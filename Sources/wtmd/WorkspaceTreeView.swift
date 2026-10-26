@@ -84,20 +84,20 @@ struct WorkspaceTreeView: View {
                     Button(t("Copy Path")) { copyPath(root) }
                 }
                 Divider()
-                // 关工作区只把它从侧栏拿走，不碰磁盘——但整棵树当场消失，
-                // 看上去足够像「删库」，值得一道确认。
-                Button(t("Close Workspace…"), role: .destructive) { confirmCloseWorkspace() }
+                // 解除工作区只是断开 wtmd 与文件夹的访问关系，不碰磁盘——
+                // 但整棵树当场消失，看上去足够像「删库」，值得一道确认。
+                Button(t("Detach Workspace…"), role: .destructive) { confirmDetachWorkspace() }
             }
         }
     }
 
-    /// 关工作区的二次确认：弹窗把「不删文件」说清楚，避免误会的最后一步。
-    private func confirmCloseWorkspace() {
+    /// 解除工作区的二次确认：弹窗把「文件不会有任何改动」说清楚。
+    private func confirmDetachWorkspace() {
         let alert = NSAlert()
-        alert.messageText = t("Close this workspace?")
-        alert.informativeText = t("The folder will disappear from the sidebar. No files will be deleted.")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: t("Close Workspace"))
+        alert.messageText = t("Unbind this workspace?")
+        alert.informativeText = t("Only the connection between wtmd and this folder is removed. The folder and its files will not be touched.")
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: t("Detach"))
         alert.addButton(withTitle: t("Cancel"))
         if alert.runModal() == .alertFirstButtonReturn {
             workspace.close()
@@ -175,7 +175,8 @@ struct WorkspaceTreeView: View {
 
     /// 右键菜单：树行上能做的所有事。
     ///
-    /// 删除**进废纸篓**而不是直接 unlink；改名走行内输入框，不弹对话框。
+    /// **没有删除**——写作工具不该在右键里放一把对真实文件生效的刀；
+    /// 删文件请走访达，那里有废纸篓和它自己的习惯。改名走行内输入框，不弹对话框。
     @ViewBuilder
     private func contextMenu(for node: WorkspaceNode) -> some View {
         if node.isDirectory {
@@ -189,8 +190,6 @@ struct WorkspaceTreeView: View {
         Button(t("Rename…")) { beginRename(node.url, isDirectory: node.isDirectory) }
         Button(t("Reveal in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([node.url]) }
         Button(t("Copy Path")) { copyPath(node.url) }
-        Divider()
-        Button(t("Move to Trash")) { trash(node) }
     }
 
     /// 就地改名：`↩` 提交、`esc` 取消、点到别处也算提交（Finder 的习惯）。
@@ -313,15 +312,7 @@ struct WorkspaceTreeView: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url.path, forType: .string)
     }
-
-    private func trash(_ node: WorkspaceNode) {
-        guard let error = workspace.trash(node.url) else { return }
-        let alert = NSAlert()
-        alert.messageText = t("Could not delete {}", node.name)
-        alert.informativeText = error.errorDescription ?? t("The file may be in use by another program")
-        alert.alertStyle = .warning
-        alert.runModal()
-    }}
+}
 
 /// 拖拽悬停时的底色：改变的是这一行读起来的样子，而不是它的排布——
 /// 加边框会让整棵树在拖拽时抖一下。

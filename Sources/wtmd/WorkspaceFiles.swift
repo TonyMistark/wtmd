@@ -161,29 +161,6 @@ enum WorkspaceFiles {
         return target
     }
 
-    /// Moves to the Trash rather than unlinking: 误删还能捞回来。
-    ///
-    /// `moveToTrash` is injectable because a test must not push files into the
-    /// user's real Trash.
-    static func trash(
-        _ url: URL,
-        manager: FileManager = .default,
-        moveToTrash: (URL) throws -> Void = defaultMoveToTrash
-    ) throws {
-        guard manager.fileExists(atPath: url.path) else {
-            throw FileOperationError.notFound(url.lastPathComponent)
-        }
-        do {
-            try moveToTrash(url)
-        } catch {
-            throw FileOperationError.failed(error.localizedDescription)
-        }
-    }
-
-    static func defaultMoveToTrash(_ url: URL) throws {
-        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
-    }
-
     /// `未命名.md`, `未命名 2.md`, `未命名 3.md`… first name not taken.
     static func uniqueURL(
         in directory: URL,

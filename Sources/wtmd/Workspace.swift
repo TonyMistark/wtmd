@@ -274,8 +274,6 @@ final class WorkspaceStore: ObservableObject {
     /// Where the workspace root and the expanded folders are remembered between
     /// launches. `nil` in tests, which must not read or write the real session.
     private let session: Session?
-    /// 删除怎么落地。可注入：测试不能把文件丢进读者的真实废纸篓。
-    private let moveToTrash: (URL) throws -> Void
     /// Every file in the tree, by canonical path: its URL plus its fingerprint.
     /// Rebuilt after each scan; **between** scans it doubles as the roster of
     /// what existed last time — and that is the only stable form of it. A file
@@ -285,9 +283,8 @@ final class WorkspaceStore: ObservableObject {
     /// while the file still existed.
     private var fileRecords: [String: FileRecord] = [:]
 
-    init(session: Session? = nil, moveToTrash: ((URL) throws -> Void)? = nil) {
+    init(session: Session? = nil) {
         self.session = session
-        self.moveToTrash = moveToTrash ?? WorkspaceFiles.defaultMoveToTrash
         restore()
     }
 
@@ -462,22 +459,6 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
-    /// 移到废纸篓。返回 nil 表示成功。
-    @discardableResult
-    func trash(_ url: URL) -> FileOperationError? {
-        do {
-            try WorkspaceFiles.trash(url, moveToTrash: moveToTrash)
-        } catch let error as FileOperationError {
-            return error
-        } catch {
-            return .failed(error.localizedDescription)
-        }
-        dropPaths(at: url)
-        reload(relinking: false)
-        fileEvents?.documentWasTrashed(at: url)
-        return nil
-    }
-
     /// 新建出来的东西可能在折叠着的目录里：一路展开到它，别让「新建了但看不见」。
     private func expand(_ directory: URL) {
         guard let root else { return }
@@ -515,17 +496,6 @@ final class WorkspaceStore: ObservableObject {
         session?.setExpandedPaths(expandedPaths)
         session?.remapPaths(from: old, to: new)
         fileEvents?.documentDidMove(from: old, to: new)
-    }
-
-    /// 删掉之后，本地不能再留着那条路径。
-    private func dropPaths(at url: URL) {
-        let path = Self.canonicalPath(url)
-        if let selection, Self.isDescendantOrSelf(selection, of: url) {
-            self.selection = nil
-        }
-        expandedPaths = expandedPaths.filter { $0 != path && !$0.hasPrefix(path + "/") }
-        session?.setExpandedPaths(expandedPaths)
-        session?.forgetPaths(at: url)
     }
 
     // MARK: - Helpers
