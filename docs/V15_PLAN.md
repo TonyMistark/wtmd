@@ -1257,3 +1257,32 @@ store、Files 三层钉住「不得再现」）。反向验证：源码注入
 ≥3 处、Button 行按压样式 ≥2 处、组件两套必须齐。反向验证：拆掉
 `.pressFeedback()` → 守卫当场变红 → 恢复绿。特性先提交再做反向验证——
 v0.15.24 的教训这次用上了。
+
+### v0.15.27 — 原生滚动条跟随主题：声明 color-scheme（#235）
+
+深色主题下，代码块横向滚动条的槽永远白底。滚动条是 WKWebView 原生绘制的，
+其明暗由 CSS `color-scheme` 决定——主题变量层只声明了颜色变量，从没声明过
+`color-scheme`，WebKit 默认按浅色画。改颜色变量改不了滚动条。
+
+#### 方案
+
+`StyleSheet.cssText(light:dark:)` 给每个变量块补声明：浅色块
+`color-scheme: light`、深色 media 块 `color-scheme: dark`；单变体主题照应
+（常亮/常暗）。预览、HTML 导出、PDF 共用这条链路，一并生效。显式着色的
+部分不受影响——`color-scheme` 只管没被显式上色的原生部件（滚动条、默认
+表单控件）。
+
+#### 教训：守卫断言也会被自己骗
+
+反向验证第一版用裸子串 `"color-scheme: dark"` 断言深色块——它在
+`prefers-color-scheme: dark` 里**本来就匹配得上**，探针删了真声明，守卫
+照样绿。反向验证红不了就等于没验：断言改为带缩进前缀
+（`  color-scheme: dark;`），并**用 grep 确认探针真的落地**再跑红。
+另外 `--filter` 用函数名时 swift-testing 显示 "1 test in 0 suites"，
+顶层函数（不在 `@Suite` 里）是这么显示的，不是没跑。
+
+#### 测试
+
+914 → 915（`cssTextDeclaresColorSchemeForNativeScrollbars`）。CI 上
+`WorkspaceSearchController` 两条 flake（记忆在案的 rerun 即绿），重跑后
+双绿。
