@@ -352,6 +352,17 @@ extension Translations {
         "~{} min read": "约 {} 分钟读完",
         "› commands   @ files   # text": "› 命令　@ 文件　# 正文",
         "⌘K belongs to the command palette and cannot be reassigned": "⌘K 属于命令面板，不能改派",
+        // base16 内置主题的显示名（英文键见 ThemeManager.base16Schemes）
+        "Night Flight": "夜航",
+        "Ember": "炭火",
+        "Apathy": "淡漠",
+        "Apprentice": "学徒",
+        "Arroz con Dulce Dark": "甜米露 · 夜",
+        "Arroz con Dulce Light": "甜米露 · 昼",
+        "Ascendancy": "盛世",
+        "Ashes": "余烬",
+        "Atelier Cave Light": "石窟画室 · 浅",
+        "Atelier Cave Dark": "石窟画室 · 深",
         // 主题编辑器
         "appearance|Dark": "深色",
         "appearance|Light": "浅色",
