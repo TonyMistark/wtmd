@@ -485,95 +485,57 @@ struct EditorThemeStyle: Equatable {
     }
 }
 
-// MARK: - 偏好设置面板
+// MARK: - 安装 .wttheme
 
-struct ThemeSettingsView: View {
-    @EnvironmentObject var themeManager: ThemeManager
+/// 安装失败的原因。给界面的弹窗文案在 errorDescription 里现译。
+enum ThemeInstallError: LocalizedError {
+    case invalidPackage
 
-    var body: some View {
-        Form {
-            Picker(t("Theme"), selection: themeSelection) {
-                Section(t("Built-in")) {
-                    ForEach(themeManager.builtInThemes) { theme in
-                        Text(theme.name).tag(theme.id)
-                    }
-                }
-                Section("base16") {
-                    ForEach(themeManager.base16Themes) { theme in
-                        Text(theme.name).tag(theme.id)
-                    }
-                }
-                if !themeManager.customThemes.isEmpty {
-                    Section(t("Custom")) {
-                        ForEach(themeManager.customThemes) { theme in
-                            Text(theme.name).tag(theme.id)
-                        }
-                    }
-                }
-            }
-
-            LabeledContent(t("Source", context: "theme"), value: sourceDescription)
-            LabeledContent(t("Author"), value: themeManager.currentTheme.author.isEmpty ? "—" : themeManager.currentTheme.author)
-            LabeledContent(t("Appearance"), value: appearanceDescription)
-
-            HStack {
-                Button(t("New Theme…")) {
-                    editing = EditingDraft(
-                        draft: ThemeDraft(basedOn: themeManager.currentTheme),
-                        baseID: themeManager.currentThemeID
-                    )
-                }
-                Button(t("Edit Theme…")) {
-                    editing = EditingDraft(
-                        draft: ThemeDraft(basedOn: themeManager.currentTheme, editing: true),
-                        baseID: themeManager.currentThemeID
-                    )
-                }
-                .disabled(themeManager.currentTheme.isBuiltIn)
-                Spacer()
-                Button(t("Open Themes Folder…")) { themeManager.openThemesFolder() }
-                Button(t("Rescan")) { themeManager.reload() }
-            }
-        }
-        .formStyle(.grouped)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .sheet(item: $editing) { item in
-            ThemeEditorView(
-                model: ThemeEditorModel(draft: item.draft, baseID: item.baseID)
-            )
-            .environmentObject(themeManager)
+    var errorDescription: String? {
+        switch self {
+        case .invalidPackage:
+            return t("That folder is not a valid theme. A theme folder needs theme.json plus light.css or dark.css.")
         }
     }
+}
 
-    /// sheet(item:) 要 Identifiable；草稿本身没有身份，套一层。
-    private struct EditingDraft: Identifiable {
-        let id = UUID()
-        let draft: ThemeDraft
-        let baseID: String
+extension ThemeManager {
+    /// 把一个 .wttheme 文件夹装进主题目录：校验、拷贝都是静态纯函数
+    /// （目录可注入，测试跑全流程），这里只补「装完重扫并选中」。
+    @discardableResult
+    func installTheme(from source: URL) throws -> Theme {
+        let folder = try Self.copyThemePackage(from: source, into: Self.themesDirectory)
+        reload()
+        let id = "custom.\(folder.lastPathComponent)"
+        select(id)
+        return themes.first { $0.id == id } ?? currentTheme
     }
 
-    @State private var editing: EditingDraft?
+    /// 校验 + 拷贝。不是合法主题包整体拒绝——半套颜色的残废主题不如不装。
+    static func copyThemePackage(from source: URL, into directory: URL) throws -> URL {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: source.path, isDirectory: &isDirectory),
+              isDirectory.boolValue,
+              ThemeFormat.loadFolder(source) != nil
+        else { throw ThemeInstallError.invalidPackage }
 
-    private var themeSelection: Binding<String> {
-        Binding(
-            get: { themeManager.currentThemeID },
-            set: { themeManager.select($0) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appendingPathComponent(
+            uniqueFolderName(for: source.lastPathComponent, in: directory)
         )
+        try FileManager.default.copyItem(at: source, to: destination)
+        return destination
     }
 
-    private var sourceDescription: String {
-        let theme = themeManager.currentTheme
-        if theme.isBase16 { return "base16" }
-        return theme.isBuiltIn ? t("Built-in") : t("Custom")
-    }
-
-    private var appearanceDescription: String {
-        let theme = themeManager.currentTheme
-        switch (theme.hasLight, theme.hasDark) {
-        case (true, true): return t("Light / Dark (follows system)")
-        case (true, false): return t("Light only")
-        case (false, true): return t("Dark")
-        case (false, false): return "—"
+    /// 目的地重名时自动加序号（暖沙 → 暖沙 2 → 暖沙 3）：与 `ThemeStore.copyName`
+    /// 同一个习惯，导入不问第二遍。
+    static func uniqueFolderName(for name: String, in directory: URL) -> String {
+        var candidate = name
+        var index = 2
+        while FileManager.default.fileExists(atPath: directory.appendingPathComponent(candidate).path) {
+            candidate = "\(name) \(index)"
+            index += 1
         }
+        return candidate
     }
 }

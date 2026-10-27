@@ -411,5 +411,20 @@ extension Translations {
         "Theme Default": "主题默认",
         "Type": "类型",
         "Use": "用途",
+        // 主题卡片页
+        "Add Theme…": "添加主题…",
+        "base16 Community": "base16 社区配色",
+        "Couldn't Add Theme": "无法添加主题",
+        "From tinted-theming/schemes · MIT": "来自 tinted-theming/schemes · MIT",
+        "From your .wttheme folders": "来自你的 .wttheme 文件夹",
+        "Light · Dark": "浅 · 深",
+        "Maintained by wtmd": "wtmd 官方维护",
+        "OK": "好",
+        "Sample Heading": "标题样式",
+        "Sample body": "正文样式",
+        "Sample link": "链接",
+        "Select a .wttheme folder to install": "选择 .wttheme 文件夹安装",
+        "That folder is not a valid theme. A theme folder needs theme.json plus light.css or dark.css.": "这个文件夹不是有效的主题：需要 theme.json，以及 light.css 或 dark.css。",
+        "{} themes": "{} 套",
     ]
 }
