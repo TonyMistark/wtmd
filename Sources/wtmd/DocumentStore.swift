@@ -6,6 +6,10 @@ import WTMarkdownKit
 
 enum ViewMode: String, CaseIterable, Identifiable {
     case edit
+    /// 即写即现：源码编辑器里直接渲染——一边写，一边看着它成为文章
+    /// （Typora / Obsidian 的 live preview）。字符一个不动，只是语法退后、
+    /// 块与引用有底色。
+    case live
     case preview
     /// 源码与成文并排。只在窗口够宽时出现，见 `SplitLayout`。
     case split
@@ -15,6 +19,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .edit: return t("Source", context: "mode")
+        case .live: return t("Live", context: "mode")
         case .preview: return t("Preview")
         case .split: return t("Split")
         }
@@ -24,6 +29,7 @@ enum ViewMode: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .edit: return "character.cursor.ibeam"
+        case .live: return "wand.and.stars"
         case .preview: return "doc.richtext"
         case .split: return "rectangle.split.2x1"
         }
@@ -53,6 +59,8 @@ enum ViewMode: String, CaseIterable, Identifiable {
         switch self {
         case .edit:
             detail = t("just you and the text. Click for {}.", next.label)
+        case .live:
+            detail = t("type and it reads like the page as you go. Click for {}.", next.label)
         case .preview:
             detail = t("the finished page, no editing. Click for {}.", next.label)
         case .split:
@@ -458,8 +466,8 @@ final class DocumentStore: ObservableObject {
     func setMode(_ newMode: ViewMode) {
         guard newMode != mode else { return }
         mode = newMode
-        // 预览与对照都要现成的 HTML；切回源码不必重算
-        if newMode != .edit { recomputeNow() }
+        // 预览与对照都要现成的 HTML；思绪与落笔只看源码，不必重算
+        if newMode == .preview || newMode == .split { recomputeNow() }
     }
 
     /// `⌘/`：思绪 ⇄ 成文。从对照按下去回到思绪——单视图里最想回到的是能打字的那一边。
@@ -487,7 +495,7 @@ final class DocumentStore: ObservableObject {
     func jump(to item: OutlineItem) {
         let request = JumpRequest(id: UUID().uuidString, line: item.line, slug: item.slug)
         switch mode {
-        case .edit:
+        case .edit, .live:
             editorJump = request
         case .preview:
             previewJump = request

@@ -391,7 +391,9 @@ struct ContentView: View {
     private var panes: some View {
         switch store.mode {
         case .edit:
-            editorPane
+            editorPane(live: false)
+        case .live:
+            editorPane(live: true)
         case .preview:
             previewPane
         case .split:
@@ -399,8 +401,9 @@ struct ContentView: View {
         }
     }
 
-    /// 思绪：源码编辑器 + 空文档提示。
-    private var editorPane: some View {
+    /// 思绪：源码编辑器 + 空文档提示。`live` 开启即「落笔」——
+    /// 同一个编辑器，语法标记退后、块与引用渲染出底色。
+    private func editorPane(live: Bool) -> some View {
         EditorTextView(
             text: Binding(
                 get: { store.text },
@@ -419,6 +422,7 @@ struct ContentView: View {
             onImagePaste: { store.handleImagePaste($0) },
             typewriterMode: writing.typewriter,
             focusMode: writing.focusMode,
+            liveDecorations: live,
             positionMemory: store.positionMemory,
             generation: store.renderGeneration,
             findMatches: store.find.matches,
@@ -470,13 +474,13 @@ struct ContentView: View {
         GeometryReader { proxy in
             if SplitLayout.showsTwoPanes(contentWidth: proxy.size.width) {
                 HSplitView {
-                    editorPane
+                    editorPane(live: false)
                         .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
                     previewPane
                         .frame(minWidth: 280, maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
-                editorPane
+                editorPane(live: false)
             }
         }
     }

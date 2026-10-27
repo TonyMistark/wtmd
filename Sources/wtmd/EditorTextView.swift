@@ -16,6 +16,9 @@ struct EditorTextView: NSViewRepresentable {
     var typewriterMode: Bool = false
     /// 当前段落之外的内容退成浅灰。
     var focusMode: Bool = false
+    /// 即写即现（落笔）：同一个编辑器把 Markdown 渲出来——语法标记退后、
+    /// 围栏代码块铺底色、引用行画侧条。只改属性不换字符，光标/撤销/输入法照旧。
+    var liveDecorations: Bool = false
     /// 跨视图重建的位置账本（`⌘/` 切换会把编辑器整个重建）。
     var positionMemory: PositionMemory?
     /// 位置账本归属的文档代数；换代即作废旧位置。
@@ -84,6 +87,12 @@ struct EditorTextView: NSViewRepresentable {
         if coordinator.appliedFocusMode != focusMode {
             coordinator.appliedFocusMode = focusMode
             coordinator.applyFocusFull()
+        }
+
+        // 落笔开关：切进/切出即写即现要整串重铺——标记褪色与块底色都是属性
+        if coordinator.liveDecorations != liveDecorations {
+            coordinator.liveDecorations = liveDecorations
+            coordinator.refreshHighlight()
         }
 
         if coordinator.appliedTypewriterMode != typewriterMode {
@@ -170,6 +179,10 @@ struct EditorTextView: NSViewRepresentable {
         var isEditing = false
         /// 粘贴板。测试换成私有板，免得动到用户当前的剪贴板内容。
         var pasteboard: NSPasteboard = .general
+        /// 自家布局管理器：落笔模式的块底色 / 引用侧条 / 分隔线由它画。
+        let liveManager: LiveDecorationLayoutManager
+        /// 落笔（即写即现）当前是否生效。切换时整串重铺。
+        var liveDecorations = false
         var lastJumpID = ""
         var lastSyncRevealID = 0
         var lastInsertedImage = ""
@@ -198,7 +211,26 @@ struct EditorTextView: NSViewRepresentable {
         init(_ parent: EditorTextView) {
             self.parent = parent
 
-            let textView = EditorTextPasteView()
+            // 自建文本系统：布局管理器换成 LiveDecorationLayoutManager——
+            // 即写即现（落笔）的代码块底色、引用侧条要在背景层自己画，
+            // 系统默认的布局管理器只认属性里的背景色（只铺到字形后面）。
+            let storage = NSTextStorage()
+            let layoutManager = LiveDecorationLayoutManager()
+            storage.addLayoutManager(layoutManager)
+            let container = NSTextContainer(
+                size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+            )
+            layoutManager.addTextContainer(container)
+            liveManager = layoutManager
+
+            let textView = EditorTextPasteView(frame: .zero, textContainer: container)
+            // `init(frame:textContainer:)` 会把 maxSize 钳在初始 frame（640×400）：
+            // 内容再长 frame 也不长高，打字机居中把 frame.height 当可滚动高度，
+            // 光标一过首屏就永远居不了中。默认 init 给的是一千萬——这里补齐。
+            textView.maxSize = NSSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            )
             textView.isRichText = false
             textView.allowsUndo = true
             // 自绘查找条（⌘F）是唯一的查找入口：系统 find bar 会与它抢同一个
@@ -276,7 +308,8 @@ struct EditorTextView: NSViewRepresentable {
                 textView.insertionPointColor = .labelColor
                 fonts = .system
                 textView.font = fonts.regular
-                EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor)
+                EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor, live: liveDecorations)
+                growToContent()
                 return
             }
 
@@ -298,13 +331,40 @@ struct EditorTextView: NSViewRepresentable {
             textView.insertionPointColor = foreground
             fonts = EditorFonts(family: style.monoFontFamily)
             textView.font = fonts.regular
-            EditorTextView.highlight(textView, fonts: fonts, textColor: foreground)
+            EditorTextView.highlight(textView, fonts: fonts, textColor: foreground, live: liveDecorations)
+            growToContent()
         }
 
         static let font = NSFont.monospacedSystemFont(ofSize: 13.5, weight: .regular)
         static let boldFont = NSFont.monospacedSystemFont(ofSize: 13.5, weight: .semibold)
 
-        // MARK: NSTextViewDelegate
+        /// 文本视图同步长高到内容高度。
+        ///
+        /// 自建文本系统（落笔的装饰布局管理器要插进去）之后，frame 的生长走
+        /// **后台布局完成回调**，不再发生在 `setString` 里——位置回填如果排在
+        /// 生长前面（CI 上快机器慢机器差半拍），滚动会被钳在半截。于是在每条
+        /// 文本/字体变化路径上同步撑一次：`ensureLayout` + `usedRect`，与高亮
+        /// 同一步调，回填永远站在长好的 frame 上。
+        func growToContent() {
+            guard textView.isVerticallyResizable,
+                  let manager = textView.layoutManager,
+                  let container = textView.textContainer else { return }
+            manager.ensureLayout(for: container)
+            let used = manager.usedRect(for: container)
+            let height = used.height + textView.textContainerInset.height * 2
+            guard abs(textView.frame.height - height) > 0.5 else { return }
+            textView.setFrameSize(NSSize(width: textView.frame.width, height: max(height, 0)))
+        }
+
+        /// 按当前字体/字色/落笔状态整串重铺。落笔开关切换时用——
+        /// 文本没变，普通的高亮路径不会自己触发。
+        func refreshHighlight() {
+            EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor, live: liveDecorations)
+            growToContent()
+            textView.needsDisplay = true
+        }
+
+    // MARK: NSTextViewDelegate
 
         /// 把外部（绑定值）的文本同步进编辑器。
         ///
@@ -325,7 +385,8 @@ struct EditorTextView: NSViewRepresentable {
             }
             guard textView.string != text else { return }
             textView.string = text
-            EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor)
+            EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor, live: liveDecorations)
+            growToContent()
             rebuildLineStarts()
             // `string` 赋值会把光标送到文档末尾。换文档时应该从文首开始——
             // 视图重建（⌘/ 切回来）也走这条路，回填会随后把光标放回原位。
@@ -346,7 +407,8 @@ struct EditorTextView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             isEditing = true
             parent.text = textView.string
-            EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor)
+            EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor, live: liveDecorations)
+            growToContent()
             rebuildLineStarts()
             // 高亮重建了整串属性，压暗层要重新铺一遍
             applyFocusFull()
@@ -398,7 +460,8 @@ struct EditorTextView: NSViewRepresentable {
             textView.insertText(snippet, replacementRange: range)
             isEditing = true
             parent.text = textView.string
-            EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor)
+            EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor, live: liveDecorations)
+            growToContent()
             rebuildLineStarts()
             applyFocusFull()
             recenter()
@@ -823,7 +886,8 @@ struct EditorTextView: NSViewRepresentable {
     static func highlight(
         _ textView: NSTextView,
         fonts: EditorFonts = .system,
-        textColor: NSColor? = nil
+        textColor: NSColor? = nil,
+        live: Bool = false
     ) {
         let content = NSString(string: textView.string)
         guard content.length < 400_000 else { return }
@@ -838,6 +902,17 @@ struct EditorTextView: NSViewRepresentable {
 
         var inFence = false
         var lineStart = 0
+        // 落笔模式：块区间收集（围栏代码块、引用块、分隔线），交给布局管理器画
+        var blocks: [LiveDecorationLayoutManager.Block] = []
+        var fenceStart: Int? = nil
+        var quoteStart: Int? = nil
+        var quoteEnd = 0
+        func closeQuote() {
+            if let start = quoteStart {
+                blocks.append(.init(kind: .quote, range: NSRange(location: start, length: quoteEnd - start)))
+                quoteStart = nil
+            }
+        }
         while lineStart <= content.length {
             var lineEnd = lineStart
             var contentsEnd = lineStart
@@ -852,8 +927,22 @@ struct EditorTextView: NSViewRepresentable {
             let isFenceLine = trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~")
 
             if isFenceLine {
+                closeQuote()
+                if inFence {
+                    // 闭合围栏：整块（含两侧围栏行）交给布局管理器铺底色
+                    if let start = fenceStart {
+                        blocks.append(.init(kind: .code, range: NSRange(location: start, length: lineEnd - start)))
+                        fenceStart = nil
+                    }
+                } else {
+                    fenceStart = lineStart
+                }
                 storage.addAttribute(.foregroundColor, value: NSColor.systemPurple, range: lineRange)
                 storage.addAttribute(.font, value: fonts.regular, range: lineRange)
+                if live {
+                    // 落笔：围栏行整体退后——块的存在感由底色表达
+                    storage.addAttribute(.foregroundColor, value: NSColor.tertiaryLabelColor, range: lineRange)
+                }
                 inFence.toggle()
                 lineStart = lineEnd
                 if lineStart >= content.length { break }
@@ -871,67 +960,123 @@ struct EditorTextView: NSViewRepresentable {
             if trimmed.hasPrefix("#"), let level = headingLevel(trimmed) {
                 storage.addAttribute(.font, value: fonts.heading(level), range: lineRange)
                 storage.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: lineRange)
+                if live, let m = firstMatch(lineNS, pattern: #"^#{1,6}\s?"#) {
+                    // 落笔：`##` 退成浅灰，标题文字保持主题色——读起来先是一句话
+                    storage.addAttribute(
+                        .foregroundColor,
+                        value: NSColor.tertiaryLabelColor,
+                        range: offset(m, by: lineRange.location)
+                    )
+                }
             }
             // 引用行
             else if trimmed.hasPrefix(">") {
+                if quoteStart == nil { quoteStart = lineStart }
+                quoteEnd = contentsEnd
                 storage.addAttribute(.foregroundColor, value: NSColor.systemGreen, range: lineRange)
                 if let markerRange = firstMatch(lineNS, pattern: #"^>\s?"#) {
                     // `firstMatch` 给的是行内偏移，染色的 range 要用绝对位置：
                     // 少了这个 base，只有文档第一行能染对，其余行都在染别处。
                     storage.addAttribute(
                         .foregroundColor,
-                        value: NSColor.systemGreen.withAlphaComponent(0.55),
+                        value: live ? NSColor.tertiaryLabelColor : NSColor.systemGreen.withAlphaComponent(0.55),
                         range: offset(markerRange, by: lineRange.location)
                     )
                 }
             }
             // 普通行：行内标记
             else {
-                // 列表标记
-                if let m = firstMatch(lineNS, pattern: #"^\s*(?:[-*+]|\d{1,9}[.)])(\s+\[[ xX]\])?\s"#) {
-                    storage.addAttribute(
-                        .foregroundColor,
-                        value: NSColor.systemOrange,
-                        range: offset(m, by: lineRange.location)
-                    )
-                } else if let m = firstMatch(lineNS, pattern: #"^\s*(?:[-*+]|\d{1,9}[.)])\s?"#) {
-                    storage.addAttribute(
-                        .foregroundColor,
-                        value: NSColor.systemOrange,
-                        range: offset(m, by: lineRange.location)
-                    )
+                closeQuote()
+                // 分隔线（--- / *** / ___ 独占一行）：整行退后，横线由布局管理器画。
+                // 先于列表标记判断——否则第一个 `-` 会被当成列表 marker 染成橙色，
+                // 横线左端就留下一截橙色残迹。
+                if live, firstMatch(lineNS, pattern: #"^\s*(?:-{3,}|\*{3,}|_{3,})\s*$"#) != nil {
+                    blocks.append(.init(kind: .rule, range: lineRange))
+                    storage.addAttribute(.foregroundColor, value: NSColor.tertiaryLabelColor, range: lineRange)
+                } else {
+                    // 列表标记
+                    if let m = firstMatch(lineNS, pattern: #"^\s*(?:[-*+]|\d{1,9}[.)])(\s+\[[ xX]\])?\s"#) {
+                        storage.addAttribute(
+                            .foregroundColor,
+                            value: NSColor.systemOrange,
+                            range: offset(m, by: lineRange.location)
+                        )
+                    } else if let m = firstMatch(lineNS, pattern: #"^\s*(?:[-*+]|\d{1,9}[.)])\s?"#) {
+                        storage.addAttribute(
+                            .foregroundColor,
+                            value: NSColor.systemOrange,
+                            range: offset(m, by: lineRange.location)
+                        )
+                    }
                 }
 
-                apply(lineNS, to: storage, base: lineRange.location, fonts: fonts)
+                apply(lineNS, to: storage, base: lineRange.location, fonts: fonts, live: live)
             }
 
             if lineEnd >= content.length { break }
             lineStart = lineEnd
         }
 
+        // 收尾：围栏没闭合、引用拖到文末
+        if let start = fenceStart {
+            blocks.append(.init(kind: .code, range: NSRange(location: start, length: content.length - start)))
+        }
+        closeQuote()
+
         storage.endEditing()
+
+        (textView.layoutManager as? LiveDecorationLayoutManager)?.blocks = live ? blocks : []
+        if live || !blocks.isEmpty {
+            // 属性可能没变（开关切换前后同文本），保险起见请它重画背景层
+            textView.needsDisplay = true
+        }
     }
 
-    private static func apply(_ line: NSString, to storage: NSMutableAttributedString, base: Int, fonts: EditorFonts) {
-        func add(_ pattern: String, _ attrs: [NSAttributedString.Key: Any]) {
+    private static func apply(
+        _ line: NSString,
+        to storage: NSMutableAttributedString,
+        base: Int,
+        fonts: EditorFonts,
+        live: Bool
+    ) {
+        func add(
+            _ pattern: String,
+            _ attrs: [NSAttributedString.Key: Any],
+            markers: (Int, Int)? = nil
+        ) {
             guard let re = try? NSRegularExpression(pattern: pattern) else { return }
             re.enumerateMatches(in: line as String, range: NSRange(location: 0, length: line.length)) { m, _, _ in
                 guard let m else { return }
                 for (k, v) in attrs {
                     storage.addAttribute(k, value: v, range: NSRange(location: base + m.range.location, length: m.range.length))
                 }
+                // 落笔：首尾的语法标记（`**`、反引号、`~~`……）退成浅灰，
+                // 中间的内容带着加粗/斜体/删除线本身——字符不动，读感是成文。
+                if live, let (head, tail) = markers, m.range.length >= head + tail {
+                    let markerAttrs: [NSAttributedString.Key: Any] = [.foregroundColor: NSColor.tertiaryLabelColor]
+                    storage.addAttributes(
+                        markerAttrs,
+                        range: NSRange(location: base + m.range.location, length: head)
+                    )
+                    if tail > 0 {
+                        storage.addAttributes(
+                            markerAttrs,
+                            range: NSRange(location: base + m.range.upperBound - tail, length: tail)
+                        )
+                    }
+                }
             }
         }
         add(#"`[^`\n]+`"#, [
             .foregroundColor: NSColor.systemTeal,
             .backgroundColor: NSColor.quaternaryLabelColor.withAlphaComponent(0.12),
-        ])
-        add(#"\*\*[^*\n]+\*\*|__[^_\n]+__"#, [.font: fonts.bold])
-        add(#"\*[^*\n]+\*|(?<![\w_])_[^_\n]+_(?![\w_])"#, [.obliqueness: 0.18])
+        ], markers: (1, 1))
+        add(#"\*\*[^*\n]+\*\*|__[^_\n]+__"#, [.font: fonts.bold], markers: (2, 2))
+        add(#"\*[^*\n]+\*|(?<![\w_])_[^_\n]+_(?![\w_])"#, [.obliqueness: 0.18], markers: (1, 1))
         add(#"~~[^~\n]+~~"#, [
             .strikethroughStyle: NSUnderlineStyle.single.rawValue,
             .foregroundColor: NSColor.secondaryLabelColor,
-        ])
+        ], markers: (2, 2))
         add(#"\[[^\]\n]*\]\([^)\n]*\)"#, [.foregroundColor: NSColor.linkColor])
         add(#"!\[[^\]\n]*\]\([^)\n]*\)"#, [.foregroundColor: NSColor.systemBrown])
         add(#"(?<![\w'\"])(https?://[^\s<>)\"']+)"#, [.foregroundColor: NSColor.linkColor])
@@ -955,5 +1100,85 @@ struct EditorTextView: NSViewRepresentable {
     /// 行内偏移换成文档内偏移。
     private static func offset(_ range: NSRange, by base: Int) -> NSRange {
         NSRange(location: base + range.location, length: range.length)
+    }
+}
+
+// MARK: - 落笔（即写即现）的背景装饰
+
+/// 落笔模式的背景装饰层：围栏代码块整块铺底色、引用块画左侧条、分隔线画横线。
+///
+/// `highlight(live:)` 每轮把收集到的块区间存进 `blocks`；绘制时取与可见
+/// 字形范围的交集。普通编辑模式 `blocks` 为空，行为与系统默认完全一致——
+/// 思绪模式不会为落笔多付一个像素。
+final class LiveDecorationLayoutManager: NSLayoutManager {
+    struct Block {
+        enum Kind {
+            /// 围栏代码块：整宽底色
+            case code
+            /// 引用块：左侧竖条
+            case quote
+            /// 分隔线：横线
+            case rule
+        }
+        let kind: Kind
+        let range: NSRange
+    }
+
+    /// 最新一轮高亮收集到的块。落笔关闭时为空。
+    var blocks: [Block] = []
+
+    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
+        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+        guard !blocks.isEmpty, let container = textContainers.first else { return }
+        let visibleChars = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+
+        for block in blocks {
+            let visible = NSIntersectionRange(block.range, visibleChars)
+            guard visible.length > 0 else { continue }
+            let glyphRange = self.glyphRange(forCharacterRange: visible, actualCharacterRange: nil)
+            let fragments = lineFragmentRects(forGlyphRange: glyphRange)
+            guard !fragments.isEmpty else { continue }
+
+            switch block.kind {
+            case .code:
+                var union = fragments[0]
+                for rect in fragments.dropFirst() { union = union.union(rect) }
+                union = union.insetBy(dx: -2, dy: -2)
+                NSColor.separatorColor.withAlphaComponent(0.18).setFill()
+                NSBezierPath(rect: union.offsetBy(dx: origin.x, dy: origin.y)).fill()
+            case .quote:
+                NSColor.controlAccentColor.withAlphaComponent(0.45).setFill()
+                for rect in fragments {
+                    let bar = NSRect(
+                        x: rect.minX + origin.x,
+                        y: rect.minY + origin.y,
+                        width: 3,
+                        height: rect.height
+                    )
+                    NSBezierPath(rect: bar).fill()
+                }
+            case .rule:
+                NSColor.separatorColor.withAlphaComponent(0.9).setFill()
+                for rect in fragments {
+                    let line = NSRect(
+                        x: rect.minX + origin.x,
+                        y: rect.midY + origin.y - 0.5,
+                        width: rect.width,
+                        height: 1
+                    )
+                    NSBezierPath(rect: line).fill()
+                }
+            }
+        }
+    }
+
+    /// 可见范围内的每一行片段矩形（容器坐标，绘制时再按 `origin` 平移）。
+    private func lineFragmentRects(forGlyphRange glyphRange: NSRange) -> [CGRect] {
+        var rects: [CGRect] = []
+        enumerateLineFragments(forGlyphRange: glyphRange) { _, _, _, lineGlyphRange, _ in
+            var effective = NSRange()
+            rects.append(self.lineFragmentRect(forGlyphAt: lineGlyphRange.location, effectiveRange: &effective))
+        }
+        return rects
     }
 }
