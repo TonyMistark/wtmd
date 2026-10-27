@@ -209,10 +209,14 @@ struct ContentView: View {
             // 与「大纲」「最近文件」同一套侧栏节头。分类头带展开/收起开关，
             // 收起后整组（含文件夹标题行）都不占位，大纲顶到最上面。
             // 真正的分区头（文件夹名、右键菜单）仍由 WorkspaceTreeView 自己的
-            // Section 承担。
+            // Section 承担。收放不用 Section(isExpanded:)——收起后内容为空的
+            // Section 头部照常渲染（离屏渲染验证过），而且自己管状态不用跟
+            // 系统的收放动画抢控制权。
             if workspace.isOpen {
-                Section(isExpanded: $workspace.sectionExpanded) {
-                    WorkspaceTreeView()
+                Section {
+                    if workspace.sectionExpanded {
+                        WorkspaceTreeView()
+                    }
                 } header: {
                     sidebarSectionHeader(t("Workspaces"), isExpanded: workspace.sectionExpanded) {
                         withAnimation(.easeOut(duration: 0.18)) { workspace.sectionExpanded.toggle() }
@@ -220,14 +224,16 @@ struct ContentView: View {
                 }
             }
 
-            Section(isExpanded: $outlineExpanded) {
-                if store.outline.isEmpty {
-                    Text(t("No headings yet — type # to start the first one"))
-                        .font(.callout)
-                        .foregroundStyle(.tertiary)
-                } else {
-                    ForEach(store.outline) { item in
-                        outlineRow(item)
+            Section {
+                if outlineExpanded {
+                    if store.outline.isEmpty {
+                        Text(t("No headings yet — type # to start the first one"))
+                            .font(.callout)
+                            .foregroundStyle(.tertiary)
+                    } else {
+                        ForEach(store.outline) { item in
+                            outlineRow(item)
+                        }
                     }
                 }
             } header: {
@@ -256,6 +262,10 @@ struct ContentView: View {
             }
         }
         .listStyle(.sidebar)
+        // macOS 26 的滚动边缘默认给一条硬分割线：侧栏往下滚时它正好压在
+        // 红绿灯按钮那一行，看起来像一条凭空的横线。换成软边缘（渐进模糊），
+        // 内容从按钮底下淡出而不是被一条线切断。
+        .modifier(SidebarTopEdgeEffect())
         // 系统会在工具栏最左侧自动插一个侧栏开关，右侧已有自己的按钮，同一个动作
         // 两个入口。移除必须挂在侧栏内容上——挂在 NavigationSplitView 外层不生效
         // （实测：加在外面系统项照旧，加在 sidebar 上才真的消失）。
@@ -272,26 +282,46 @@ struct ContentView: View {
 
     /// 侧栏分类头：一颗箭头 + 标题，整行都是开关。点一下收起/放出这一组，
     /// 收起后箭头向右、内容整组消失——大纲、工作区共用同一套。
+    ///
+    /// 必须是「铺满整行的 Button」，不能是 HStack 挂 onTapGesture：离屏渲染
+    /// 实测（合成 mouseDown/Up 逐点试），手势版整行都收不到点击——List 的
+    /// section header 只让真正的 Button 吃命中；`.borderless` 样式同样不行，
+    /// `.plain` 与自定义按压样式（本工程行按钮同款）整行都响应。
     private func sidebarSectionHeader(
         _ title: String,
         isExpanded: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: "chevron.right")
-                .font(.caption2.weight(.semibold))
-                .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                .foregroundStyle(.secondary)
-            Text(title)
-                .lineLimit(1)
-            Spacer(minLength: 0)
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .contentShape(Rectangle())
-        .pressFeedback()
-        .onTapGesture(perform: action)
+        .buttonStyle(SidebarRowButtonStyle())
         .animation(.easeOut(duration: 0.15), value: isExpanded)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint(t("Collapse or expand this section"))
+    }
+
+    /// macOS 26 起滚动视图顶边默认画一条硬边缘（一条横线）。侧栏内容从
+    /// 红绿灯按钮底下滚过时，那条线正好横在按钮那一行。软边缘是渐进模糊，
+    /// 没有线。macOS 26 之前没有这个概念，原样返回。
+    private struct SidebarTopEdgeEffect: ViewModifier {
+        func body(content: Content) -> some View {
+            if #available(macOS 26.0, *) {
+                content.scrollEdgeEffectStyle(.soft, for: .top)
+            } else {
+                content
+            }
+        }
     }
 
     private func outlineRow(_ item: OutlineItem) -> some View {
