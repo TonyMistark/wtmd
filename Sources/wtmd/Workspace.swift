@@ -259,9 +259,9 @@ final class WorkspaceStore: ObservableObject {
     /// Expanded folders by path. Held here rather than in the view so the state
     /// survives the tree rebuilds that external changes trigger.
     @Published var expandedPaths: Set<String> = []
-    /// Whether the whole workspace section in the sidebar is unfolded. Toggled
-    /// by double-clicking the workspace header row; held here so tree rebuilds
-    /// don't snap it back open.
+    /// Whether the whole workspace group in the sidebar is unfolded. Toggled
+    /// by the "Workspaces" category header (and by double-clicking the folder
+    /// header row); held here so tree rebuilds don't snap it back open.
     @Published var sectionExpanded = true
     /// 刚建出来的那一行，界面收到后立刻把它变成输入框——「新建」的下一步
     /// 永远是「起名字」，不该让读者再去右键一次。

@@ -39,7 +39,11 @@ struct WorkspaceHeaderTests {
     @Test("整行双击切换：工作区分组与文件夹行都接上了")
     func doubleClickToggles() {
         let code = Self.code(of: Self.treeViewURL)
-        #expect(code.contains("Section(isExpanded: $workspace.sectionExpanded)"), "工作区分组没有接上展开状态")
+        // 收放职责上移了：分类头（ContentView）管整组显隐，这里不再自带
+        // 可折叠 Section——嵌两层会出现两套收放状态。
+        let contentView = Self.code(of: Self.sourceURL("ContentView.swift"))
+        #expect(contentView.contains("Section(isExpanded: $workspace.sectionExpanded)"), "侧栏「工作区」分类头没有接上展开状态")
+        #expect(!code.contains("Section(isExpanded:"), "文件树里不应再有内层折叠 Section")
         // 标题行一处、文件夹行一处，都是开关。
         #expect(code.contains("onTapGesture(count: 2) { workspace.sectionExpanded.toggle() }"), "标题行的双击切换不见了")
         #expect(code.contains("workspace.setExpanded(node.url, to: !workspace.isExpanded(node.url))"), "文件夹行的双击切换不见了")

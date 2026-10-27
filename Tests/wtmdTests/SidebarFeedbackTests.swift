@@ -37,7 +37,17 @@ struct SidebarFeedbackTests {
     @Test("工作区树包在「Workspaces」分类头里")
     func workspacesCategoryHeader() {
         let code = Self.code(of: Self.contentViewURL)
-        #expect(code.contains("Section(t(\"Workspaces\"))"), "侧栏缺「工作区」分类头")
+        #expect(code.contains("sidebarSectionHeader(t(\"Workspaces\")"), "侧栏缺「工作区」分类头")
+    }
+
+    @Test("工作区与大纲的分类头都带展开/收起开关")
+    func sectionHeadersAreCollapsible() {
+        let code = Self.code(of: Self.contentViewURL)
+        #expect(code.contains("Section(isExpanded: $workspace.sectionExpanded)"), "「工作区」分类头没有接上收放状态")
+        #expect(code.contains("Section(isExpanded: $outlineExpanded)"), "「大纲」分类头没有接上收放状态")
+        // 分类头本身就是按钮：箭头旋转表达开合，整行可点。
+        #expect(code.contains("chevron.right"), "分类头缺展开箭头")
+        #expect(code.contains("rotationEffect(.degrees(isExpanded ? 90 : 0))"), "箭头没有随开合旋转")
     }
 
     @Test("树行、标题行都接了按压反馈")
