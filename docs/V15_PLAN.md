@@ -1557,3 +1557,33 @@ Night Flight、Ember、Apathy……slug 一律不动——主题的身份是 id�
 
 965 → 966（+1）：分类头守卫更新 + 新增 `sidebarTopEdgeIsSoft`（反向钉住
 「分类头必须是 Button」「顶边必须是软边缘」）。
+
+### v0.15.37 — 落笔：一边写一边成为文章（#268）
+
+第四种视图模式 `Live`（落笔）：Typora / Obsidian 式 live preview——编辑器
+里直接以排版后的样子呈现，打一个字页面实时变样，不经过 WebView。
+
+#### 思路
+
+渲染全部走属性层：字符一个不动，光标、撤销、输入法、查找替换、回车续行
+照旧。语法标记（`#`、`**`、反引号、`~~`、`>`、围栏行）退成次级颜色，内容
+保持加粗/斜体/主题色；块级装饰（围栏代码块整宽底色、引用左侧竖条、`---`
+横线）由 `LiveDecorationLayoutManager`（NSLayoutManager 子类）在
+`drawBackground` 里画。
+
+#### 两个坑
+
+- **maxSize 钳制**：`NSTextView(frame:textContainer:)` 会把 `maxSize`
+  钳在初始 frame（640×400）——布局照跑、`usedRect` 正确，但 `textView.frame`
+  不随内容长高，打字机居中把 `frame.height` 当可滚动高度，光标过首屏就
+  居不了中。手工构造后必须显式设 `maxSize = greatestFiniteMagnitude`。
+- **frame 生长时序**：自建文本系统（NSTextStorage + 自定义 LayoutManager）
+  的 frame 生长走后台布局完成回调，位置回填排在生长前会被钳在半截
+  （CI macOS 15 抓到）。Coordinator 加同步 `growToContent()`，接在每条
+  文本/字体变化路径的高亮之后。
+
+#### 测试
+
+966 → 970（+4）：标记褪色 + 内容样式保留、块收集（围栏/引用/横线、未闭合
+围栏补到文末）、引用连行成一块、进落笔不重算预览 HTML、环序
+edit→live→preview→split。
