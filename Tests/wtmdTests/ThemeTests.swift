@@ -200,6 +200,22 @@ import Testing
     #expect(Theme.base16BuiltIns.contains { $0.hasDark })
 }
 
+@Test func base16DisplayNamesAreRealNamesNotSlugs() {
+    // 编号不是名字：0x96f、3024 这类 slug 只能当身份，不能出现在界面上。
+    // 名字是静态表启动时求值的，override 全局——中英两套正名都算过。
+    let english: Set<String> = [
+        "Night Flight", "Ember", "Apathy", "Apprentice",
+        "Arroz con Dulce Dark", "Arroz con Dulce Light", "Ascendancy",
+        "Ashes", "Atelier Cave Light", "Atelier Cave Dark",
+    ]
+    let chinese: Set<String> = [
+        "夜航", "炭火", "淡漠", "学徒", "甜米露 · 夜", "甜米露 · 昼",
+        "盛世", "余烬", "石窟画室 · 浅", "石窟画室 · 深",
+    ]
+    let names = Set(Theme.base16BuiltIns.map(\.name))
+    #expect(names == english || names == chinese, "显示名必须是正名，编号不出现在界面上")
+}
+
 // MARK: - 辅助
 
 private func makeTempDir() -> URL {

@@ -218,15 +218,17 @@ extension Theme {
     }
 
     /// tinted-theming/schemes 里 base16/ 目录字母序前十套；色值顺序即
-    /// base00…base0F。换一批主题只改这张表，别处不用动。
+    /// base00…base0F。换一批主题只改这张表，别处不用动。name 是显示名
+    /// 的英文键（编号不是名字，0x96f、3024 一类在表里另起了正名），
+    /// 中文展示走翻译表；slug 才是身份，改名不会让已选中的主题失效。
     private static let base16Schemes: [(slug: String, name: String, author: String, isDark: Bool, colors: [String])] = [
-        ("0x96f", "0x96f", "Filip Janevski", true, [
+        ("0x96f", "Night Flight", "Filip Janevski", true, [
             "#262427", "#3b393c", "#514f52", "#676567",
             "#7c7b7d", "#fcfcfc", "#eae9eb", "#fcfcfc",
             "#ff7272", "#fc9d6f", "#ffca58", "#bcdf59",
             "#aee8f4", "#49cae4", "#a093e2", "#ff8787",
         ]),
-        ("3024", "3024", "Jan T. Sott", true, [
+        ("3024", "Ember", "Jan T. Sott", true, [
             "#090300", "#3a3432", "#4a4543", "#5c5855",
             "#807d7c", "#a5a2a2", "#d6d5d4", "#f7f7f7",
             "#db2d20", "#e8bbd0", "#fded02", "#01a252",
@@ -250,7 +252,7 @@ extension Theme {
             "#E07A8A", "#E68A4A", "#D9A441", "#D47A50",
             "#D98276", "#B99AC8", "#D58AB4", "#B97755",
         ]),
-        ("arroz-con-dulce", "Arroz con Dulce", "Richard Martinez", false, [
+        ("arroz-con-dulce", "Arroz con Dulce Light", "Richard Martinez", false, [
             "#FFF8E7", "#F7EBD3", "#EAD6B8", "#C8A77A",
             "#765B45", "#4A2C20", "#321C14", "#21110B",
             "#A11D48", "#A3470A", "#855500", "#A2380C",
@@ -274,7 +276,7 @@ extension Theme {
             "#BE4678", "#AA573C", "#A06E3B", "#2A9292",
             "#398BC6", "#576DDB", "#955AE7", "#BF40BF",
         ]),
-        ("atelier-cave", "Atelier Cave", "Bram de Haan", true, [
+        ("atelier-cave", "Atelier Cave Dark", "Bram de Haan", true, [
             "#19171C", "#26232A", "#585260", "#655F6D",
             "#7E7887", "#8B8792", "#E2DFE7", "#EFECF4",
             "#BE4678", "#AA573C", "#A06E3B", "#2A9292",
@@ -288,7 +290,7 @@ extension Theme {
         guard let css = base16CSS(scheme.colors) else { return nil }
         return Theme(
             id: "builtin.base16.\(scheme.slug)",
-            name: scheme.name,
+            name: t(scheme.name),
             author: scheme.author,
             isBuiltIn: true,
             light: scheme.isDark ? nil : css,
