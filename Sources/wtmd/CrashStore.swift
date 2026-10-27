@@ -270,14 +270,19 @@ final class CrashStore: ObservableObject {
     ) -> CrashReport {
         // 有帧才算「抓到了现场」；只有头的是强退/断电。
         let kind: CrashReport.Kind = raw.frames.isEmpty ? .terminated : raw.kind
+        // 版本取死去那一位自报的（轨迹 launch 行）。收报告的进程可能已经
+        // 升过级——报成自己的版本会让人排查一个不存在的版本（#252）。
+        let version = CrashReport.launchedVersion(in: breadcrumbs) ?? CrashEnvironment.appVersion
         return CrashReport.make(
             capturedAt: capturedAt,
             kind: kind,
             signal: kind == .terminated ? nil : raw.signal,
+            appVersion: version,
             windowCount: CrashReport.windowCount(in: breadcrumbs),
             documentName: CrashReport.documentName(in: breadcrumbs),
             body: CrashReport.crashBody(
-                raw: raw, breadcrumbs: breadcrumbs, capturedAt: capturedAt
+                raw: raw, breadcrumbs: breadcrumbs, capturedAt: capturedAt,
+                kind: kind, appVersion: version
             )
         )
     }

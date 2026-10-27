@@ -125,6 +125,29 @@ func harvestHandlesForceQuit() throws {
     #expect(report.explanation.contains("没抓到现场"))
 }
 
+@MainActor
+@Test("隔代收割：版本取轨迹里死去那位的，不是收报告这位的（#252）")
+func harvestStampsTheDeadInstanceVersion() throws {
+    let root = try makeTempDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    // 0.15.30 被结束，0.15.31 启动时收报告——收报告进程的测试版本对不上才说明取对了
+    try writeInflight(in: root, name: ".inflight-123456-1790000000.raw", frames: false)
+    try writeBreadcrumbs([
+        "09:32:14 launch wtmd 0.15.30",
+        "09:32:14 windows 1",
+        "09:32:14 window open · 1 open",
+    ], in: root)
+
+    let store = CrashStore(directory: root)
+    store.harvest()
+
+    let report = try #require(store.reports.first)
+    #expect(report.kind == .terminated)
+    #expect(report.appVersion == "0.15.30")
+    #expect(report.markdown.contains("version: 0.15.30"))
+    #expect(report.markdown.contains("最后活动"))
+}
+
 /// 现场文件名里带着写它的进程号——收割前得先看那个人还在不在。
 @MainActor
 @Test("另一位 wtmd 还在写：它的现场不算上次的遗物")
