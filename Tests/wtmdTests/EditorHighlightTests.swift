@@ -165,3 +165,83 @@ private final class EditorHarness {
 private func longDocument() -> String {
     (1...80).map { "第 \($0) 行内容" }.joined(separator: "\n")
 }
+
+// MARK: - 落笔（即写即现）
+
+/// 落笔只改属性不动字符：标记退成浅灰，内容本身的样式（加粗/斜体）还在，
+/// 光标一个都不挪。
+@MainActor
+@Test func liveModeFadesMarkersAndKeepsContentStyles() {
+    let harness = EditorHarness(text: "## 标题\n\n**加粗的话**\n`code`")
+    let length = (harness.text as NSString).length
+    harness.coordinator.liveDecorations = true
+
+    for caret in [0, 4, length] {
+        harness.textView.setSelectedRange(NSRange(location: caret, length: 0))
+        EditorTextView.highlight(harness.textView, live: true)
+        #expect(harness.textView.selectedRange().location == caret)
+    }
+
+    let storage = harness.textView.textStorage
+    // `##` 标记（0-2）退成浅灰，标题文字（3 起）保持主题色
+    let marker = storage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
+    #expect(marker == NSColor.tertiaryLabelColor, "落笔时 `##` 应当退成浅灰")
+    let heading = storage?.attribute(.foregroundColor, at: 3, effectiveRange: nil) as? NSColor
+    #expect(heading == NSColor.controlAccentColor, "标题文字保持主题色")
+    // 标题字号还是放大的（渲染感来自这里，不是颜色）
+    let headingFont = storage?.attribute(.font, at: 3, effectiveRange: nil) as? NSFont
+    #expect((headingFont?.pointSize ?? 0) > 13.5)
+
+    // `**`（8-9）退灰，加粗内容（10 起）保持加粗字体
+    let boldMarker = storage?.attribute(.foregroundColor, at: 8, effectiveRange: nil) as? NSColor
+    #expect(boldMarker == NSColor.tertiaryLabelColor)
+    let boldFont = storage?.attribute(.font, at: 10, effectiveRange: nil) as? NSFont
+    #expect(boldFont?.fontDescriptor.symbolicTraits.contains(.bold) == true, "加粗内容字体不变")
+}
+
+/// 落笔收集块区间：围栏代码块（含两侧围栏行）与引用块，交给布局管理器。
+@MainActor
+@Test func liveModeCollectsFenceQuoteAndRuleBlocks() {
+    let text = "前言\n\n```swift\nlet x = 1\n```\n\n> 引用一\n> 引用二\n\n---\n\n后记"
+    let harness = EditorHarness(text: text)
+    harness.coordinator.liveDecorations = true
+    EditorTextView.highlight(harness.textView, live: true)
+
+    let manager = harness.textView.layoutManager as? LiveDecorationLayoutManager
+    let blocks = manager?.blocks ?? []
+    let kinds = blocks.map(\.kind)
+
+    #expect(kinds.contains(.code), "围栏代码块要收集成一块")
+    #expect(kinds.contains(.quote), "引用块要收集成一块")
+    #expect(kinds.contains(.rule), "分隔线要收集")
+
+    // 代码块从开围栏到闭围栏整块（行内偏移手算：前言\n\n=5，围栏 9 行 8 格…直接按内容定位）
+    let ns = text as NSString
+    let openFence = ns.range(of: "```swift").location
+    let closeFence = ns.range(of: "```", options: [], range: NSRange(location: openFence + 1, length: ns.length - openFence - 1)).location
+    let code = blocks.first { $0.kind == .code }
+    #expect(code?.range.location == openFence, "代码块从开围栏开始")
+    #expect(NSMaxRange(code?.range ?? NSRange()) > closeFence, "代码块包住闭围栏")
+
+    // 普通编辑模式不收集：同一个文档回到思绪模式，blocks 清空
+    EditorTextView.highlight(harness.textView, live: false)
+    #expect((harness.textView.layoutManager as? LiveDecorationLayoutManager)?.blocks.isEmpty == true)
+}
+
+/// 引用块的侧条区间要覆盖连续多行：两行引用是一块，不是两块。
+@MainActor
+@Test func consecutiveQuoteLinesFormOneBlock() {
+    let text = "> 一\n> 二\n\n正文"
+    let harness = EditorHarness(text: text)
+    harness.coordinator.liveDecorations = true
+    EditorTextView.highlight(harness.textView, live: true)
+
+    let blocks = (harness.textView.layoutManager as? LiveDecorationLayoutManager)?.blocks ?? []
+    let quotes = blocks.filter { $0.kind == .quote }
+    #expect(quotes.count == 1, "连续引用行是一块：\(blocks)")
+    let ns = text as NSString
+    #expect(quotes.first?.range.location == 0)
+    // 块到第二行引用的内容末尾（不含结尾换行）
+    #expect(NSMaxRange(quotes.first?.range ?? NSRange()) == ns.range(of: "> 一\n> 二").upperBound)
+}
+
