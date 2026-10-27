@@ -264,6 +264,20 @@ struct AppSettingsView: View {
                     }
                     .disabled(updates.isChecking || installer.phase.isWorking)
                 }
+                // 「检查失败」闪一下就没了，写作者永远不知道是网络、限流还是源坏了。
+                // 把每个源的原因留在页面上：这一行是排障入口，不是错误弹窗。
+                if case .failed = updates.status, !updates.lastFailures.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(t("Check failed:"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        ForEach(updates.lastFailures) { failure in
+                            Text("\(failure.source) · \(failure.reason)")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
             }
 
             Section(t("About")) {
@@ -289,7 +303,12 @@ struct AppSettingsView: View {
             if let primary = sources.first {
                 Button(t("Update…")) {
                     if let asset = primary.asset {
-                        Task { await installer.run(asset: asset, version: version, releaseURL: primary.releaseURL) }
+                        Task {
+                            await installer.run(
+                                asset: asset, version: version, releaseURL: primary.releaseURL,
+                                fallbacks: sources.filter { $0.name != primary.name }.compactMap(\.asset)
+                            )
+                        }
                     } else {
                         NSWorkspace.shared.open(primary.releaseURL)
                     }
@@ -301,7 +320,12 @@ struct AppSettingsView: View {
                             if source.asset != nil {
                                 Button(t("Download from {}", source.name)) {
                                     if let asset = source.asset {
-                                        Task { await installer.run(asset: asset, version: version, releaseURL: source.releaseURL) }
+                                        Task {
+                                            await installer.run(
+                                                asset: asset, version: version, releaseURL: source.releaseURL,
+                                                fallbacks: sources.filter { $0.name != source.name }.compactMap(\.asset)
+                                            )
+                                        }
                                     }
                                 }
                             }

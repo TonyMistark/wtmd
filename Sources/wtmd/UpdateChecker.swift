@@ -183,6 +183,18 @@ final class UpdateChecker: ObservableObject {
 
     @Published private(set) var status: UpdateStatus = .idle
 
+    /// 上一次检查失败时每个源的原因。检查开始/成功即清空。
+    /// 「有时候能查有时候不能」不能只闪一下就没了——设置页要看得到
+    /// 是哪个源、什么原因，用户才知道要不要等、要不要换网络。
+    @Published private(set) var lastFailures: [SourceFailure] = []
+
+    /// 一个源的失败摘要。`reason` 已经是给人看的一句话（限流 / 超时 / …）。
+    struct SourceFailure: Equatable, Identifiable {
+        let source: String
+        let reason: String
+        var id: String { source }
+    }
+
     /// 一次性反馈留在状态栏上的时长。
     private static let flashDuration: TimeInterval = 4
 
@@ -225,37 +237,94 @@ final class UpdateChecker: ObservableObject {
 
         resetTask?.cancel()
         status = .checking
+        lastFailures = []
 
         // 并发查所有源：一个源的失败不该拖垮、也不该掩盖另一个源的结果。
         // 全都失败才算检查失败；只要有活口，就按「版本更高者」出结果。
         var found: [(source: Configuration.Source, release: RemoteRelease)] = []
+        var failed: [(source: Configuration.Source, error: Error)] = []
         await withTaskGroup(of: (Configuration.Source, Result<RemoteRelease, Error>).self) { group in
             for source in configuration.sources {
                 group.addTask { [fetch] in
-                    do {
-                        let (data, response) = try await fetch(source)
-                        guard let http = response as? HTTPURLResponse,
-                              (200..<300).contains(http.statusCode) else {
-                            throw UpdateError.badResponse
-                        }
-                        return (source, .success(try JSONDecoder().decode(RemoteRelease.self, from: data)))
-                    } catch {
-                        return (source, .failure(error))
-                    }
+                    (source, await Self.load(source, fetch: fetch))
                 }
             }
             for await (source, result) in group {
-                if let release = try? result.get() { found.append((source, release)) }
+                switch result {
+                case .success(let release): found.append((source, release))
+                case .failure(let error): failed.append((source, error))
+                }
             }
         }
 
         guard !found.isEmpty else {
+            lastFailures = failed
+                .sorted { index(of: $0.source) < index(of: $1.source) }
+                .map { SourceFailure(source: $0.source.name, reason: Self.reason(for: $0.error)) }
             recordAttempt(succeeded: false)
             flash(.failed)
             return
         }
         recordAttempt(succeeded: true)
         evaluate(found)
+    }
+
+    // MARK: - 单源查询
+
+    /// 查一个源。**失败后再试一次**：一次 DNS 抖动、TLS 重置、CDN 段路由
+    /// 波动不该等于「检查失败」，这是「有时候能更新有时候不能」的一大来源。
+    ///
+    /// 三类错误不重试——重试也没用，只会多耗 15 秒超时：
+    /// - 403 / 429：限流（GitHub 未认证 60 次/小时），等一小时比等 15 秒有用；
+    /// - 404：这个源上根本没有 release（Gitee 没同步时就是它）；
+    /// - 2xx 但 JSON 解不动：数据坏了，不是网络。
+    nonisolated private static func load(
+        _ source: Configuration.Source,
+        fetch: @escaping Fetch
+    ) async -> Result<RemoteRelease, Error> {
+        var lastError: Error = UpdateError.badResponse
+        for attempt in 0..<2 {
+            do {
+                let (data, response) = try await fetch(source)
+                guard let http = response as? HTTPURLResponse else { throw UpdateError.badResponse }
+                guard (200..<300).contains(http.statusCode) else {
+                    throw UpdateError.http(status: http.statusCode)
+                }
+                return .success(try JSONDecoder().decode(RemoteRelease.self, from: data))
+            } catch {
+                lastError = error
+                if Task.isCancelled { break }
+                if let code = Self.httpStatus(of: error), [403, 404, 429].contains(code) { break }
+                if error is DecodingError { break }
+                if attempt == 0 {
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                }
+            }
+        }
+        return .failure(lastError)
+    }
+
+    /// 失败原因说人话。故意不吐 domain 错误码：设置页那一行要能看懂。
+    nonisolated static func reason(for error: Error) -> String {
+        if let status = httpStatus(of: error) {
+            if status == 403 || status == 429 { return t("Rate limited — try again in a while") }
+            if status == 404 { return t("nothing published here yet") }
+            return t("HTTP {}", status)
+        }
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut: return t("timed out")
+            case .notConnectedToInternet, .networkConnectionLost: return t("no network")
+            default: return t("network error")
+            }
+        }
+        if error is DecodingError { return t("unexpected response") }
+        return t("network error")
+    }
+
+    nonisolated private static func httpStatus(of error: Error) -> Int? {
+        if case UpdateError.http(let status) = error { return status }
+        return nil
     }
 
     // MARK: - 判定
@@ -423,4 +492,6 @@ struct RemoteRelease: Decodable {
 
 private enum UpdateError: Error {
     case badResponse
+    /// 非 2xx：把状态码带上来，好区分「限流」和「这个源没内容」。
+    case http(status: Int)
 }

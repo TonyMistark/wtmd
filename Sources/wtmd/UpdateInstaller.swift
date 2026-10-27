@@ -92,12 +92,21 @@ final class UpdateInstaller: ObservableObject {
     // MARK: - 流程
 
     /// 从徽标或设置页按下去的那一下。`version` 用来在装完之后核对落点。
-    func run(asset: UpdateAsset, version: String, releaseURL: URL) async {
+    ///
+    /// `fallbacks` 是同一版本在别的源上的 dmg：主源下载失败就换地方再拿，
+    /// 换源比让用户重新点一次便宜得多（下载失败最常见的两个原因是
+    /// `release-assets.githubusercontent.com` 被掐和链路中途断流）。
+    func run(
+        asset: UpdateAsset,
+        version: String,
+        releaseURL: URL,
+        fallbacks: [UpdateAsset] = []
+    ) async {
         guard !phase.isWorking else { return }
 
         do {
             phase = .downloading(fraction: 0)
-            let dmg = try await steps.download(asset.url) { [weak self] fraction in
+            let dmg = try await downloadFirst([asset] + fallbacks) { [weak self] fraction in
                 self?.phase = .downloading(fraction: fraction)
             }
             downloadedDMG = dmg
@@ -112,6 +121,24 @@ final class UpdateInstaller: ObservableObject {
         } catch {
             phase = .failed(reason: Failure.describe(error))
         }
+    }
+
+    /// 按顺序试每个源，第一个拿到的就是它。全都失败才把最后一个错误抛出去
+    /// ——报错要报「最后一个」，那才是用户当下最可能撞到的那个。
+    private func downloadFirst(
+        _ assets: [UpdateAsset],
+        progress: @MainActor @escaping (Double) -> Void
+    ) async throws -> URL {
+        var lastError: Error = URLError(.unknown)
+        for asset in assets {
+            do {
+                return try await steps.download(asset.url, progress)
+            } catch {
+                lastError = error
+                if Task.isCancelled { throw CancellationError() }
+            }
+        }
+        throw lastError
     }
 
     /// 装不上时的退路：访达里亮出 dmg，用户自己拖。
@@ -178,7 +205,28 @@ final class UpdateInstaller: ObservableObject {
 
     // MARK: - 下载
 
+    /// 下载带重试：一个 3.5 MB 的文件断在中途，重来一次往往就过去了；
+    /// 三次都不过才认输（失败自有换源兜底）。每次从头下，进度从头报。
     nonisolated static func download(
+        _ url: URL,
+        progress: @MainActor @escaping (Double) -> Void
+    ) async throws -> URL {
+        var lastError: Error = URLError(.unknown)
+        for attempt in 0..<3 {
+            do {
+                return try await downloadOnce(url, progress: progress)
+            } catch {
+                lastError = error
+                if Task.isCancelled { throw CancellationError() }
+                if attempt < 2 {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                }
+            }
+        }
+        throw lastError
+    }
+
+    nonisolated private static func downloadOnce(
         _ url: URL,
         progress: @MainActor @escaping (Double) -> Void
     ) async throws -> URL {
