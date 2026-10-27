@@ -309,6 +309,7 @@ struct EditorTextView: NSViewRepresentable {
                 fonts = .system
                 textView.font = fonts.regular
                 EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor, live: liveDecorations)
+                growToContent()
                 return
             }
 
@@ -331,15 +332,35 @@ struct EditorTextView: NSViewRepresentable {
             fonts = EditorFonts(family: style.monoFontFamily)
             textView.font = fonts.regular
             EditorTextView.highlight(textView, fonts: fonts, textColor: foreground, live: liveDecorations)
+            growToContent()
         }
 
         static let font = NSFont.monospacedSystemFont(ofSize: 13.5, weight: .regular)
         static let boldFont = NSFont.monospacedSystemFont(ofSize: 13.5, weight: .semibold)
 
+        /// 文本视图同步长高到内容高度。
+        ///
+        /// 自建文本系统（落笔的装饰布局管理器要插进去）之后，frame 的生长走
+        /// **后台布局完成回调**，不再发生在 `setString` 里——位置回填如果排在
+        /// 生长前面（CI 上快机器慢机器差半拍），滚动会被钳在半截。于是在每条
+        /// 文本/字体变化路径上同步撑一次：`ensureLayout` + `usedRect`，与高亮
+        /// 同一步调，回填永远站在长好的 frame 上。
+        func growToContent() {
+            guard textView.isVerticallyResizable,
+                  let manager = textView.layoutManager,
+                  let container = textView.textContainer else { return }
+            manager.ensureLayout(for: container)
+            let used = manager.usedRect(for: container)
+            let height = used.height + textView.textContainerInset.height * 2
+            guard abs(textView.frame.height - height) > 0.5 else { return }
+            textView.setFrameSize(NSSize(width: textView.frame.width, height: max(height, 0)))
+        }
+
         /// 按当前字体/字色/落笔状态整串重铺。落笔开关切换时用——
         /// 文本没变，普通的高亮路径不会自己触发。
         func refreshHighlight() {
             EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor, live: liveDecorations)
+            growToContent()
             textView.needsDisplay = true
         }
 
@@ -365,6 +386,7 @@ struct EditorTextView: NSViewRepresentable {
             guard textView.string != text else { return }
             textView.string = text
             EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor, live: liveDecorations)
+            growToContent()
             rebuildLineStarts()
             // `string` 赋值会把光标送到文档末尾。换文档时应该从文首开始——
             // 视图重建（⌘/ 切回来）也走这条路，回填会随后把光标放回原位。
@@ -386,6 +408,7 @@ struct EditorTextView: NSViewRepresentable {
             isEditing = true
             parent.text = textView.string
             EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor, live: liveDecorations)
+            growToContent()
             rebuildLineStarts()
             // 高亮重建了整串属性，压暗层要重新铺一遍
             applyFocusFull()
@@ -438,6 +461,7 @@ struct EditorTextView: NSViewRepresentable {
             isEditing = true
             parent.text = textView.string
             EditorTextView.highlight(textView, fonts: fonts, textColor: textView.textColor, live: liveDecorations)
+            growToContent()
             rebuildLineStarts()
             applyFocusFull()
             recenter()

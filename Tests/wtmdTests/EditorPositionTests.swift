@@ -23,10 +23,9 @@ private final class EditorPositionProbe {
             generation: generation
         )
         coordinator = view.makeCoordinator()
-        coordinator.textView.string = text
-        coordinator.rebuildLineStarts()
-        // 新视图的默认落点就是文首（`string` 赋值会把光标送到末尾，这里还原）
-        coordinator.textView.selectedRange = NSRange(location: 0, length: 0)
+        // 生产路径是 updateNSView → syncText（设文本、重铺高亮、同步长高 frame）。
+        // 走同一条路：自建文本系统的 frame 生长若绕开它，回填滚动会被钳在半截。
+        coordinator.syncText(text)
 
         window = NSWindow(
             contentRect: NSRect(x: -20000, y: -20000, width: 800, height: 600),
