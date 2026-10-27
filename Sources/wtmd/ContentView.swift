@@ -613,7 +613,7 @@ struct ContentView: View {
             ForEach(sources, id: \.name) { source in
                 if source.asset != nil {
                     Button(t("Download from {}", source.name)) {
-                        startUpdate(source: source, version: version)
+                        startUpdate(source: source, version: version, all: sources)
                     }
                 }
                 Button(t("Open {} release page", source.name)) {
@@ -624,9 +624,9 @@ struct ContentView: View {
             Label(t("v{} available", version), systemImage: "arrow.down.circle")
                 .foregroundStyle(Color.accentColor)
                 .contentShape(Rectangle())
-        } primaryAction: {
+        }         primaryAction: {
             if let primary {
-                startUpdate(source: primary, version: version)
+                startUpdate(source: primary, version: version, all: sources)
             }
         }
         .menuStyle(.borderlessButton)
@@ -641,12 +641,18 @@ struct ContentView: View {
     }
 
     /// 有 dmg 就一键装；没有（Release 没挂附件）就退回打开下载页。
-    private func startUpdate(source: UpdateSource, version: String) {
+    /// `all` 是本次检查报出同一个版本的全部源：主源下不动就换一个。
+    private func startUpdate(source: UpdateSource, version: String, all sources: [UpdateSource]) {
         guard let asset = source.asset else {
             NSWorkspace.shared.open(source.releaseURL)
             return
         }
-        Task { await installer.run(asset: asset, version: version, releaseURL: source.releaseURL) }
+        let fallbacks = sources.filter { $0.name != source.name }.compactMap(\.asset)
+        Task {
+            await installer.run(
+                asset: asset, version: version, releaseURL: source.releaseURL, fallbacks: fallbacks
+            )
+        }
     }
 
     /// 两个写作模式的开关：界面越安静，越容易待在里面。

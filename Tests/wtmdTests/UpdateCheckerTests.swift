@@ -114,8 +114,17 @@ private final class UpdateStub {
     /// 默认全员「连接失败」。
     var defaultFailure: Result<(Data, URLResponse), Error> = .failure(URLError(.notConnectedToInternet))
 
+    /// 前 `transientFailures` 次调用抛这个错，之后按 `replies` 正常回话——
+    /// 模拟一次网络抖动（抖动几次由测试说了算）。
+    var transientError: Error? = nil
+    var transientFailures = 0
+
     func answer(_ source: UpdateChecker.Configuration.Source) throws -> (Data, URLResponse) {
         calls += 1
+        if let transientError, transientFailures > 0 {
+            transientFailures -= 1
+            throw transientError
+        }
         return try (replies[source.name] ?? defaultFailure).get()
     }
 }
@@ -312,21 +321,21 @@ private final class UpdateHarness {
 @Test @MainActor func failureRetriesSoonerThanSuccess() async throws {
     let harness = try UpdateHarness(currentVersion: "0.3.0")
     defer { harness.cleanup() }
-    // 先失败
+    // 先失败：一次失败会试两次（失败重试一次），所以是 2 次调用
     await harness.checker().checkIfDue()
-    #expect(harness.stub.calls == 1)
+    #expect(harness.stub.calls == 2)
 
     // 半小时后：还在失败静默期，不查
     harness.stub.now = harness.stub.now.addingTimeInterval(30 * 60)
     await harness.checker().checkIfDue()
-    #expect(harness.stub.calls == 1)
+    #expect(harness.stub.calls == 2)
 
     // 一小时零一分后：重试
     harness.stub.now = harness.stub.now.addingTimeInterval(31 * 60)
     try harness.stub.reply(tag: "v0.4.0")
     let checker = harness.checker()
     await checker.checkIfDue()
-    #expect(harness.stub.calls == 2)
+    #expect(harness.stub.calls == 3)
     #expect(checker.status == .available(version: "0.4.0", sources: [
         UpdateSource(name: "GitHub", asset: nil,
                      releaseURL: try #require(URL(string: "https://example.invalid/github/releases/tag/v0.4.0"))),
@@ -452,4 +461,80 @@ struct UpdateDualSourceTests {
     #expect(command.section == .app)
     #expect(command.title == "检查更新…")
     #expect(command.kind.id == "app.checkForUpdates")
+}
+
+// MARK: - 网络抖动的韧性
+
+@Test @MainActor func aTransientNetworkFailureIsRetriedOnce() async throws {
+    let harness = try UpdateHarness(currentVersion: "0.3.0")
+    defer { harness.cleanup() }
+    try harness.stub.reply(tag: "v0.4.0")
+    // 第一次连接被掐断（TLS 重置、DNS 抖动都长这样），第二次正常
+    harness.stub.transientError = URLError(.networkConnectionLost)
+    harness.stub.transientFailures = 1
+
+    let checker = harness.checker()
+    await checker.check(force: true)
+
+    #expect(checker.status == .available(version: "0.4.0", sources: [
+        UpdateSource(
+            name: "GitHub", asset: nil,
+            releaseURL: try #require(URL(string: "https://example.invalid/github/releases/tag/v0.4.0"))
+        ),
+    ]), "一次抖动不该等于检查失败")
+    #expect(harness.stub.calls == 2, "失败后应该再试一次")
+    #expect(checker.lastFailures.isEmpty)
+}
+
+@Test @MainActor func rateLimitingIsNotRetried() async throws {
+    let harness = try UpdateHarness(currentVersion: "0.3.0")
+    defer { harness.cleanup() }
+    try harness.stub.reply(tag: "v0.4.0", status: 403)
+
+    let checker = harness.checker()
+    await checker.check(force: true)
+
+    #expect(checker.status == .failed)
+    #expect(harness.stub.calls == 1, "限流重试也没用，不该再撞一次墙")
+    let reason = try #require(checker.lastFailures.first?.reason)
+    // 语言是全局的，别的测试可能已改过：中英两种文案都认
+    #expect(
+        [t("Rate limited — try again in a while"), "Rate limited — try again in a while"].contains(reason),
+        "限流的失败原因应该说清楚是被限流：\(reason)"
+    )
+}
+
+@Test @MainActor func everyFailingSourceIsListedWithItsReason() async throws {
+    let harness = try UpdateHarness(currentVersion: "0.3.0")
+    defer { harness.cleanup() }
+    // GitHub 超时（会重试），Gitee 404（没同步，不重试）
+    harness.stub.replies["GitHub"] = .failure(URLError(.timedOut))
+    try harness.stub.replyGiteeLike(tag: "v0.4.0", status: 404)
+
+    let checker = harness.dualChecker()
+    await checker.check(force: true)
+
+    #expect(checker.status == .failed)
+    #expect(harness.stub.calls == 3, "超时重试一次（2）＋ 404 不重试（1）")
+    #expect(checker.lastFailures.map(\.source) == ["GitHub", "Gitee"], "按源序列出，不是并发回来的顺序")
+    let github = try #require(checker.lastFailures.first?.reason)
+    let gitee = try #require(checker.lastFailures.last?.reason)
+    #expect([t("timed out"), "timed out"].contains(github), "超时要报超时：\(github)")
+    #expect(
+        [t("nothing published here yet"), "nothing published here yet"].contains(gitee),
+        "Gitee 没同步要报「还没有发布版本」，不是笼统的网络错误：\(gitee)"
+    )
+}
+
+@Test @MainActor func aSuccessfulCheckClearsOldFailures() async throws {
+    let harness = try UpdateHarness(currentVersion: "0.3.0")
+    defer { harness.cleanup() }
+    harness.stub.defaultFailure = .failure(URLError(.timedOut))
+    let checker = harness.checker()
+    await checker.check(force: true)
+    #expect(!checker.lastFailures.isEmpty)
+
+    try harness.stub.reply(tag: "v0.4.0")
+    await checker.check(force: true)
+    #expect(checker.lastFailures.isEmpty, "检查成功后旧账要清掉，不能一直挂着上次的失败")
 }

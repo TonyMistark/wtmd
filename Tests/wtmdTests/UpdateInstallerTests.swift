@@ -400,7 +400,8 @@ struct UpdateInstallerAssemblyTests {
     @Test("徽标点下去走的是一键更新，不再直接开浏览器")
     func theBadgeInstalls() throws {
         let content = try source("ContentView.swift")
-        #expect(content.contains("installer.run(asset:"))
+        #expect(content.contains("installer.run("))
+        #expect(content.contains("fallbacks:"), "一键装时要带着备用源，主源下不动自动换")
         #expect(content.contains("case .available(let version, let sources):"))
     }
 
@@ -415,7 +416,8 @@ struct UpdateInstallerAssemblyTests {
     @Test("设置页也有一条更新的动作")
     func settingsHasAnAction() throws {
         let pages = try source("SettingsPages.swift")
-        #expect(pages.contains("installer.run(asset:"))
+        #expect(pages.contains("installer.run("))
+        #expect(pages.contains("fallbacks:"), "设置页的更新动作也要带备用源")
         #expect(pages.contains("revealFallback()"))
     }
 
@@ -494,5 +496,80 @@ struct UpdateRelaunchTests {
             code.contains("createsNewApplicationInstance = true"),
             "连退路都没留：子进程起不来时得强制新实例，不能什么都不开"
         )
+    }
+}
+
+// MARK: - 换源
+
+@Suite("下载换源", .serialized)
+@MainActor
+struct UpdateInstallerFallbackTests {
+    private let primary = UpdateAsset(
+        url: URL(string: "https://example.invalid/github/wtmd-0.16.0.dmg")!,
+        name: "wtmd-0.16.0.dmg",
+        byteCount: 3_100_000
+    )
+    private let mirror = UpdateAsset(
+        url: URL(string: "https://example.invalid/gitee/wtmd-0.16.0.dmg")!,
+        name: "wtmd-0.16.0.dmg",
+        byteCount: 3_100_000
+    )
+
+    @Test("主源下不动就换备用源，流程照走完")
+    func fallsBackToTheMirror() async {
+        let installer = UpdateInstaller(steps: UpdateInstaller.Steps(
+            download: { _, _ in throw NSError(domain: "unwired", code: 1) },
+            mount: { _ in throw NSError(domain: "unwired", code: 1) },
+            install: { _, _, _ in throw NSError(domain: "unwired", code: 1) },
+            relaunch: { _ in throw NSError(domain: "unwired", code: 1) },
+            reveal: { _ in }
+        ))
+        var attempted: [String] = []
+        var reachedRelaunch = false
+        installer.stepsForTest(
+            download: { url, _ in
+                attempted.append(url.absoluteString)
+                if url == self.primary.url { throw URLError(.timedOut) }
+                return URL(fileURLWithPath: "/tmp/fake.dmg")
+            },
+            mount: { _ in URL(fileURLWithPath: "/tmp/fake.app") },
+            install: { _, _, _ in URL(fileURLWithPath: "/Applications/wtmd.app") },
+            relaunch: { _ in reachedRelaunch = true }
+        )
+
+        await installer.run(
+            asset: primary, version: "0.16.0",
+            releaseURL: URL(fileURLWithPath: "/"), fallbacks: [mirror]
+        )
+
+        #expect(attempted == [primary.url.absoluteString, mirror.url.absoluteString])
+        #expect(reachedRelaunch, "换了源拿到 dmg，后面的步骤就该照走")
+        #expect(installer.phase == .idle)
+    }
+
+    @Test("全都下不动才报失败")
+    func failsWhenEverySourceFails() async {
+        let installer = UpdateInstaller(steps: UpdateInstaller.Steps(
+            download: { _, _ in throw NSError(domain: "unwired", code: 1) },
+            mount: { _ in throw NSError(domain: "unwired", code: 1) },
+            install: { _, _, _ in throw NSError(domain: "unwired", code: 1) },
+            relaunch: { _ in throw NSError(domain: "unwired", code: 1) },
+            reveal: { _ in }
+        ))
+        installer.stepsForTest(
+            download: { _, _ in throw URLError(.cannotConnectToHost) },
+            mount: { _ in Issue.record("全失败了不该挂载"); return URL(fileURLWithPath: "/") }
+        )
+
+        await installer.run(
+            asset: primary, version: "0.16.0",
+            releaseURL: URL(fileURLWithPath: "/"), fallbacks: [mirror]
+        )
+
+        guard case .failed = installer.phase else {
+            Issue.record("两个源都失败了，该报失败而不是 \(installer.phase)")
+            return
+        }
+        #expect(installer.downloadedDMG == nil)
     }
 }
