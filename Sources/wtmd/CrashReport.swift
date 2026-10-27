@@ -282,14 +282,22 @@ struct CrashReport: Identifiable, Equatable {
     // MARK: 正文装配
 
     /// 崩溃报告的正文。**不含正文内容**——只报窗口数、文件名、栈与轨迹。
+    ///
+    /// `kind` 决定时间标签：信号与异常的 `capturedAt` 是当场写下的崩溃时刻；
+    /// 「没正常退出」的 `capturedAt` 只能取现场文件的创建时间——那是**启动**
+    /// 时刻（#181），写成「时间」会让人以为进程死在那一刻，所以叫「最后活动」。
+    /// `appVersion` 是死去那位的版本（轨迹里自报的），不是收报告这位的。
     static func crashBody(
         raw: CrashRaw,
         breadcrumbs: [String],
-        capturedAt: Date
+        capturedAt: Date,
+        kind: Kind,
+        appVersion: String = CrashEnvironment.appVersion
     ) -> String {
         var body = "# \(t("wtmd crash report"))\n\n"
-        body += "- \(t("Time"))\(Self.colon)\(stampFormatter.string(from: capturedAt))\n"
-        body += "- \(t("Version"))\(Self.colon)\(CrashEnvironment.appVersion)"
+        let timeLabel = kind == .terminated ? t("Last seen") : t("Time")
+        body += "- \(timeLabel)\(Self.colon)\(stampFormatter.string(from: capturedAt))\n"
+        body += "- \(t("Version"))\(Self.colon)\(appVersion)"
             + "（\(CrashEnvironment.architecture)）\n"
         body += "- \(t("System"))\(Self.colon)\(CrashEnvironment.systemDescription)\n"
         if let exception = raw.exceptionName {
@@ -364,6 +372,21 @@ struct CrashReport: Identifiable, Equatable {
             guard let range = line.range(of: "doc ") else { continue }
             let name = line[range.upperBound...].trimmingCharacters(in: .whitespaces)
             return name.isEmpty ? nil : name
+        }
+        return nil
+    }
+
+    /// 轨迹里最后一条 `launch wtmd X`——**写下这份现场的进程**的版本。
+    ///
+    /// 收报告的是下一次启动的进程，`CrashEnvironment.appVersion` 是它的版本；
+    /// 中间隔着一次升级的话（#252：0.15.30 被结束、0.15.31 收的报告），
+    /// 报告头写着 0.15.31、排查的人却在找 0.15.31 的毛病——版本必须取
+    /// 死去那一位自报的。
+    static func launchedVersion(in breadcrumbs: [String]) -> String? {
+        for line in breadcrumbs.reversed() {
+            guard let range = line.range(of: "launch wtmd ") else { continue }
+            let version = line[range.upperBound...].trimmingCharacters(in: .whitespaces)
+            return version.isEmpty ? nil : version
         }
         return nil
     }

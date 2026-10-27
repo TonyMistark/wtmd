@@ -119,6 +119,7 @@ extension Translations {
         "Keep My Changes": "保留我的修改",
         "Kept on this Mac for the last 365 days. Nothing leaves the machine.": "账本存在这台 Mac 上，只留最近 365 天，不上传任何地方。",
         "Last check failed": "上次检查失败",
+        "Last seen": "最后活动",
         "Layout": "版式",
         "Less": "少",
         "Light / Dark (follows system)": "浅色 / 深色（跟随系统）",

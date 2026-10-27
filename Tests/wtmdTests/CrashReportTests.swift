@@ -142,7 +142,8 @@ func crashBodyCarriesTheTrail() {
         "15:02:40 doc 第二章.md",
     ]
     let body = CrashReport.crashBody(
-        raw: raw, breadcrumbs: breadcrumbs, capturedAt: Date(timeIntervalSince1970: 1_790_000_000)
+        raw: raw, breadcrumbs: breadcrumbs, capturedAt: Date(timeIntervalSince1970: 1_790_000_000),
+        kind: .signal
     )
 
     #expect(body.contains("SIGSEGV"))
@@ -156,7 +157,8 @@ func crashBodyCarriesTheTrail() {
 @Test("没抓到现场时说清楚，而不是给一个空栈")
 func terminatedBodySaysSo() {
     let body = CrashReport.crashBody(
-        raw: CrashRaw(), breadcrumbs: [], capturedAt: Date(timeIntervalSince1970: 1_790_000_000)
+        raw: CrashRaw(), breadcrumbs: [], capturedAt: Date(timeIntervalSince1970: 1_790_000_000),
+        kind: .terminated
     )
     #expect(body.contains("没抓到现场"))
     // 没有栈就不给一个空的小节标题（结尾那句「只有版本…和调用栈」不算）
@@ -176,6 +178,49 @@ func breadcrumbsAreInterpreted() {
     #expect(CrashReport.documentName(in: lines) == "第三章.md")
     #expect(CrashReport.windowCount(in: []) == nil)
     #expect(CrashReport.documentName(in: []) == nil)
+}
+
+@Test("轨迹里最后一条 launch 行是死去那位自报的版本")
+func launchedVersionComesFromBreadcrumbs() {
+    let lines = [
+        "15:02:11 launch wtmd 0.13.0",
+        "15:02:12 windows 2",
+        "15:03:01 launch wtmd 0.14.0",
+    ]
+    // 中间隔着一次升级：最后一条 launch 才是写下现场那一位
+    #expect(CrashReport.launchedVersion(in: lines) == "0.14.0")
+    #expect(CrashReport.launchedVersion(in: []) == nil)
+    #expect(CrashReport.launchedVersion(in: ["15:02:12 windows 2"]) == nil)
+}
+
+@Test("没正常退出的正文：版本与时刻都来自轨迹那一位，时间叫「最后活动」")
+func terminatedBodyNamesTheDeadInstance() {
+    let breadcrumbs = [
+        "09:32:14 launch wtmd 0.15.30",
+        "09:32:14 windows 1",
+    ]
+    let body = CrashReport.crashBody(
+        raw: CrashRaw(), breadcrumbs: breadcrumbs,
+        capturedAt: Date(timeIntervalSince1970: 1_790_000_000),
+        kind: .terminated, appVersion: "0.15.30"
+    )
+    #expect(body.contains("0.15.30"))
+    // capturedAt 是现场文件的创建时间（=启动时刻），叫「时间」会让人以为
+    // 进程死在那一刻（#252）
+    #expect(body.contains("最后活动"))
+    #expect(!body.contains("- 时间："))
+}
+
+@Test("信号崩溃的正文：时刻仍然是「时间」，版本取死去那位的")
+func signalBodyKeepsTimeLabelAndDeadVersion() {
+    let raw = CrashRaw.parse(signalRaw)
+    let body = CrashReport.crashBody(
+        raw: raw, breadcrumbs: ["15:02:11 launch wtmd 0.13.0"],
+        capturedAt: Date(timeIntervalSince1970: 1_790_000_000),
+        kind: .signal, appVersion: "0.13.0"
+    )
+    #expect(body.contains("- 时间："))
+    #expect(body.contains("0.13.0"))
 }
 
 @Test("多行原因压成一行——元数据一行一个字段")
