@@ -6,6 +6,8 @@
 
 ![Status](https://img.shields.io/badge/status-v0.15.32-green) ![License](https://img.shields.io/badge/license-MIT-blue) ![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey)
 
+![wtmd 主界面](docs/images/screenshot-home.png)
+
 ## 特性
 
 - **一扇窗一篇稿** — `⌘N` 另开一扇窗口，两篇稿子各占一张桌子，互不串内容；关掉几扇、下次启动就回来几扇（连位置、工作区、光标都在一起），没名字的草稿不会陪窗口一起消失；主题、版式、字数账本这些「怎么写字」的设置全应用共用一份，打开哪扇窗都跟着变。**同一篇稿子只在一扇窗里打开**：在别处再打开它就跳回那扇窗（带着行列时直接落到那儿），另存为也不会盖掉另一扇窗正在写的那篇，两扇窗各写一份、谁后落盘谁赢的事不会再发生
