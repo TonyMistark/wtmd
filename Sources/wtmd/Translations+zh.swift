@@ -54,6 +54,7 @@ extension Translations {
         "Cleared the version history of {}": "已清除「{}」的版本历史",
         "Click a square to see that day.": "点一个格子，看看那天。",
         "Click Record, then press the new combination — it takes effect at once. esc cancels.": "点「录入」后按下新的组合键，立即生效。esc 取消录入。",
+        "Collapse or expand this section": "展开或收起这一组",
         "Close (esc)": "关闭（esc）",
         "Detach": "解除",
         "Detach Workspace": "解除工作区",

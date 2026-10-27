@@ -24,6 +24,9 @@ struct ContentView: View {
 
     /// 冲突副本清单是否展开。
     @State private var conflictListVisible = false
+    /// 侧栏「大纲」分类是否展开。收起工作区后大纲要能顶到最上面，
+    /// 所以两个分类都得各自能收。
+    @State private var outlineExpanded = true
     init(paletteVisible: Binding<Bool>, coordinator: WindowCoordinator? = nil) {
         _paletteVisible = paletteVisible
         self.coordinator = coordinator
@@ -203,15 +206,21 @@ struct ContentView: View {
     private var sidebar: some View {
         List {
             // 「工作区」是分类头：下面这片都是用户 add 进来的工作区，
-            // 与「大纲」「最近文件」同一套侧栏节头。真正的分区头（文件夹名、
-            // 双击收放、右键菜单）仍由 WorkspaceTreeView 自己的 Section 承担。
+            // 与「大纲」「最近文件」同一套侧栏节头。分类头带展开/收起开关，
+            // 收起后整组（含文件夹标题行）都不占位，大纲顶到最上面。
+            // 真正的分区头（文件夹名、右键菜单）仍由 WorkspaceTreeView 自己的
+            // Section 承担。
             if workspace.isOpen {
-                Section(t("Workspaces")) {
+                Section(isExpanded: $workspace.sectionExpanded) {
                     WorkspaceTreeView()
+                } header: {
+                    sidebarSectionHeader(t("Workspaces"), isExpanded: workspace.sectionExpanded) {
+                        withAnimation(.easeOut(duration: 0.18)) { workspace.sectionExpanded.toggle() }
+                    }
                 }
             }
 
-            Section(t("Outline")) {
+            Section(isExpanded: $outlineExpanded) {
                 if store.outline.isEmpty {
                     Text(t("No headings yet — type # to start the first one"))
                         .font(.callout)
@@ -220,6 +229,10 @@ struct ContentView: View {
                     ForEach(store.outline) { item in
                         outlineRow(item)
                     }
+                }
+            } header: {
+                sidebarSectionHeader(t("Outline"), isExpanded: outlineExpanded) {
+                    withAnimation(.easeOut(duration: 0.18)) { outlineExpanded.toggle() }
                 }
             }
 
@@ -256,6 +269,30 @@ struct ContentView: View {
             : t("Show the sidebar")
     }
 
+
+    /// 侧栏分类头：一颗箭头 + 标题，整行都是开关。点一下收起/放出这一组，
+    /// 收起后箭头向右、内容整组消失——大纲、工作区共用同一套。
+    private func sidebarSectionHeader(
+        _ title: String,
+        isExpanded: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "chevron.right")
+                .font(.caption2.weight(.semibold))
+                .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                .foregroundStyle(.secondary)
+            Text(title)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+        .pressFeedback()
+        .onTapGesture(perform: action)
+        .animation(.easeOut(duration: 0.15), value: isExpanded)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(t("Collapse or expand this section"))
+    }
 
     private func outlineRow(_ item: OutlineItem) -> some View {
         Button {

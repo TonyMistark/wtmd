@@ -38,7 +38,10 @@ struct WorkspaceTreeView: View {
 
     @ViewBuilder
     private var workspaceSection: some View {
-        Section(isExpanded: $workspace.sectionExpanded) {
+        // 收放不在这里做：整个组（含文件夹标题行）是否显示，由侧栏
+        // 「工作区」分类头的展开开关决定（ContentView 的 Section(isExpanded:)）。
+        // 这里只管树本身；标题行双击仍是个开关，跟分类头拨的是同一个状态。
+        Section {
             if let dropError {
                 Text(dropError)
                     .font(.caption2)
@@ -69,8 +72,9 @@ struct WorkspaceTreeView: View {
                     }
                 Spacer(minLength: 4)
             }
-            // 整行都是开关：双击收起 / 放出这组文件树。收放不该藏在
-            // 一颗按钮里，更不该跟「删掉工作区」共用一颗按钮。
+            // 整行都是开关：双击收起 / 放出整个工作区组——收起后这行标题
+            // 也一起让位，大纲顶到侧栏最上面。收放不该跟「删掉工作区」
+            // 共用一颗按钮。
             .contentShape(Rectangle())
             .pressFeedback()
             .onTapGesture(count: 2) { workspace.sectionExpanded.toggle() }
