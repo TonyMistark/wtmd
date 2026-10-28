@@ -62,6 +62,10 @@ struct EditorTextView: NSViewRepresentable {
 
         coordinator.syncText(text)
 
+        // 宽度变了（窗口拉宽、首次布局），文本按真宽重排，frame 高度跟着变——
+        // syncText 只在文本真的换了时才长高，这里补一次：已经到位时它是空操作。
+        coordinator.growToContent()
+
         // 重建后回填一次：此时文本已同步、视图即将布局，异步一拍等布局完成
         coordinator.restorePositionIfNeeded()
 

@@ -35,10 +35,27 @@ private final class EditorPositionProbe {
         )
         window.contentView = coordinator.scrollView
         window.layoutIfNeeded()
+        // 窗口把真实宽度交给编辑器，布局按真宽重排，frame 得按真宽再撑一次——
+        // syncText 时视图还没有宽度，那次撑的高度对不上（CI 上滚动正好被钳在半截）。
+        // 与生产同一条规则：几何变了，长高排在几何之后。
+        coordinator.growToContent()
     }
 
     var selection: NSRange { coordinator.textView.selectedRange() }
     var scrollY: CGFloat { coordinator.clipView.bounds.origin.y }
+
+    /// 自建文本系统的 frame 生长分了步：等它长到稳且够高再滚。
+    /// 快机器一步到位，慢 CI 多等几拍——「滚动被钳在半截」不该是 flake。
+    func waitUntilSettled(minimumHeight: CGFloat = 2000) async {
+        var previous: CGFloat = -1
+        for _ in 0..<200 {
+            coordinator.growToContent()
+            let height = coordinator.textView.frame.height
+            if height >= minimumHeight, height == previous { return }
+            previous = height
+            try? await Task.sleep(nanoseconds: 25_000_000)
+        }
+    }
 
     func scroll(toY y: CGFloat) {
         coordinator.clipView.scroll(to: NSPoint(x: 0, y: y))
@@ -58,6 +75,7 @@ private func drainMainQueue() async {
     memory.startSession(generation: 1)
 
     let first = EditorPositionProbe(text: longDocument, memory: memory, generation: 1)
+    await first.waitUntilSettled()
     first.coordinator.restorePositionIfNeeded()   // 没有旧位置：只是开启记账
     await drainMainQueue()
 
@@ -71,6 +89,7 @@ private func drainMainQueue() async {
 
     // 重建：新的 Coordinator、同一份记账本、同一代文档
     let second = EditorPositionProbe(text: longDocument, memory: memory, generation: 1)
+    await second.waitUntilSettled()
     second.coordinator.restorePositionIfNeeded()
     await drainMainQueue()
 
@@ -128,6 +147,7 @@ private func drainMainQueue() async {
     )
 
     let probe = EditorPositionProbe(text: longDocument, memory: memory, generation: 2)
+    await probe.waitUntilSettled()
     probe.coordinator.restorePositionIfNeeded()
     await drainMainQueue()
 
@@ -139,6 +159,7 @@ private func drainMainQueue() async {
 @Test @MainActor func changingGenerationRestoresThatDocumentsPosition() async throws {
     let memory = PositionMemory()
     let probe = EditorPositionProbe(text: longDocument, memory: memory, generation: 1)
+    await probe.waitUntilSettled()
     probe.coordinator.restorePositionIfNeeded()
     await drainMainQueue()
 
