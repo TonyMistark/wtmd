@@ -20,6 +20,10 @@ enum OpenRequest {
 
         // 先把人叫回来：从 Finder 打开文件，窗口得在眼前。
         NSApplication.shared.activate(ignoringOtherApps: true)
+        // 这次启动是「带着文件来」的明确意图：上次的桌面别抢戏。
+        // 启动时的桌面恢复发生在这之后（窗口视图报到才摆），这里先按住暂停键；
+        // 应用本来就在跑的场合账本早就摆完了，置位无副作用。
+        coordinator.suppressRestoration = true
         // 一扇看得见的写作窗都没有（⌘W 关光、后台启动、系统还在恢复现场）：
         // 先摆一扇出来，否则文件打开了也没人看得见。
         //
@@ -43,7 +47,7 @@ enum OpenRequest {
                 sameDocumentAlreadyOpen: current.store.fileURL.map {
                     PathKey.isSame($0, url)
                 } ?? false,
-                currentWindowIsUntouched: current.store.isUntouched,
+                frontWindowHoldsUnnamedWords: current.holdsUnnamedWords,
                 owner: coordinator.shared.openDocuments.owner(of: url)
             )
             CrashBreadcrumbs.note("open route=\(route)")
@@ -72,9 +76,9 @@ enum OpenRequest {
     enum Plan: Equatable {
         /// 这篇在前台窗里已经开着：什么也不用做。
         case leaveAsIs
-        /// 前台窗还是空白的：直接装进去。
+        /// 前台窗里装下这篇（Obsidian 式默认：文件进当前窗，不多开）。
         case reuseCurrent
-        /// 另开一扇——手上的稿子不能被换掉。
+        /// 前台窗还欠着没名字的字：另开一扇，别把没保存的稿子顶掉。
         case newWindow
         /// 这篇在另一扇窗里开着：把那扇窗带到前面。
         case reveal(UUID)
@@ -93,20 +97,23 @@ enum OpenRequest {
     /// 抽成纯函数：测试不必真开窗，也不必造一整个 `NSApplication`。
     ///
     /// - Parameters:
-    ///   - index: 这一批里的第几篇。只有第一篇配占用现成的空窗。
+    ///   - index: 这一批里的第几篇。只有第一篇配占用现成的前台窗。
     ///   - sameDocumentAlreadyOpen: 前台窗此刻开着的就是这篇。
-    ///   - currentWindowIsUntouched: 前台窗里既没有文件、也没有没名字的字。
+    ///   - frontWindowHoldsUnnamedWords: 前台窗里欠着一篇没名字的稿——那些字
+    ///     只在草稿里，被一个文件顶掉就真没了。
     ///   - owner: 这篇正被哪扇窗占着（`OpenDocuments` 的答案）。
     static func plan(
         index: Int,
         sameDocumentAlreadyOpen: Bool,
-        currentWindowIsUntouched: Bool,
+        frontWindowHoldsUnnamedWords: Bool,
         owner: UUID?
     ) -> Plan {
         if sameDocumentAlreadyOpen { return .leaveAsIs }
         if let owner { return .reveal(owner) }
+        // Obsidian 式默认：第一篇装进前台窗，不为它另开一扇。正在写的那篇
+        // 已经在盘上，换稿之前会先落盘，字不会丢。
+        if index == 0, !frontWindowHoldsUnnamedWords { return .reuseCurrent }
         // 多选打开时第二篇起各开一扇，否则后一篇会把前一篇顶掉。
-        if index == 0, currentWindowIsUntouched { return .reuseCurrent }
         return .newWindow
     }
 }

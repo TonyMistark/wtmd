@@ -9,10 +9,12 @@ import Testing
 @MainActor
 struct OpenRequestTests {
 
-    @Test func anUntouchedWindowTakesTheFirstFile() {
+    /// Obsidian 式默认：第一篇装进前台窗，哪怕那扇窗正开着别的稿子——
+    /// 稿子在盘上，换稿之前会先落盘。
+    @Test func theFirstFileLandsInTheFrontWindow() {
         #expect(OpenRequest.plan(
             index: 0, sameDocumentAlreadyOpen: false,
-            currentWindowIsUntouched: true, owner: nil
+            frontWindowHoldsUnnamedWords: false, owner: nil
         ) == .reuseCurrent)
     }
 
@@ -20,19 +22,19 @@ struct OpenRequestTests {
     @Test func aDraftWithUnnamedWordsIsNeverReplaced() {
         #expect(OpenRequest.plan(
             index: 0, sameDocumentAlreadyOpen: false,
-            currentWindowIsUntouched: false, owner: nil
+            frontWindowHoldsUnnamedWords: true, owner: nil
         ) == .newWindow)
     }
 
-    /// 多选三篇：第一篇用空窗，后两篇各开一扇——否则后一篇会把前一篇顶掉。
+    /// 多选三篇：第一篇进前台窗，后两篇各开一扇——否则后一篇会把前一篇顶掉。
     @Test func everyFileAfterTheFirstGetsItsOwnWindow() {
         #expect(OpenRequest.plan(
             index: 1, sameDocumentAlreadyOpen: false,
-            currentWindowIsUntouched: true, owner: nil
+            frontWindowHoldsUnnamedWords: false, owner: nil
         ) == .newWindow)
         #expect(OpenRequest.plan(
             index: 2, sameDocumentAlreadyOpen: false,
-            currentWindowIsUntouched: false, owner: nil
+            frontWindowHoldsUnnamedWords: true, owner: nil
         ) == .newWindow)
     }
 
@@ -41,7 +43,7 @@ struct OpenRequestTests {
         let other = UUID()
         #expect(OpenRequest.plan(
             index: 0, sameDocumentAlreadyOpen: false,
-            currentWindowIsUntouched: true, owner: other
+            frontWindowHoldsUnnamedWords: false, owner: other
         ) == .reveal(other))
     }
 
@@ -49,12 +51,12 @@ struct OpenRequestTests {
     @Test func openingTheSameDocumentAgainChangesNothing() {
         #expect(OpenRequest.plan(
             index: 0, sameDocumentAlreadyOpen: true,
-            currentWindowIsUntouched: false, owner: UUID()
+            frontWindowHoldsUnnamedWords: false, owner: UUID()
         ) == .leaveAsIs)
         // 登记表里还没写上它（刚打开、`$fileURL` 尚未落账）也不算冲突。
         #expect(OpenRequest.plan(
             index: 0, sameDocumentAlreadyOpen: true,
-            currentWindowIsUntouched: false, owner: nil
+            frontWindowHoldsUnnamedWords: true, owner: nil
         ) == .leaveAsIs)
     }
 
