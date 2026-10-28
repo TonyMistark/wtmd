@@ -68,7 +68,7 @@ import Testing
     let documents = OpenDocuments()
     let window = UUID()
     var reveals = 0
-    documents.reveal = { _, _, _ in reveals += 1 }
+    documents.reveal = { _, _, _ in reveals += 1; return true }
 
     documents.update(URL(fileURLWithPath: "/tmp/a.md"), for: window)
     let handled = documents.handOver(
@@ -211,6 +211,71 @@ import Testing
     #expect(rig.shared.openDocuments.owner(of: file) == primary.id)
 }
 
+// MARK: - 语境：工作区窗与单独窗
+
+/// 占位带语境：同一个文件，工作区窗占的是「工作区语境」，单独窗占的是
+/// 「单独语境」。查占主只认同语境——跨语境互不打扰，允许各开一扇。
+@MainActor
+@Test func workspaceAndStandaloneClaimsDoNotInterfere() {
+    let documents = OpenDocuments()
+    let workspaceWindow = UUID()
+    let standalone = UUID()
+
+    documents.update(URL(fileURLWithPath: "/tmp/a.md"), context: "/tmp/ws", for: workspaceWindow)
+
+    #expect(documents.owner(of: URL(fileURLWithPath: "/tmp/a.md"), in: "/tmp/ws") == workspaceWindow)
+    #expect(documents.owner(of: URL(fileURLWithPath: "/tmp/a.md"), in: nil) == nil)
+
+    let outsider = UUID()
+    // 只有工作区窗占着时，单独语境查不到占主：交不出去。
+    #expect(
+        documents.handOver(
+            URL(fileURLWithPath: "/tmp/a.md"), jumpingTo: nil, from: outsider, in: nil
+        ) == false
+    )
+
+    // 单独窗也开上之后，同语境（单独 vs 单独）才交出去。
+    documents.update(URL(fileURLWithPath: "/tmp/a.md"), context: nil, for: standalone)
+    #expect(
+        documents.handOver(
+            URL(fileURLWithPath: "/tmp/a.md"), jumpingTo: nil, from: outsider, in: nil
+        ) == true
+    )
+}
+
+/// 端到端：工作区窗先开着 X，单独窗打开 X 应该各开各的；第三扇单独窗再开 X
+/// 则要交给已有的单独窗，不能开第三份。
+@MainActor
+@Test func aWorkspaceWindowAndAStandaloneWindowMayShareOneFile() throws {
+    let rig = try DocumentRig()
+    defer { rig.cleanup() }
+
+    let ws = rig.root.appendingPathComponent("ws", isDirectory: true)
+    try FileManager.default.createDirectory(at: ws, withIntermediateDirectories: true)
+    let file = try rig.makeFile("ws/x.md", "# 工作区里的那一篇")
+
+    let workspaceWindow = rig.newWorkspaceWindow(at: ws)
+    workspaceWindow.store.open(url: file)
+    #expect(
+        rig.shared.openDocuments.owner(of: file, in: PathKey.canonical(ws)) == workspaceWindow.id
+    )
+
+    // 单独窗：跨语境，不打扰——自己也开一份。
+    let standalone = rig.newWindow()
+    standalone.store.open(url: file)
+    #expect(standalone.store.fileURL.map { PathKey.isSame($0, file) } == true)
+
+    // 第三扇单独窗：同语境，交给已有的那扇，不开第三份。
+    let third = rig.newWindow()
+    third.store.open(url: file)
+    #expect(third.store.fileURL == nil)
+
+    // 同一个工作区根的第二扇窗：同语境，也要交出去。
+    let secondWorkspaceWindow = rig.newWorkspaceWindow(at: ws)
+    secondWorkspaceWindow.store.open(url: file)
+    #expect(secondWorkspaceWindow.store.fileURL == nil)
+}
+
 // MARK: - 辅助
 
 /// 一套不碰真实数据的两扇窗：临时 defaults、临时草稿目录。
@@ -250,6 +315,10 @@ private struct DocumentRig {
 
     func newWindow() -> WindowModel {
         coordinator.makeExtraWindow(inheriting: nil)
+    }
+
+    func newWorkspaceWindow(at root: URL) -> WindowModel {
+        coordinator.makeExtraWindow(inheriting: root)
     }
 
     func makeFile(_ name: String, _ content: String) throws -> URL {
