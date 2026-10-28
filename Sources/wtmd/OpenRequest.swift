@@ -42,13 +42,17 @@ enum OpenRequest {
 
         for (index, url) in files.enumerated() {
             let current = coordinator.activeModel(focused: nil)
+            // 语境按前台窗算：同一篇文件，装进工作区窗是工作区语境，装进单独
+            // 窗是单独语境。占主查询只认同语境——跨语境允许各开一扇。
             let route = plan(
                 index: index,
                 sameDocumentAlreadyOpen: current.store.fileURL.map {
                     PathKey.isSame($0, url)
                 } ?? false,
                 frontWindowHoldsUnnamedWords: current.holdsUnnamedWords,
-                owner: coordinator.shared.openDocuments.owner(of: url)
+                owner: coordinator.shared.openDocuments.owner(
+                    of: url, in: current.claimContext(for: url)
+                )
             )
             CrashBreadcrumbs.note("open route=\(route)")
             switch route {
@@ -56,19 +60,29 @@ enum OpenRequest {
                 break
             case .reveal(let window):
                 // 这篇在别的窗里开着：跳过去，不再开第二份（两窗各写一份，
-                // 谁后落盘谁赢）。
-                coordinator.shared.openDocuments.reveal?(window, url, nil)
+                // 谁后落盘谁赢）。占主已是幽灵（表里有、窗口没了）就开一扇
+                // 新的，别让文件落空。
+                if !coordinator.revealDocument(window, url: url, jumpingTo: nil) {
+                    openInFreshWindowOrCurrent(url, coordinator: coordinator, current: current)
+                }
             case .reuseCurrent:
                 current.store.open(url: url)
             case .newWindow:
-                if let id = coordinator.openNewWindow(inheriting: nil),
-                   let model = coordinator.model(for: id) {
-                    model.store.open(url: url)
-                } else {
-                    // 开窗通道还没装好（启动早期）：先装进当前窗，总比什么都不做强。
-                    current.store.open(url: url)
-                }
+                openInFreshWindowOrCurrent(url, coordinator: coordinator, current: current)
             }
+        }
+    }
+
+    /// 开一扇新窗装这篇；开窗通道还没装好（启动早期）就装进当前窗，
+    /// 总比什么都不做强。
+    private static func openInFreshWindowOrCurrent(
+        _ url: URL, coordinator: WindowCoordinator, current: WindowModel
+    ) {
+        if let id = coordinator.openNewWindow(inheriting: nil),
+           let model = coordinator.model(for: id) {
+            model.store.open(url: url)
+        } else {
+            current.store.open(url: url)
         }
     }
 
@@ -101,7 +115,8 @@ enum OpenRequest {
     ///   - sameDocumentAlreadyOpen: 前台窗此刻开着的就是这篇。
     ///   - frontWindowHoldsUnnamedWords: 前台窗里欠着一篇没名字的稿——那些字
     ///     只在草稿里，被一个文件顶掉就真没了。
-    ///   - owner: 这篇正被哪扇窗占着（`OpenDocuments` 的答案）。
+    ///   - owner: 这篇正被哪扇窗以**同一种语境**占着（`OpenDocuments` 的答案；
+    ///     跨语境的占主——工作区窗 vs 单独窗——在查询那一步就被排除了）。
     static func plan(
         index: Int,
         sameDocumentAlreadyOpen: Bool,

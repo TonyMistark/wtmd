@@ -222,6 +222,9 @@ final class DocumentStore: ObservableObject {
     /// 应用级的「谁开着哪一篇」。`nil`（测试默认）表示不设防：同一个进程里
     /// 每扇窗都自己开自己的，谁也不问别人。
     private let openDocuments: OpenDocuments?
+    /// 这扇窗开某篇文件算哪种语境（工作区根 / 单独打开）。由窗口注入——
+    /// store 自己不知道工作区的存在。
+    var claimContext: ((URL) -> String?)?
     /// The file's modification date as of the last read or write. A mismatch
     /// against the disk later means someone else touched the file.
     private(set) var knownModificationDate: Date?
@@ -684,9 +687,12 @@ final class DocumentStore: ObservableObject {
             editorJump = request
             return
         }
-        // 这篇已经在另一扇窗里开着：跳过去，而不是在这里再开一份。两份各写各的，
-        // 谁后落盘谁赢，另一边刚敲的字就没了。读盘之前就拦，连预览都不重建。
-        if openDocuments?.handOver(url, jumpingTo: request, from: windowID) == true {
+        // 这篇已经在另一扇窗里以**同样的语境**开着：跳过去，而不是在这里再开
+        // 一份。两份各写各的，谁后落盘谁赢，另一边刚敲的字就没了。读盘之前就拦，
+        // 连预览都不重建。跨语境的占主不打扰：工作区窗和单独窗允许各开一份。
+        if openDocuments?.handOver(
+            url, jumpingTo: request, from: windowID, in: claimContext?(url) ?? nil
+        ) == true {
             return
         }
         guard let document = Self.readDocument(at: url) else { return }

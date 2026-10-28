@@ -136,14 +136,30 @@ final class WindowModel: ObservableObject, Identifiable {
 
         // 谁开着哪一篇：跟着 `fileURL` 走。打开、新建、另存为、外部改名跟随、
         // 文件消失——凡改 `fileURL` 的路径都自动落账，不靠每个入口记得登记。
+        // 语境跟着走：文件在工作区根下就是工作区语境，否则是单独打开。
         documentClaim = store.$fileURL
             .removeDuplicates()
             .sink { [weak self] url in
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    self.shared.openDocuments.update(url, for: self.id)
+                    self.shared.openDocuments.update(
+                        url, context: url.map { self.claimContext(for: $0) } ?? nil, for: self.id
+                    )
                 }
             }
+        // 窗口自己开一篇时（树、最近文件、拖拽）也要按语境找占主。
+        store.claimContext = { [weak self] url in
+            self?.claimContext(for: url)
+        }
+    }
+
+    /// 这扇窗开这篇文件算哪种语境：文件在工作区根之下就是工作区语境（记根），
+    /// 否则是单独打开（`nil`）。同一个文件、两种语境，允许各开一扇。
+    func claimContext(for url: URL) -> String? {
+        guard let root = workspace.root, PathKey.isDescendantOrSelf(url, of: root) else {
+            return nil
+        }
+        return PathKey.canonical(root)
     }
 
     /// 这扇窗里还欠着一篇**没有名字**的字吗？
@@ -236,7 +252,7 @@ final class WindowCoordinator: ObservableObject {
         // 「谁开着哪一篇」的两个出口：把占着它的窗口带到前面；以及判断那扇窗
         // 还够不够得着（主窗 ⌘W 关掉后模型还在，但已经占不住稿子了）。
         shared.openDocuments.reveal = { [weak self] id, url, request in
-            self?.revealDocument(id, url: url, jumpingTo: request)
+            self?.revealDocument(id, url: url, jumpingTo: request) ?? false
         }
         shared.openDocuments.isReachable = { [weak self] id in
             guard let self else { return false }
@@ -267,17 +283,23 @@ final class WindowCoordinator: ObservableObject {
     ///
     /// 带 `JumpRequest` 时还要在那扇窗里落到行列（`⌘⇧F` 的命中常常指着一篇
     /// 已经开着的文档）。窗口关着/最小化时先弄回眼前——「跳过去」得让人看见。
-    private func revealDocument(_ id: UUID, url: URL, jumpingTo request: JumpRequest?) {
-        guard let model = windows[id] else { return }
+    ///
+    /// - Returns: `false` 表示表里的占主已经是幽灵（窗口没了）：调用方该把
+    ///   文件自己开起来，别让它落空。
+    @discardableResult
+    func revealDocument(_ id: UUID, url: URL, jumpingTo request: JumpRequest?) -> Bool {
+        guard let model = windows[id] else { return false }
         // 登记可能晚了一步（那扇窗刚换了稿）：让它重新打开一次，顺带走一遍
         // 会话位置与冲突存档。
         let alreadyThere = model.store.fileURL.map { PathKey.isSame($0, url) } ?? false
         if request != nil || !alreadyThere {
             model.store.open(url: url, jumpingTo: request)
         }
-        guard let target = window(for: id) else { return }
-        // 连带激活应用：只把窗口在自己的层里往前提，人看到的还是别的 app。
-        AppActivation.bringToFront(target)
+        if let target = window(for: id) {
+            // 连带激活应用：只把窗口在自己的层里往前提，人看到的还是别的 app。
+            AppActivation.bringToFront(target)
+        }
+        return true
     }
 
     // MARK: - 开窗
@@ -449,7 +471,11 @@ final class WindowCoordinator: ObservableObject {
         // 主窗 ⌘W 关掉又重开时，关窗那一刻放掉的登记在这里补回来；副窗则是
         // 每次都幂等地写一遍当前这一篇。
         closedWindows.remove(model.id)
-        shared.openDocuments.update(model.store.fileURL, for: model.id)
+        shared.openDocuments.update(
+            model.store.fileURL,
+            context: model.store.fileURL.map { model.claimContext(for: $0) } ?? nil,
+            for: model.id
+        )
     }
 
     func model(for window: NSWindow?) -> WindowModel? {
