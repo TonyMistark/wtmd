@@ -103,10 +103,10 @@ private struct WindowBridge: NSViewRepresentable {
         private func hookWindowIfNeeded() {
             guard let view, let window = view.window else { return }
             coordinator.register(window: window, for: model)
-            guard model.id != coordinator.primary.id else { return }
-            // 多窗口的恢复由账本自己驱动：系统的窗口恢复只认得「上一次那一扇」，
-            // 交给它会开出空白窗，或者把已经关掉的窗又拉回来。
+            // 桌面恢复只有账本一个事实来源。主窗也不交给系统：场景恢复会把
+            // 已经关掉的窗重新实例化成空白僵尸，账本说的才算。
             window.isRestorable = false
+            guard model.id != coordinator.primary.id else { return }
             place(window)
             trackFrame(of: window)
             observeClose(of: window)

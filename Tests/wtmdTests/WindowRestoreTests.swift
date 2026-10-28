@@ -33,7 +33,8 @@ private final class Desk {
     }
 
     func launch(
-        screens: [CGRect] = [CGRect(x: 0, y: 0, width: 1440, height: 900)]
+        screens: [CGRect] = [CGRect(x: 0, y: 0, width: 1440, height: 900)],
+        attaching: Bool = true
     ) -> WindowCoordinator {
         opened = []
         let coordinator = WindowCoordinator(
@@ -49,7 +50,10 @@ private final class Desk {
         )
         // 测试进程没有显示器：屏幕区域得给一个。
         coordinator.screenFrames = { screens }
-        coordinator.attach { [weak self] id in self?.opened.append(id) }
+        // 桌面恢复等窗口视图报到才摆；带文件启动的测试要自己控制报到时机。
+        if attaching {
+            coordinator.attach { [weak self] id in self?.opened.append(id) }
+        }
         return coordinator
     }
 
@@ -237,6 +241,28 @@ private final class Desk {
         Session(window: yielded, defaults: desk.defaults).openFileURL == nil,
         "让出去的那扇不该继续记着这篇，否则下次启动还要再分一次"
     )
+}
+
+/// 带着文件来的启动（Finder「打开方式」、拖到 Dock 图标）只开文件要的窗：
+/// 上次退出的桌面这次不摆。账还留在 defaults 里，下一次普通启动照常回来。
+@MainActor
+@Test func aLaunchThatArrivesWithFilesSkipsTheDesk() throws {
+    let desk = try Desk()
+    defer { desk.cleanup() }
+
+    let first = desk.launch()
+    let a = try #require(first.openNewWindow(inheriting: nil))
+    let b = try #require(first.openNewWindow(inheriting: nil))
+
+    // OpenRequest 在窗口视图报到之前就按住了恢复（这次启动是文件带来的）。
+    let withFile = desk.launch(attaching: false)
+    withFile.suppressRestoration = true
+    withFile.attach { [weak desk] id in desk?.opened.append(id) }
+    #expect(desk.opened.isEmpty, "文件是意图，桌面别抢戏")
+
+    // 账没丢：普通启动桌面照常回来。
+    let plain = desk.launch()
+    #expect(desk.opened == [a, b])
 }
 
 // MARK: - 关窗即结束

@@ -189,6 +189,9 @@ final class WindowCoordinator: ObservableObject {
     /// 可注入：测试进程没有显示器，`NSScreen.screens` 会是空的——那会让每一条
     /// 位置记录都被判成「不在屏幕上」，测试就永远测不到「照原样摆回去」。
     var screenFrames: () -> [CGRect] = { NSScreen.screens.map(\.visibleFrame) }
+    /// 这次启动带着文件来（Finder「打开方式」、拖到 Dock 图标）：跳过桌面恢复。
+    /// 打开文件是明确的意图，上次的桌子不该跟着一起摆出来。
+    var suppressRestoration = false
     /// 已经关掉、但模型还留着的窗（主窗的会话要留给下次启动）。它们不再占着
     /// 任何一篇稿子——否则副窗打开那篇会被送到一扇看不见的窗口。
     private var closedWindows: Set<UUID> = []
@@ -294,7 +297,14 @@ final class WindowCoordinator: ObservableObject {
     /// 都跟着回来。窗口站在它上次站的地方；那个位置若已经不在任何屏幕上
     /// （拔了外接屏、换了分辨率），就退回 alpha 的错开摆法。
     func restoreWindows() {
-        guard let openWindowHandler, !pendingRestorations.isEmpty else { return }
+        guard let openWindowHandler else { return }
+        // 带着文件来的启动只开文件要的窗：账本这次不摆。账还在 defaults 里，
+        // 下一次普通启动照常回来。
+        if suppressRestoration {
+            pendingRestorations = []
+            return
+        }
+        guard !pendingRestorations.isEmpty else { return }
         let entries = pendingRestorations
         pendingRestorations = []
         let screens = screenFrames()
