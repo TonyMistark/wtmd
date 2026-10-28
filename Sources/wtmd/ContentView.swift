@@ -604,8 +604,8 @@ struct ContentView: View {
         }
     }
 
-    /// 有新版时的那枚徽标。点一下用首选源一键装；长按出菜单挑下载源——
-    /// GitHub 抽风或国内网络差的时候，还有 Gitee 那条路。
+    /// 有新版时的那枚徽标。点一下用首选源下载；下载完再问一句「安装并重启」。
+    /// 长按出菜单挑下载源——GitHub 抽风或国内网络差的时候，还有 Gitee 那条路。
     @ViewBuilder
     private func updateAvailableBadge(version: String, sources: [UpdateSource]) -> some View {
         switch installer.phase {
@@ -671,7 +671,7 @@ struct ContentView: View {
         guard let primary else { return t("v{} available", version) }
         return primary.asset == nil
             ? t("Open the download page: {}", primary.releaseURL.absoluteString)
-            : t("Download and install v{}, then relaunch", version)
+            : t("Download v{}", version)
     }
 
     /// 有 dmg 就一键装；没有（Release 没挂附件）就退回打开下载页。

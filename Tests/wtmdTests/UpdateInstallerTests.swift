@@ -106,6 +106,46 @@ struct UpdateInstallerFlowTests {
         #expect(installer.phase == .idle)
     }
 
+    @Test("下载完先问一句：点了「以后」就什么都不装，旧版原地不动")
+    func asksBeforeInstalling() async {
+        let installer = makeInstaller()
+        var order: [String] = []
+        installer.stepsForTest(
+            download: { _, _ in order.append("download"); return URL(fileURLWithPath: "/tmp/fake.dmg") },
+            mount: { _ in Issue.record("用户选了「以后」，不该挂载"); return URL(fileURLWithPath: "/") },
+            install: { _, _, _ in Issue.record("用户选了「以后」，不该装配"); return URL(fileURLWithPath: "/") },
+            relaunch: { _ in Issue.record("用户选了「以后」，不该重启") },
+            confirm: { version in
+                order.append("confirm \(version)")
+                return false
+            }
+        )
+
+        await installer.run(asset: asset, version: "0.16.0", releaseURL: URL(fileURLWithPath: "/"))
+
+        #expect(order == ["download", "confirm 0.16.0"], "顺序该是下载 → 问一句，然后停")
+        #expect(installer.phase == .idle, "选了「以后」就回到安静状态，不是失败")
+        #expect(installer.downloadedDMG != nil, "dmg 留着：设置页还能从访达拿到它")
+    }
+
+    @Test("点「安装并重启」才继续装")
+    func installsAfterConfirmation() async {
+        let installer = makeInstaller()
+        var order: [String] = []
+        installer.stepsForTest(
+            download: { _, _ in order.append("download"); return URL(fileURLWithPath: "/tmp/fake.dmg") },
+            mount: { _ in order.append("mount"); return URL(fileURLWithPath: "/tmp/fake.app") },
+            install: { _, _, _ in order.append("install"); return URL(fileURLWithPath: "/Applications/wtmd.app") },
+            relaunch: { _ in order.append("relaunch") },
+            confirm: { _ in order.append("confirm"); return true }
+        )
+
+        await installer.run(asset: asset, version: "0.16.0", releaseURL: URL(fileURLWithPath: "/"))
+
+        #expect(order == ["download", "confirm", "mount", "install", "relaunch"])
+        #expect(installer.phase == .idle)
+    }
+
     @Test("装配失败就停：不重启，失败原因摆出来")
     func stopsWhenInstallFails() async {
         let installer = makeInstaller()
@@ -419,6 +459,14 @@ struct UpdateInstallerAssemblyTests {
         #expect(pages.contains("installer.run("))
         #expect(pages.contains("fallbacks:"), "设置页的更新动作也要带备用源")
         #expect(pages.contains("revealFallback()"))
+    }
+
+    @Test("生产入口接的是真弹窗，不是测试默认的「直接放行」")
+    func productionAsksBeforeInstalling() throws {
+        let source = try source("UpdateInstaller.swift")
+        #expect(source.contains("askToInstall(version:"), "productionSteps 没接确认弹窗")
+        #expect(source.contains("t(\"Install and Restart\")"), "弹窗上没有「安装并重启」")
+        #expect(source.contains("t(\"Later\")"), "弹窗上没有退路「以后」")
     }
 
     @Test("应用环境里装着 installer，并注入了视图环境")
