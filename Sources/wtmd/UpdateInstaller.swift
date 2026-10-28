@@ -4,7 +4,7 @@ import SwiftUI
 
 // MARK: - 一键更新
 
-/// 点一下徽标 = 更新完成：下载 → 挂载 → 装进 /Applications → 重启。
+/// 点一下徽标 = 下载 → 问一句「安装并重启？」→ 挂载 → 装进 /Applications → 重启。
 ///
 /// 三条铁律，全都有测试钉着：
 /// 1. **旧版神圣**——新 app 先在目标目录里拼装、校验（bundle 版本 = 目标版本），
@@ -13,6 +13,9 @@ import SwiftUI
 ///    拖不拖、什么时候拖，用户自己定。
 /// 3. **可注入**——下载、挂载、装配、重启都是步骤闭包，测试不碰真网络、
 ///    不碰真 `/Applications`、更不会真的重启。
+///
+/// 下载完成不等于现在就要装：装新版本得退出应用，这一步交给用户点头
+/// （`confirm` 步骤，生产实现是「安装并重启 / 以后」的弹窗）。
 @MainActor
 final class UpdateInstaller: ObservableObject {
     enum Phase: Equatable {
@@ -59,6 +62,11 @@ final class UpdateInstaller: ObservableObject {
         var relaunch: @MainActor (_ installed: URL) async throws -> Void
         /// 降级：把 dmg 在访达里亮出来。
         var reveal: @MainActor (_ dmg: URL) -> Void
+        /// 下载完成之后问一句「现在装吗」。装新版本要退出应用，退出这件事
+        /// 得用户点头——跟别的 app 一样：下载完了弹「安装并重启 / 以后」。
+        ///
+        /// 默认放行只为测试好写：生产入口 `productionSteps()` 一定换成了真弹窗。
+        var confirm: @MainActor (_ version: String) async -> Bool = { _ in true }
     }
 
     private var steps: Steps
@@ -80,13 +88,15 @@ final class UpdateInstaller: ObservableObject {
         mount: (@MainActor (URL) async throws -> URL)? = nil,
         install: (@MainActor (URL, Locations, String) async throws -> URL)? = nil,
         relaunch: (@MainActor (URL) async throws -> Void)? = nil,
-        reveal: (@MainActor (URL) -> Void)? = nil
+        reveal: (@MainActor (URL) -> Void)? = nil,
+        confirm: (@MainActor (String) async -> Bool)? = nil
     ) {
         if let download { steps.download = download }
         if let mount { steps.mount = mount }
         if let install { steps.install = install }
         if let relaunch { steps.relaunch = relaunch }
         if let reveal { steps.reveal = reveal }
+        if let confirm { steps.confirm = confirm }
     }
 
     // MARK: - 流程
@@ -110,6 +120,14 @@ final class UpdateInstaller: ObservableObject {
                 self?.phase = .downloading(fraction: fraction)
             }
             downloadedDMG = dmg
+
+            // 下载完不等于想现在装：装新版本要退出应用，这一步得用户点头。
+            // 跟别的 app 一样——「安装并重启 / 以后」。点「以后」就到此为止，
+            // 应用继续跑，旧版一个字节没动。
+            guard await steps.confirm(version) else {
+                phase = .idle
+                return
+            }
 
             phase = .installing
             let app = try await steps.mount(dmg)
@@ -199,8 +217,41 @@ final class UpdateInstaller: ObservableObject {
             },
             reveal: { dmg in
                 NSWorkspace.shared.activateFileViewerSelecting([dmg])
+            },
+            confirm: { version in
+                await Self.askToInstall(version: version)
             }
         )
+    }
+
+    // MARK: - 确认弹窗
+
+    /// 下载完成后的那句问话：「安装并重启」还是「以后」。
+    ///
+    /// 挂在当前窗口上做 sheet；没有窗口（后台启动、窗口都关了）就退化成
+    /// 独立弹窗——不能因为找不到窗口就把安装悄悄做了。
+    /// Return = 「安装并重启」（默认按钮），Esc = 「以后」。
+    @MainActor
+    static func askToInstall(version: String) async -> Bool {
+        let alert = NSAlert()
+        alert.messageText = t("wtmd {} is ready to install", version)
+        alert.informativeText = t("wtmd will quit to install the new version, then reopen your windows.")
+        alert.addButton(withTitle: t("Install and Restart"))
+        alert.addButton(withTitle: t("Later"))
+        alert.buttons.last?.keyEquivalent = "\u{1b}"
+        NSApplication.shared.activate(ignoringOtherApps: true)
+
+        // 有窗口就贴着窗口弹（sheet）；窗口上已经挂着别的东西（崩溃提示、
+        // 设置面板的 sheet）时 beginSheetModal 会静默失败，那就走独立弹窗。
+        let host = NSApplication.shared.keyWindow ?? NSApplication.shared.mainWindow
+        guard let host, host.attachedSheet == nil else {
+            return alert.runModal() == .alertFirstButtonReturn
+        }
+        return await withCheckedContinuation { continuation in
+            alert.beginSheetModal(for: host) { response in
+                continuation.resume(returning: response == .alertFirstButtonReturn)
+            }
+        }
     }
 
     // MARK: - 下载
