@@ -1699,3 +1699,30 @@ edit→live→preview→split。
 ~0.1 即隐形）；system palette 与旧行为逐字段一致。排查用的是**离屏渲染
 探针**：测试里按指定 appearance 把编辑器画进位图存 PNG 直接看像素——
 截图权限拿不到时的可靠视觉验证手段。
+
+### v0.15.42 — 主题切换带上整个 app 的外观（#283）
+
+浅色主题只换了正文那块纸：侧栏、工具栏、标题栏、设置窗、菜单还是系统深色，
+整个 app 一半亮一半暗。原因很直白——应用从来没设过 `NSApp.appearance`，
+外壳全部吃**系统语义色**，只跟系统外观走；主题只管正文（预览 CSS、编辑器
+palette）。
+
+#### 实现
+
+- `ThemeAppearance`：主题 → 外观的纯映射。双外观主题 `nil`（跟随系统），
+  只有 light 层的钉 `.aqua`，只有 dark 层的钉 `.darkAqua`；
+- `ThemeManager` 增加 `appearanceOverride` / `syncAppearance()`，在
+  `currentThemeID` 的 `didSet`（选主题、重扫主题）与启动时各同步一次；
+- 落点是可注入闭包 `applyAppearance`，默认空实现：单元测试大量构造
+  `ThemeManager`，没有理由让它们顺手改掉整个测试进程的外观；生产在
+  `wtmdApp.init` 接上 `NSApplication.shared.appearance`，并留一行 breadcrumb
+  供冒烟与崩溃报告取证。
+
+#### 测试
+
+979 → 985（+6）：单外观钉一侧、双外观跟随系统、坏主题回落系统、全部内置
+主题都有确定归属、选主题与重扫主题都把外观交出去。另用临时探针实测机制：
+`NSApp.appearance = .aqua` 之后窗口与 `NSHostingView` 的 `effectiveAppearance`
+一起变浅，`windowBackgroundColor` 亮度 0.12 → 1.00（探针验完即删）。真机冒烟
+（隔离 home、系统深色、浅色主题）breadcrumb 记到 `appearance NSAppearanceNameAqua`
+与窗口 `light`——外壳和正文终于在同一侧。
