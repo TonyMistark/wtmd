@@ -55,6 +55,19 @@ else
     fi
 fi
 
+# 1b. Branch snapshot. Tags alone leave the mirror's code page blank (no
+# default branch, so the repo homepage looks empty). Best effort: a renamed
+# branch or a rejected shallow push must not fail the release sync.
+BRANCH="${GITEE_BRANCH:-main}"
+if git rev-parse --verify "refs/heads/$BRANCH" >/dev/null 2>&1; then
+    if git push "https://$OWNER:$TOKEN@gitee.com/$REPO.git" "refs/heads/$BRANCH" >/dev/null 2>&1 \
+        || git ls-remote --heads "https://$OWNER:$TOKEN@gitee.com/$REPO.git" "$BRANCH" | grep -q "refs/heads/$BRANCH"; then
+        echo "  branch $BRANCH in sync"
+    else
+        echo "  ⚠ branch push failed — releases unaffected, mirror code page may lag" >&2
+    fi
+fi
+
 # 2. Release with GitHub's title and notes. If it already exists, reuse it.
 echo "→ creating release $TAG on Gitee…"
 NAME="$(gh release view "$TAG" --json name --jq .name)"
