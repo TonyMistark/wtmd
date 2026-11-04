@@ -72,8 +72,21 @@ if [ "$CREATE_STATUS" = "201" ]; then
     RELEASE_ID="$(printf '%s' "$CREATE_BODY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
 else
     # Either "already exists" or a real failure — ask the API for the id.
-    RELEASE_ID="$(curl -sS "$API/releases/tags/$TAG?access_token=$TOKEN" \
-        | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id", ""))')"
+    # Gitee needs a beat to index a freshly pushed tag and may answer `null`
+    # in the meantime, so poll a few times before giving up.
+    for ATTEMPT in 1 2 3 4 5; do
+        QUERY="$(curl -sS "$API/releases/tags/$TAG?access_token=$TOKEN" || true)"
+        RELEASE_ID="$(printf '%s' "$QUERY" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    data = None
+print(data.get("id", "") if isinstance(data, dict) else "")
+' || true)"
+        [ -n "$RELEASE_ID" ] && break
+        sleep 2
+    done
     if [ -z "$RELEASE_ID" ]; then
         echo "  ✗ release creation failed (HTTP $CREATE_STATUS):" >&2
         printf '%s\n' "$CREATE_BODY" >&2
