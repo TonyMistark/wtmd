@@ -24,6 +24,41 @@ struct Theme: Identifiable, Equatable, Hashable {
     var isBase16: Bool { id.hasPrefix("builtin.base16.") }
 }
 
+// MARK: - 主题 → 整个 app 的外观
+
+/// 一套主题对外壳的要求。
+///
+/// 主题一向只说「正文长什么样」，可一套词色是不分内外的：浅色主题配黑色侧栏、
+/// 深色主题配白色工具栏，一眼就割裂（#283）。双外观主题自己会跟系统变，单外观
+/// 主题则要求整个 app 跟到它那一侧——侧栏、工具栏、标题栏、菜单、设置窗、浮层
+/// 全都吃系统语义色，钉住 `NSApp.appearance` 就一起换了。
+enum ThemeAppearance {
+    enum Mode: Equatable {
+        /// 跟随系统：主题自己备了明暗两份，系统换它也换。
+        case system
+        case light
+        case dark
+    }
+
+    /// 只有一份变量层的主题把整个 app 钉到那一侧；两份都有（或都没有）跟随系统。
+    static func mode(for theme: Theme) -> Mode {
+        switch (theme.hasLight, theme.hasDark) {
+        case (true, false): return .light
+        case (false, true): return .dark
+        default: return .system
+        }
+    }
+
+    /// `nil` 表示跟随系统——把 `NSApp.appearance` 设成 nil 正是「别管我」。
+    static func nsAppearance(for theme: Theme) -> NSAppearance? {
+        switch mode(for: theme) {
+        case .system: return nil
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        }
+    }
+}
+
 // MARK: - .wttheme 格式加载（纯函数，可单测）
 
 enum ThemeFormat {
@@ -314,7 +349,25 @@ extension Theme {
 final class ThemeManager: ObservableObject {
     @Published private(set) var themes: [Theme] = []
     @Published private(set) var currentThemeID: String {
-        didSet { UserDefaults.standard.set(currentThemeID, forKey: Self.storageKey) }
+        didSet {
+            UserDefaults.standard.set(currentThemeID, forKey: Self.storageKey)
+            // 换主题就是换整个 app 的明暗，不只是正文底色（#283）。
+            syncAppearance()
+        }
+    }
+
+    /// 外壳外观的落点。生产里指向 `NSApp`（见 `wtmdApp.init`），默认什么都不做：
+    /// 单元测试会大量构造 `ThemeManager`，没有理由让它们顺手改掉整个测试进程的外观。
+    var applyAppearance: (NSAppearance?) -> Void = { _ in }
+
+    /// 当前主题要求的外壳外观；`nil` 表示跟随系统。
+    var appearanceOverride: NSAppearance? {
+        ThemeAppearance.nsAppearance(for: currentTheme)
+    }
+
+    /// 把主题要求的外观交给窗口系统。App 启动一次、每次换主题一次。
+    func syncAppearance() {
+        applyAppearance(appearanceOverride)
     }
 
     private static let storageKey = "wtmd.themeID"
@@ -327,6 +380,7 @@ final class ThemeManager: ObservableObject {
         if let saved, themes.contains(where: { $0.id == saved }) {
             currentThemeID = saved
         }
+        syncAppearance()
     }
 
     var currentTheme: Theme {

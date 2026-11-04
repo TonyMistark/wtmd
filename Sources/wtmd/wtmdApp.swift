@@ -19,6 +19,17 @@ struct wtmdApp: App {
         CrashCatcher.install(directory: shared.crashes.directory)
         CrashBreadcrumbs.note("launch wtmd \(CrashEnvironment.appVersion)")
 
+        // 主题管的是整个 app 的明暗，不是只有正文那块纸：单外观主题（base16 浅色
+        // 方案、终端一类）把侧栏/工具栏/标题栏/菜单/设置窗一起钉到它那一侧，
+        // 双外观主题跟随系统（#283）。这里接上真正的窗口系统——`ThemeManager`
+        // 自己不碰 NSApp，测试里构造它不该改掉整个进程的外观。
+        shared.themeManager.applyAppearance = { appearance in
+            NSApplication.shared.appearance = appearance
+            // 冒烟靠这行读结果：外观是启动期定下的，出错时没有第二处能取证。
+            CrashBreadcrumbs.note("appearance \(appearance?.name.rawValue ?? "system")")
+        }
+        shared.themeManager.syncAppearance()
+
         let coordinator = WindowCoordinator(shared: shared)
         // 设置里那个「打开写作日历」：设置窗口是独立场景，手里没有窗口表，
         // 靠这一句找得到主窗那本字数账。
