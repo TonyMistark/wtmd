@@ -100,6 +100,23 @@ import Testing
     try write("a.md", in: root, content: "needle")
 
     let search = WorkspaceSearchController(delay: 0)
+    // 这里守的是「关面板清状态」这条状态机，不是扫盘本身——注入即时返回的
+    // 假扫描，摘掉真实 I/O 在并行测试挤占 CPU 时的时序运气（#282 连挂两回）。
+    search.searchFunction = { input in
+        WorkspaceSearchReport(groups: [
+            WorkspaceHitGroup(
+                fileURL: input.root.appendingPathComponent("a.md"),
+                relativePath: "a.md",
+                hits: [
+                    WorkspaceHit(
+                        fileURL: input.root.appendingPathComponent("a.md"),
+                        line: 0, column: 0, length: 6,
+                        lineText: "needle", highlightStart: 0, highlightLength: 6
+                    )
+                ]
+            )
+        ], hitCount: 1, scannedFiles: 1)
+    }
     search.present(root: root)
     search.query = "needle"
     await waitUntil("结果落地") { !search.isSearching && !search.hits.isEmpty }
