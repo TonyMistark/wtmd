@@ -16,7 +16,7 @@ import Testing
     search.present(root: root)
     search.query = "needle"
 
-    await waitUntil("首轮结果") { !search.isSearching && !search.hits.isEmpty }
+    await settle(search)
 
     #expect(search.hits.count == 1)
     #expect(search.selectedIndex == 0)
@@ -47,7 +47,7 @@ import Testing
     search.query = "新的"
 
     // 等新的那一轮落地，再留足时间给旧的那一轮回来（它被故意拖了 300ms）
-    await waitUntil("新一轮结果落地") { !search.isSearching && !search.hits.isEmpty }
+    await settle(search)
     try await Task.sleep(nanoseconds: 500_000_000)
 
     #expect(search.hits.map(\.fileURL.lastPathComponent) == ["new.md"])
@@ -119,7 +119,7 @@ import Testing
     }
     search.present(root: root)
     search.query = "needle"
-    await waitUntil("结果落地") { !search.isSearching && !search.hits.isEmpty }
+    await settle(search)
 
     search.dismiss()
 
@@ -139,7 +139,7 @@ import Testing
     let search = WorkspaceSearchController(delay: 0)
     search.present(root: root)
     search.query = "needle"
-    await waitUntil("两条命中") { !search.isSearching && search.hits.count == 2 }
+    await settle(search)
 
     search.select(0)
     search.moveSelection(by: -1)
@@ -160,7 +160,7 @@ import Testing
     search.present(root: root)
     search.query = "刚敲下"
 
-    await waitUntil("内存内容参与搜索") { !search.isSearching && !search.hits.isEmpty }
+    await settle(search)
     #expect(search.hits.first?.line == 1)
 }
 
@@ -233,18 +233,11 @@ private final class ScanCounter: @unchecked Sendable {
     }
 }
 
+/// 等这一轮扫描跑完。**不按墙钟赌**：`searchTask` 就是那一轮的句柄，等它结束
+/// 是确定的——主线程再忙也只是晚一点，不会被误判成「结果没来」（CI 上挂过）。
 @MainActor
-private func waitUntil(
-    _ description: String,
-    timeout: TimeInterval = 15,
-    _ condition: () -> Bool
-) async {
-    let deadline = Date().addingTimeInterval(timeout)
-    while Date() < deadline {
-        if condition() { return }
-        try? await Task.sleep(nanoseconds: 20_000_000)
-    }
-    Issue.record("等待超时（\(Int(timeout))s）：\(description)")
+private func settle(_ search: WorkspaceSearchController) async {
+    await search.searchTask?.value
 }
 
 private func makeTempDirectory() throws -> URL {

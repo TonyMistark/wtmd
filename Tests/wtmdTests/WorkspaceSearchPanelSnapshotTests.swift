@@ -52,10 +52,9 @@ import Testing
     search.present(root: root)
     search.query = "needle"
 
-    let deadline = Date().addingTimeInterval(10)
-    while Date() < deadline, search.isSearching || search.hits.isEmpty {
-        try? await Task.sleep(nanoseconds: 20_000_000)
-    }
+    // 等那一轮扫描的句柄，而不是按墙钟数秒：主线程被别的重活占住时，墙钟
+    // 轮询会把「结果还在路上」误判成「没结果」（CI 上就这样挂过）。
+    await search.searchTask?.value
     #expect(search.hits.count == 3)
 
     // ImageRenderer 会把 TextField / Button 画成占位块，所以走真实的
