@@ -463,6 +463,11 @@ struct EditorThemeStyle: Equatable {
     var lightForeground: String?
     var darkBackground: String?
     var darkForeground: String?
+    /// 明暗两套完整变量表（`--x: value` 的原始值）。语法色（accent、
+    /// secondary、quote-fg、link……）从这里取，跟随与底色同一套 appearance
+    /// 选择逻辑——否则单变体主题在相反的系统外观下，系统语义色会和底色融成一片。
+    var lightTokens: [String: String]
+    var darkTokens: [String: String]
 
     init?(theme: Theme) {
         let light = Theme.parseVariables(theme.light)
@@ -482,6 +487,8 @@ struct EditorThemeStyle: Equatable {
         lightForeground = fg
         darkBackground = dark["bg"] ?? light["bg"]
         darkForeground = dark["fg"] ?? light["fg"]
+        lightTokens = light
+        darkTokens = dark
     }
 }
 
