@@ -1672,3 +1672,30 @@ edit→live→preview→split。
 973 → 976（+3）：先问后装的两条流程（拒绝时挂载/装配/重启一次都不碰、
 接受时顺序 download → confirm → mount → install → relaunch），以及
 生产入口接的是真弹窗而不是测试默认的「直接放行」。
+
+### v0.15.41 — 编辑器语法色跟随主题（#280）
+
+浅色主题（base16 浅色方案等单变体主题）+ 相反的系统外观时，编辑器里代码块
+内容、引用、落笔标记、行内代码一片隐形——文字和背景融为一体。预览没事，
+因为预览吃整份 CSS 自己画；编辑器（NSTextView）的语法色是**系统语义色**
+（`secondaryLabelColor`、`systemPurple`、`systemGreen`……），跟着系统外观
+走，而底色跟着主题走。系统 Dark + 浅色主题：浅色语义色铺在浅底上。
+
+#### 实现
+
+- `EditorThemeStyle` 带上明暗两套完整主题变量（`lightTokens`/`darkTokens`）；
+- 新增 `EditorPalette`：正文 + 全部语法角色（标题、围栏、代码、引用、列表
+  标记、行内代码、删除线、链接、图片 alt、落笔标记、围栏底色、引用条、
+  横线）都按**与底色同一套 appearance 选择逻辑**从主题变量解析
+  （`accent`/`secondary`/`quote-fg`/`quote-bar`/`link`/`code-bg`/`pre-bg`/
+  `border`），主题没给的字段回落原有系统色；
+- `highlight()` 与背景装饰布局管理器改吃 palette；无主题时
+  `EditorPalette.system` 逐字段保持旧行为。
+
+#### 测试
+
+976 → 979（+3）：全部内置主题 × 明暗两种 appearance，8 个文字角色对底色
+的亮度差 > 0.2；回归现场（浅色单变体主题 + darkAqua，修复前代码块亮度差
+~0.1 即隐形）；system palette 与旧行为逐字段一致。排查用的是**离屏渲染
+探针**：测试里按指定 appearance 把编辑器画进位图存 PNG 直接看像素——
+截图权限拿不到时的可靠视觉验证手段。
