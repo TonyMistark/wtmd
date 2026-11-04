@@ -62,6 +62,7 @@ BODY="$(gh release view "$TAG" --json body --jq .body)"
 CREATE_RESPONSE="$(curl -sS -w '\n%{http_code}' -X POST "$API/releases" \
     --data-urlencode "access_token=$TOKEN" \
     --data-urlencode "tag_name=$TAG" \
+    --data-urlencode "target_commitish=$TAG" \
     --data-urlencode "name=$NAME" \
     --data-urlencode "body=$BODY")"
 CREATE_STATUS="$(printf '%s' "$CREATE_RESPONSE" | tail -n1)"
