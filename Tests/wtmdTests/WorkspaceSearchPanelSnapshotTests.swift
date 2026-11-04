@@ -22,6 +22,33 @@ import Testing
         .write(to: notes.appendingPathComponent("ideas.md"), atomically: true, encoding: .utf8)
 
     let search = WorkspaceSearchController(delay: 0)
+    // 这里守的是面板的**排版**（分组、行文、高亮），不是扫盘——注入即时返回
+    // 的假扫描，摘掉真实 I/O 在并行测试挤占 CPU 时的时序运气（CI 上连挂）。
+    // 两组命中：draft.md 两条、notes/ideas.md 一条，正好铺出跨文件分组。
+    let draftURL = root.appendingPathComponent("draft.md")
+    let ideasURL = notes.appendingPathComponent("ideas.md")
+    func hit(_ url: URL, line: Int, lineText: String) -> WorkspaceHit {
+        let column = (lineText as NSString).range(of: "needle").location
+        return WorkspaceHit(
+            fileURL: url, line: line, column: column,
+            length: 6, lineText: lineText,
+            highlightStart: column, highlightLength: 6
+        )
+    }
+    let canned = WorkspaceSearchReport(groups: [
+        WorkspaceHitGroup(
+            fileURL: draftURL, relativePath: "draft.md",
+            hits: [
+                hit(draftURL, line: 1, lineText: "这一句里有 needle"),
+                hit(draftURL, line: 3, lineText: "后面还有 needle 一次"),
+            ]
+        ),
+        WorkspaceHitGroup(
+            fileURL: ideasURL, relativePath: "notes/ideas.md",
+            hits: [hit(ideasURL, line: 2, lineText: "但这一行有 needle")]
+        ),
+    ], hitCount: 3, scannedFiles: 2)
+    search.searchFunction = { _ in canned }
     search.present(root: root)
     search.query = "needle"
 
