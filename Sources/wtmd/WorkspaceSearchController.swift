@@ -75,7 +75,10 @@ final class WorkspaceSearchController: ObservableObject {
     /// launch five sweeps, short enough to feel immediate. Injectable so tests
     /// do not wait 150 ms per case.
     private let delay: UInt64
-    private var searchTask: Task<Void, Never>?
+    /// 正在跑的那一轮扫描。暴露出来是为了给测试一个**确定的等待点**：
+    /// 按墙钟轮询「结果到了没有」在主线程被别的重活占着时会误判——结果其实
+    /// 早在路上，只是没人被调度来写进 `hits`（CI 上就这样连挂过）。
+    private(set) var searchTask: Task<Void, Never>?
 
     init(delay: UInt64 = 150_000_000) {
         self.delay = delay
