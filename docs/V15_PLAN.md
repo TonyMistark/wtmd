@@ -1700,6 +1700,33 @@ edit→live→preview→split。
 探针**：测试里按指定 appearance 把编辑器画进位图存 PNG 直接看像素——
 截图权限拿不到时的可靠视觉验证手段。
 
+### v0.15.44 — 关掉的主窗不再占主（#290）
+
+右键打开文件之后，工作区树显示着之前保留的文件夹，点树里的文件却毫无反应。
+用户 breadcrumbs（`windows=4 keyable=2`）证实是多窗状态。根因是两层叠加的
+老雷：主窗从 #106 起就不挂 `willCloseNotification`——⌘W 掉的主窗在窗口表里
+永远「开着」，它占过的那篇成了幽灵占主；`revealDocument` 把稿子塞进幽灵模型
+之后**照样返回 true**，调用方于是什么都不做。文件进了看不见的窗，右键打开
+被 `plan` 的 `reveal`/`reuseCurrent` 吞掉也是同一条路。
+
+#### 实现
+
+- 主窗同样观察关窗（摆位与拖框仍只归副窗）：关掉即记入 `closedWindows`、
+  撤掉占位；再开回来 `register` 自动恢复登记；
+- `revealDocument` 要求占主有一扇**在场**的桌子（`isVisible || isMiniaturized`，
+  #175 的规矩），否则拒收并返回 `false`，调用方把文件在自己窗里就地打开；
+- `register` 同时清掉同模型的旧绑定：主窗重开后 `window(for:)` 不会再摸到
+  关掉那次的旧窗；
+- `activeModel` 在 key window 是面板（取色器之类）或无 key 窗时，回退到
+  还活着的那扇，不再闷头回主窗。
+
+#### 测试
+
+988 → 993（+5，`ClosedPrimaryTests`）：关掉的主窗不再可及、不再占主；
+`revealDocument` 对无窗占主拒收、在场占主照常接手；命令回退活窗；重开主窗
+绑定换新、可及恢复。`OpenDocumentsTests` 的装配给每扇窗补挂真窗——镜像
+生产里 `WindowBridge` 必然做的事，交接测试因此测的是真语义。
+
 ### v0.15.43 — 窗口标题直接跟 store 走，不再信 SwiftUI 的缓存（#287）
 
 先开 aa.md，关掉窗口，再开 bb.md：内容是 bb 的，标题栏还是 aa.md。store 在
