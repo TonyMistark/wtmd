@@ -63,6 +63,7 @@ extension Translations {
         "Unbind this workspace?": "要解除这个工作区吗？",
         "Only the connection between wtmd and this folder is removed. The folder and its files will not be touched.": "只会解除 wtmd 与这个文件夹的访问关系。文件夹和里面的文件不会有任何改动。",
         "Double-click to collapse or expand the workspace section": "双击收起或展开工作区分组",
+        "Click to collapse or expand the workspace section": "点按收起或展开工作区分组",
         "Close": "关闭",
         "Collected locally by wtmd. It contains no writing from your documents — only versions, window counts, file names, and the stack.": "这份报告由 wtmd 在本机生成，不含任何正文内容——只有版本、窗口数、文件名和调用栈。",
         "Command Palette…": "命令面板…",
