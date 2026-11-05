@@ -438,7 +438,11 @@ struct CommandRuntime {
             // document greys out.
             return !store.showsWelcome && (store.isDirty || store.fileURL == nil)
         case .closeWorkspace:
-            return workspace.isOpen
+            return workspace.showsTree
+        case .searchWorkspace:
+            // 只搜看得见的工作区：收起来的那间书房（`isDetached`）不参与，
+            // 否则侧栏空着，搜索却能翻出一堆不在这窗里的文件。
+            return workspace.showsTree
         case .checkForUpdates:
             return !updates.isChecking
         case .find, .findReplace:
@@ -475,7 +479,7 @@ struct CommandRuntime {
         case .exportPDF: store.exportPDF()
         case .find: store.showFind(replacing: false)
         case .findReplace: store.showFind(replacing: true)
-        case .searchWorkspace: store.workspaceSearch.present(root: workspace.root)
+        case .searchWorkspace: store.workspaceSearch.present(root: workspace.showsTree ? workspace.root : nil)
         case .toggleMode: store.toggleMode()
         case .toggleSplit: store.toggleSplit()
         case .toggleSidebar: store.sidebarVisible.toggle()
@@ -517,7 +521,9 @@ struct CommandRuntime {
     /// 新窗口接着用当前窗口的文件夹：同一间书房，另一张桌子。文件由读者自己
     /// 起名保存，侧栏那颗「新建」按钮照旧在原地建文件。
     private func newDocument() {
-        if let windows, windows.openNewWindow(inheriting: workspace.root) != nil {
+        // 新窗口接着用当前窗口的文件夹，但只在它真的摆着的时候：这一窗要是
+        // 在单独看一篇稿子（书房收着），新桌也不该凭空冒出一棵树。
+        if let windows, windows.openNewWindow(inheriting: workspace.showsTree ? workspace.root : nil) != nil {
             return
         }
         store.newDocument()

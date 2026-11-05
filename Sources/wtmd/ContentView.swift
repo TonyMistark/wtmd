@@ -107,12 +107,17 @@ struct ContentView: View {
             guard let newValue else { return }
             workspace.reveal(newValue)
         }
-        // 未命名文档另存时默认落到当前工作区，省掉一次从「文稿」导航过去
-        .onChange(of: workspace.root) { _, newValue in
-            store.preferredSaveDirectory = newValue
+        // 未命名文档另存时默认落到当前工作区，省掉一次从「文稿」导航过去。
+        // 「暂不摆出」的书房不算：这一窗在单独看一篇稿子，落点不该被那间
+        // 藏着不用的书房牵着走。
+        .onChange(of: workspace.root) { _, _ in
+            store.preferredSaveDirectory = workspace.showsTree ? workspace.root : nil
+        }
+        .onChange(of: workspace.isDetached) { _, _ in
+            store.preferredSaveDirectory = workspace.showsTree ? workspace.root : nil
         }
         .onAppear {
-            store.preferredSaveDirectory = workspace.root
+            store.preferredSaveDirectory = workspace.showsTree ? workspace.root : nil
             // 把「开设置」这件事交给命令层：菜单、⌘K、设置窗口走的是同一条路，
             // 它们都拿不到视图环境，只有这里能。
             SettingsWindow.install { openSettings() }
@@ -158,7 +163,7 @@ struct ContentView: View {
                         ),
                         runtime: commandRuntime,
                         files: paletteFiles,
-                        root: workspace.root,
+                        root: workspace.showsTree ? workspace.root : nil,
                         liveDocument: { [weak store] in
                             guard let store, let url = store.fileURL else { return nil }
                             return (url, store.text)
@@ -171,7 +176,7 @@ struct ContentView: View {
                         },
                         onSeeAll: { term in
                             store.workspaceSearch.query = term
-                            store.workspaceSearch.present(root: workspace.root)
+                            store.workspaceSearch.present(root: workspace.showsTree ? workspace.root : nil)
                         },
                         isPresented: $paletteVisible
                     )
@@ -212,7 +217,7 @@ struct ContentView: View {
             // Section 承担。收放不用 Section(isExpanded:)——收起后内容为空的
             // Section 头部照常渲染（离屏渲染验证过），而且自己管状态不用跟
             // 系统的收放动画抢控制权。
-            if workspace.isOpen {
+            if workspace.showsTree {
                 Section {
                     if workspace.sectionExpanded {
                         WorkspaceTreeView()
@@ -243,7 +248,7 @@ struct ContentView: View {
             }
 
             // 工作区打开时，文件树已经承担了导航职责，最近文件只会让侧栏变长
-            if !workspace.isOpen, !store.recentFiles.urls.isEmpty {
+            if !workspace.showsTree, !store.recentFiles.urls.isEmpty {
                 Section(t("Recent Files")) {
                     ForEach(store.recentFiles.urls, id: \.absoluteString) { url in
                         Button {

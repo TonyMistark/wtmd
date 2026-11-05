@@ -218,7 +218,9 @@ struct OpenWindowBridge: View {
                 // Dock 菜单的「新建窗口」：与 ⌘N 同一条路——新会话、接着用当前文件夹。
                 AppActivation.newWindow = { [weak coordinator] in
                     guard let coordinator else { return }
-                    coordinator.openNewWindow(inheriting: coordinator.primary.workspace.root)
+                    // 主窗的书房收着（单独看一篇稿子）时，新桌也不带树。
+                    let workspace = coordinator.primary.workspace
+                    coordinator.openNewWindow(inheriting: workspace.showsTree ? workspace.root : nil)
                 }
             }
     }

@@ -66,6 +66,9 @@ enum OpenRequest {
                     openInFreshWindowOrCurrent(url, coordinator: coordinator, current: current)
                 }
             case .reuseCurrent:
+                // 这篇不在本窗的书房里：书房先收起来，这一窗当「单独看一篇」。
+                // 树里正指着它的话（文件在工作区根下）什么也不动。
+                current.detachWorkspaceIfOutside(url)
                 current.store.open(url: url)
             case .newWindow:
                 openInFreshWindowOrCurrent(url, coordinator: coordinator, current: current)
@@ -82,6 +85,8 @@ enum OpenRequest {
            let model = coordinator.model(for: id) {
             model.store.open(url: url)
         } else {
+            // 退化路径：开不了新窗就装进当前窗，照样按「单独看一篇」对待。
+            current.detachWorkspaceIfOutside(url)
             current.store.open(url: url)
         }
     }
