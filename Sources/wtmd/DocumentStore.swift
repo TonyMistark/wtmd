@@ -228,7 +228,9 @@ final class DocumentStore: ObservableObject {
     /// The file's modification date as of the last read or write. A mismatch
     /// against the disk later means someone else touched the file.
     private(set) var knownModificationDate: Date?
-    private var savedSnapshot: String = ""
+    /// 上一次落盘时的内容快照：与 `text` 比对得出脏标记。发布出去是因为
+    /// 窗口标题要跟着它走——保存落地时不改 `text`，脏圆点照样要消失（#287）。
+    @Published private(set) var savedSnapshot: String = ""
     private var renderTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
     /// Keeps the exit observers alive; removed in `deinit`.
@@ -398,7 +400,14 @@ final class DocumentStore: ObservableObject {
 
     var isDirty: Bool { text != savedSnapshot }
     var displayName: String { fileURL?.lastPathComponent ?? t("Untitled.md") }
-    var windowTitle: String { (isDirty ? "● " : "") + displayName }
+    var windowTitle: String { Self.windowTitle(text: text, fileURL: fileURL, savedSnapshot: savedSnapshot) }
+
+    /// Title from raw parts. `@Published` fires on `willSet`, so an observer
+    /// that reads the store at sink time sees the previous value — observers
+    /// must compute from the emitted tuple instead (WindowTitleSync, #287).
+    static func windowTitle(text: String, fileURL: URL?, savedSnapshot: String) -> String {
+        (text != savedSnapshot ? "● " : "") + (fileURL?.lastPathComponent ?? t("Untitled.md"))
+    }
 
     func textDidChange(_ new: String) {
         text = new
