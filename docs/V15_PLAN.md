@@ -1700,6 +1700,31 @@ edit→live→preview→split。
 探针**：测试里按指定 appearance 把编辑器画进位图存 PNG 直接看像素——
 截图权限拿不到时的可靠视觉验证手段。
 
+### v0.15.43 — 窗口标题直接跟 store 走，不再信 SwiftUI 的缓存（#287）
+
+先开 aa.md，关掉窗口，再开 bb.md：内容是 bb 的，标题栏还是 aa.md。store 在
+所有打开路径里都正确（内容就是证明），坏在 SwiftUI 对同场景重建窗口的标题
+管理——`.navigationTitle` 是窗口标题唯一的来源，而窗口关掉再开后，新
+NSWindow 沿用旧窗的缓存标题，后续变化也不再推给 AppKit。
+
+#### 实现
+
+- `WindowTitleSync`：订阅 store 的 `text/fileURL/savedSnapshot`，经 AppKit
+  直接写 `NSWindow.title`。三个输入缺一不可：`savedSnapshot` 单独观察——
+  保存落地不改 `text`，脏圆点照样要消失；
+- 标题从 CombineLatest 发出的**元组值**算（`windowTitle(text:fileURL:savedSnapshot:)`
+  抽成纯函数）：`@Published` 在 willSet 触发，sink 里读 store 拿到的是
+  上一拍的值——这个滞后正是第一版测试抓出来的；
+- `WindowBridge.hookWindowIfNeeded` 挂上同步并立即校准一次（顺带修掉重建
+  窗口的缓存标题），`detach` 停止；窗口重新成为 key 时再校准一道，防
+  SwiftUI 在激活事件上回写缓存；
+- `.navigationTitle` 保留：工具栏那一行仍由它渲染，两处同源不会打架。
+
+#### 测试
+
+985 → 988（+3）：挂上即校准（窗口带着上一篇的缓存标题）、窗口活着换文档
+标题跟着换（含回到未命名）、脏圆点点亮与保存后消失。
+
 ### v0.15.42 — 主题切换带上整个 app 的外观（#283）
 
 浅色主题只换了正文那块纸：侧栏、工具栏、标题栏、设置窗、菜单还是系统深色，
