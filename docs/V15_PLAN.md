@@ -1700,6 +1700,37 @@ edit→live→preview→split。
 探针**：测试里按指定 appearance 把编辑器画进位图存 PNG 直接看像素——
 截图权限拿不到时的可靠视觉验证手段。
 
+### v0.15.45 — 工作区树行换成真按钮（#293）
+
+v0.15.44 修掉幽灵占主（#290）之后，树里点文件还是没反应。真机 breadcrumb
+显示连点几分钟，**零条**「打开」记录——点击根本没进打开逻辑。离屏探针
+实锤：macOS 26 的 SwiftUI List 换了全新的背板机制（`SwiftUIOutlineListView`
+/ `OutlineListRepresentable`，经 `AppKitPlatformViewHost` 挂载），挂在
+`.onTapGesture` 上的行收不到任何点击。与 #259 的分类头同一类坑：只有真
+Button 吃命中。侧栏里凡是真 Button 的行（大纲、最近文件、分类头）都正常，
+凡是 tap 的行（文件行、文件夹双击、根标题双击）全是死的。
+
+#### 实现
+
+- 文件行、文件夹行、工作区根标题行全部换成真 Button + `SidebarRowButtonStyle`：
+  文件行点击打开，文件夹行与根标题行**单击**即收放（原来的双击也是死手势）；
+- 拖拽与投放仍挂在行上（外层 `.onDrag` / `.onDrop`）；
+- 视图桥加固：标题同步与关窗观察跟着 NSWindow 对象重挂——原来的
+  `closeObserver == nil` / `titleSync == nil` 守卫在窗口对象更换（全屏切换、
+  系统重建场景窗）后会让新窗失联（标题不校准、关窗不记账），换窗即撤旧挂新。
+
+#### 探针账（留给下次）
+
+离屏探针能证明 tap 行收不到真实点击链路，但**验不了修复**：macOS 26 的
+OutlineList 机制不响应合成事件（`window.sendEvent` / `NSApp.sendEvent`，
+selectedRow 恒 -1、Button action 不发），普通窗口里的 Button 却能触发；
+AX 元素帧在 macOS 26 List 下还会错报行位置。行级点击验证只能真机。
+
+#### 测试
+
+守卫改写（WorkspaceHeaderTests / SidebarFeedbackTests）：树里禁止
+`.onTapGesture`，三行必须都是真 Button。全量 924 + 69 = 993 全绿。
+
 ### v0.15.44 — 关掉的主窗不再占主（#290）
 
 右键打开文件之后，工作区树显示着之前保留的文件夹，点树里的文件却毫无反应。
