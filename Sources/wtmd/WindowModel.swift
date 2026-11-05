@@ -90,6 +90,9 @@ final class WindowModel: ObservableObject, Identifiable {
     @Published var paletteVisible = false
     /// 把 `store.fileURL` 的变化记进应用级的「谁开着哪一篇」。
     private var documentClaim: AnyCancellable?
+    /// 工作区摆出来 / 收起来，同样改变这一窗的语境——根没变、文件没换，
+    /// 只有「这一窗在拿它干什么」变了，占位得跟着重记。
+    private var workspaceClaim: AnyCancellable?
 
     /// 每扇窗口带一份自己的会话：主窗口用 `wtmd.session`，其余按窗口 id 各存一条。
     /// 关窗即结束那一条（`WindowCoordinator.finishRecord`），下次启动只摆回还开着的。
@@ -151,15 +154,49 @@ final class WindowModel: ObservableObject, Identifiable {
         store.claimContext = { [weak self] url in
             self?.claimContext(for: url)
         }
+        // 工作区摆出来 / 收起来也改变语境：根还是那间书房，可这一窗眼下是
+        // 「单独看一篇」还是「在书房里写」不一样，别的窗按语境判断占主时得知道。
+        workspaceClaim = Publishers.CombineLatest(workspace.$root, workspace.$isDetached)
+            .map { root, detached in "\(root?.path ?? "")|\(detached)" }
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                // `@Published` 在 willSet 触发，回调里读到的还是旧状态。挪到
+                // 下一拍再算，此时赋值已落定（#287 抓过的同一个坑）。
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.shared.openDocuments.update(
+                        self.store.fileURL,
+                        context: self.store.fileURL.map { self.claimContext(for: $0) } ?? nil,
+                        for: self.id
+                    )
+                }
+            }
     }
 
     /// 这扇窗开这篇文件算哪种语境：文件在工作区根之下就是工作区语境（记根），
     /// 否则是单独打开（`nil`）。同一个文件、两种语境，允许各开一扇。
+    ///
+    /// 工作区是「暂不摆出」（`isDetached`）时一律算单独打开：这一窗眼下的
+    /// 语境就是「看一篇稿子」，那间书房只是记着，没在用它。
     func claimContext(for url: URL) -> String? {
-        guard let root = workspace.root, PathKey.isDescendantOrSelf(url, of: root) else {
+        guard workspace.showsTree,
+              let root = workspace.root,
+              PathKey.isDescendantOrSelf(url, of: root) else {
             return nil
         }
         return PathKey.canonical(root)
+    }
+
+    /// 从外面（Finder「打开方式」、拖到 Dock 图标）打开一篇文件之前，
+    /// 先看这篇在不在本窗的书房里。
+    ///
+    /// 不在就把书房收起来——根留在会话里，下次照样回来；侧栏不再挂着一棵跟
+    /// 这篇无关的树（那是上一间书房，不是这一篇的家）。在就什么也不动：
+    /// 树里正指着它，收起来才是错的。
+    func detachWorkspaceIfOutside(_ url: URL) {
+        guard workspace.showsTree, let root = workspace.root else { return }
+        guard !PathKey.isDescendantOrSelf(url, of: root) else { return }
+        workspace.detach()
     }
 
     /// 这扇窗里还欠着一篇**没有名字**的字吗？

@@ -40,6 +40,10 @@ final class Session {
         var openFilePath: String?
         var expandedPaths: [String] = []
         var positions: [String: Position] = [:]
+        /// 书房记着，但这一窗眼下不摆出来（从 Finder 单独打开一篇不属于它的
+        /// 稿子）。可选是必须的：旧版本写下的 blob 没有这个键，非可选会让
+        /// 整条会话解码失败、静默丢掉读者上次的现场。
+        var workspaceDetached: Bool?
     }
 
     /// How many documents keep a remembered position. A writing workspace holds
@@ -126,6 +130,18 @@ final class Session {
 
     func setWorkspace(_ url: URL?) {
         snapshot.workspacePath = url?.standardizedFileURL.path
+        // 没有书房就没有「暂不摆出」这回事；留着这个标记，下次打开一间新书房
+        // 会平白无故把它收起来。
+        if url == nil { snapshot.workspaceDetached = nil }
+        flush()
+    }
+
+    /// 书房还记着，但侧栏先不摆它（从 Finder 单独开了一篇稿子）。
+    var isWorkspaceDetached: Bool { snapshot.workspaceDetached ?? false }
+
+    func setWorkspaceDetached(_ detached: Bool) {
+        guard (snapshot.workspaceDetached ?? false) != detached else { return }
+        snapshot.workspaceDetached = detached ? true : nil
         flush()
     }
 

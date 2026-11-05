@@ -254,6 +254,9 @@ protocol WorkspaceFileEvents: AnyObject {
 final class WorkspaceStore: ObservableObject {
     @Published private(set) var root: URL?
     @Published private(set) var tree: WorkspaceNode?
+    /// 书房记着，但这一窗眼下不摆它：从 Finder「打开方式」单独开了一篇不属于
+    /// 它的稿子。根、展开状态都留着——下次打开同一间书房还是原样。
+    @Published private(set) var isDetached = false
     /// The file currently open in the editor, highlighted in the tree.
     @Published var selection: URL?
     /// Expanded folders by path. Held here rather than in the view so the state
@@ -289,22 +292,31 @@ final class WorkspaceStore: ObservableObject {
     }
 
     var isOpen: Bool { root != nil }
+    /// 侧栏要不要摆出文件树。单独打开一篇稿子的窗，侧栏里不该留着一棵跟这篇
+    /// 无关的树——那是上一间书房，不是这一篇的家。
+    var showsTree: Bool { root != nil && !isDetached }
     var rootName: String { root?.lastPathComponent ?? "" }
 
     /// Brings back the folder that was open last time. A path that no longer
     /// exists (unplugged drive, deleted folder) is dropped silently: coming back
     /// to "no workspace" is what a text editor should do, not an error dialog.
+    ///
+    /// 上次这一窗是「单独看一篇」的样子（`isDetached`）就只把根记回来，
+    /// 不扫盘、不摆树：现场怎么关的就怎么回来。
     func restore() {
         guard let session, let url = session.workspaceURL else { return }
         guard WorkspaceScanner.isDirectory(url) else {
             session.setWorkspace(nil)
             return
         }
-        // 先把展开状态取出来：`open` 会先 `close` 上一个工作区（顺手清空并落盘），
-        // 取晚了读到的是刚被清掉的那份。
-        let expanded = session.expandedPaths
-        open(url)
-        expandedPaths = expanded
+        root = url.resolvingSymlinksInPath()
+        expandedPaths = session.expandedPaths
+        guard !session.isWorkspaceDetached else {
+            isDetached = true
+            return
+        }
+        reload()
+        startWatcher()
     }
 
     /// Opens `url` as the workspace root, replacing any previous workspace.
@@ -313,11 +325,26 @@ final class WorkspaceStore: ObservableObject {
         // 根先归一：目录枚举回来的是解析过符号链接的路径（`/var/…` →
         // `/private/var/…`），根要是原样留着，树里每一行都跟它「不是同一个目录」。
         root = url.resolvingSymlinksInPath()
-        reload()
+        isDetached = false
         session?.setWorkspace(root)
-        watcher = DirectoryWatcher(root: url) { [weak self] in
-            self?.reload()
-        }
+        session?.setWorkspaceDetached(false)
+        reload()
+        startWatcher()
+    }
+
+    /// 记住这间书房，但先不摆出来。
+    ///
+    /// 从 Finder 打开一篇不在这间书房里的稿子时用它：这一窗眼下是「单独读
+    /// 一篇」的语境，侧栏不该挂着上一间书房的树。根与展开状态都留在会话里，
+    /// 下次 `open` 同一间（或任何一间）书房，树照旧回来。
+    func detach() {
+        guard root != nil, !isDetached else { return }
+        watcher?.stop()
+        watcher = nil
+        tree = nil
+        selection = nil
+        isDetached = true
+        session?.setWorkspaceDetached(true)
     }
 
     func close() {
@@ -327,8 +354,16 @@ final class WorkspaceStore: ObservableObject {
         tree = nil
         selection = nil
         expandedPaths = []
+        isDetached = false
         session?.setWorkspace(nil)
         session?.setExpandedPaths([])
+    }
+
+    private func startWatcher() {
+        guard let root else { return }
+        watcher = DirectoryWatcher(root: root) { [weak self] in
+            self?.reload()
+        }
     }
 
     func openPanel() {
