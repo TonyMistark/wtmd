@@ -117,9 +117,14 @@ private struct WindowBridge: NSViewRepresentable {
                 sync.start()
                 titleSync = sync
             }
-            guard model.id != coordinator.primary.id else { return }
-            place(window)
-            trackFrame(of: window)
+            if model.id != coordinator.primary.id {
+                place(window)
+                trackFrame(of: window)
+            }
+            // 主窗也要观察关窗：不记下来，⌘W 掉的主窗在窗口表里就永远「开着」，
+            // 它占过的那篇成了幽灵占主——别的窗点那篇会被交给一扇看不见的窗，
+            // 怎么点都「没有用」；右键打开也照样被吞（#290）。摆位与拖框依旧
+            // 只归副窗：主窗的位置系统自己管。
             observeClose(of: window)
         }
 
