@@ -73,6 +73,9 @@ private struct WindowBridge: NSViewRepresentable {
         private var closeObserver: NSObjectProtocol?
         private var frameTokens: [NSObjectProtocol] = []
         private var frameTask: Task<Void, Never>?
+        /// 窗口标题跟着文档走：不走 SwiftUI 的 `navigationTitle`——同一场景的
+        /// 窗口关掉再开，SwiftUI 会沿用旧窗缓存且不再推送（#287）。
+        private var titleSync: WindowTitleSync?
 
         init(model: WindowModel, coordinator: WindowCoordinator) {
             self.model = model
@@ -88,6 +91,8 @@ private struct WindowBridge: NSViewRepresentable {
         }
 
         func detach() {
+            titleSync?.stop()
+            titleSync = nil
             if let closeObserver {
                 NotificationCenter.default.removeObserver(closeObserver)
             }
@@ -106,6 +111,12 @@ private struct WindowBridge: NSViewRepresentable {
             // 桌面恢复只有账本一个事实来源。主窗也不交给系统：场景恢复会把
             // 已经关掉的窗重新实例化成空白僵尸，账本说的才算。
             window.isRestorable = false
+            // 标题立即校准一次：重建的窗口可能带着上一篇的缓存标题。
+            if titleSync == nil {
+                let sync = WindowTitleSync(window: window, store: model.store)
+                sync.start()
+                titleSync = sync
+            }
             guard model.id != coordinator.primary.id else { return }
             place(window)
             trackFrame(of: window)
