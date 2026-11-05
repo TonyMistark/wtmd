@@ -36,18 +36,21 @@ struct WorkspaceHeaderTests {
         #expect(!code.contains("xmark.circle.fill"), "标题行的 ✕ 按钮又回来了")
     }
 
-    @Test("整行双击切换：工作区分组与文件夹行都接上了")
-    func doubleClickToggles() {
+    @Test("整行切换：标题行与文件夹行都是真 Button（tap 手势在 macOS 26 的 List 里收不到点击）")
+    func rowsAreButtonsThatToggle() {
         let code = Self.code(of: Self.treeViewURL)
         // 收放职责上移了：分类头（ContentView）管整组显隐，这里不再自带
         // 可折叠 Section——嵌两层会出现两套收放状态。分类头是普通 Section
-        // 加条件内容，不用 Section(isExpanded:)（手势版头部整行收不到点击）。
+        // 加条件内容，不用 Section(isExpanded:)（tap 手势版头部整行收不到点击）。
         let contentView = Self.code(of: Self.sourceURL("ContentView.swift"))
         #expect(contentView.contains("if workspace.sectionExpanded {"), "侧栏「工作区」内容没有接上展开状态")
         #expect(!code.contains("Section(isExpanded:"), "文件树里不应再有内层折叠 Section")
-        // 标题行一处、文件夹行一处，都是开关。
-        #expect(code.contains("onTapGesture(count: 2) { workspace.sectionExpanded.toggle() }"), "标题行的双击切换不见了")
-        #expect(code.contains("workspace.setExpanded(node.url, to: !workspace.isExpanded(node.url))"), "文件夹行的双击切换不见了")
+        // 标题行一处、文件夹行一处，都是开关——都必须是真 Button（#294）。
+        #expect(code.contains("workspace.sectionExpanded.toggle()"), "标题行的切换不见了")
+        #expect(code.contains("workspace.setExpanded(node.url, to: !workspace.isExpanded(node.url))"), "文件夹行的切换不见了")
+        let buttons = code.components(separatedBy: "SidebarRowButtonStyle()").count - 1
+        #expect(buttons >= 3, "树里的真 Button 行少了（标题行、文件夹行、文件行三处），当前 \(buttons)")
+        #expect(!code.contains(".onTapGesture"), "树里不许再挂 tap 手势——macOS 26 的 List 收不到")
     }
 
     @Test("树行与工作区都没有删除入口")

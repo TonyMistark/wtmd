@@ -71,6 +71,10 @@ private struct WindowBridge: NSViewRepresentable {
         private let coordinator: WindowCoordinator
         private weak var view: NSView?
         private var closeObserver: NSObjectProtocol?
+        /// The window the close observer is currently anchored to. One bridge
+        /// can see several `NSWindow`s over its life (fullscreen swaps, scene
+        /// recreation) — the observer must follow, not stick to the first.
+        private var observedWindow: NSWindow?
         private var frameTokens: [NSObjectProtocol] = []
         private var frameTask: Task<Void, Never>?
         /// 窗口标题跟着文档走：不走 SwiftUI 的 `navigationTitle`——同一场景的
@@ -97,6 +101,7 @@ private struct WindowBridge: NSViewRepresentable {
                 NotificationCenter.default.removeObserver(closeObserver)
             }
             closeObserver = nil
+            observedWindow = nil
             for token in frameTokens {
                 NotificationCenter.default.removeObserver(token)
             }
@@ -111,8 +116,11 @@ private struct WindowBridge: NSViewRepresentable {
             // 桌面恢复只有账本一个事实来源。主窗也不交给系统：场景恢复会把
             // 已经关掉的窗重新实例化成空白僵尸，账本说的才算。
             window.isRestorable = false
-            // 标题立即校准一次：重建的窗口可能带着上一篇的缓存标题。
-            if titleSync == nil {
+            // 标题同步与关窗观察都锚在「这一扇」窗上：同一份视图桥可能先后
+            // 接过两扇 NSWindow（全屏切换、系统重建场景窗），观察还挂在旧窗
+            // 上时，新窗的标题没人校准、关窗没人记账。
+            if titleSync?.window !== window {
+                titleSync?.stop()
                 let sync = WindowTitleSync(window: window, store: model.store)
                 sync.start()
                 titleSync = sync
@@ -168,7 +176,14 @@ private struct WindowBridge: NSViewRepresentable {
         }
 
         private func observeClose(of window: NSWindow) {
-            guard closeObserver == nil else { return }
+            guard observedWindow !== window else { return }
+            // 窗口换了一扇：旧窗的观察撤掉（旧窗多半已经关了，撤是防它的
+            // willClose 再多报一次账），再挂到新窗上。
+            if let closeObserver {
+                NotificationCenter.default.removeObserver(closeObserver)
+            }
+            closeObserver = nil
+            observedWindow = window
             closeObserver = NotificationCenter.default.addObserver(
                 forName: NSWindow.willCloseNotification,
                 object: window,

@@ -63,12 +63,14 @@ struct SidebarFeedbackTests {
         #expect(code.contains("#available(macOS 26.0, *)"), "旧系统上要原样返回")
     }
 
-    @Test("树行、标题行都接了按压反馈")
-    func treeRowsHavePressFeedback() {
+    @Test("树行、根标题行都是真 Button（tap 手势在 macOS 26 的 List 里收不到点击）")
+    func treeRowsAreRealButtons() {
         let code = Self.code(of: Self.treeViewURL)
-        // Header, folder row, file row — three call sites.
-        let count = code.components(separatedBy: ".pressFeedback()").count - 1
-        #expect(count >= 3, "按压反馈的接线点少了（应有标题行、文件夹行、文件行三处），当前 \(count)")
+        // 文件行、文件夹行、工作区根标题行——三处都必须是 Button + 按压样式。
+        // 离屏探针实测（#294）：挂 `.onTapGesture` 的行整行收不到点击。
+        let buttons = code.components(separatedBy: "SidebarRowButtonStyle()").count - 1
+        #expect(buttons >= 3, "树里的真 Button 行少了（应有三处），当前 \(buttons)")
+        #expect(!code.contains(".onTapGesture"), "树里不许再挂 tap 手势——macOS 26 的 List 收不到")
     }
 
     @Test("Button 行用按压样式，不再用 plain")

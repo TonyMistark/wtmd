@@ -13,7 +13,10 @@ import Foundation
 /// cached: the value always comes from the store that actually renders.
 @MainActor
 final class WindowTitleSync {
-    private weak var window: NSWindow?
+    /// Readable so the view bridge can tell whether this sync still anchors
+    /// the window it is about to hook — one bridge can see several NSWindows
+    /// over its life (fullscreen swaps, scene recreation).
+    private(set) weak var window: NSWindow?
     private let store: DocumentStore
     private var cancellable: AnyCancellable?
     private var keyObserver: NSObjectProtocol?

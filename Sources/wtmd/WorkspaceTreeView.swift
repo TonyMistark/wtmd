@@ -59,27 +59,29 @@ struct WorkspaceTreeView: View {
                 }
             }
         } header: {
-            HStack(spacing: 6) {
-                Text(workspace.rootName)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .dropHighlight(dropTarget == workspace.root)
-                    .onDrop(
-                        of: [WorkspaceDrag.type],
-                        isTargeted: dropBinding(for: workspace.root)
-                    ) { providers in
-                        acceptDrop(providers, into: workspace.root)
-                    }
-                Spacer(minLength: 4)
-            }
-            // 整行都是开关：双击收起 / 放出整个工作区组——收起后这行标题
-            // 也一起让位，大纲顶到侧栏最上面。收放不该跟「删掉工作区」
+            // 工作区根标题也是真 Button：整行单击即收起/放出整个组（tap 手势
+            // 在 macOS 26 的 List 里收不到点击，#294）。收放不该跟「删掉工作区」
             // 共用一颗按钮。
-            .contentShape(Rectangle())
-            .pressFeedback()
-            .onTapGesture(count: 2) { workspace.sectionExpanded.toggle() }
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint(t("Double-click to collapse or expand the workspace section"))
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) { workspace.sectionExpanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(workspace.rootName)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 4)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(SidebarRowButtonStyle())
+            .dropHighlight(dropTarget == workspace.root)
+            .onDrop(
+                of: [WorkspaceDrag.type],
+                isTargeted: dropBinding(for: workspace.root)
+            ) { providers in
+                acceptDrop(providers, into: workspace.root)
+            }
+            .accessibilityHint(t("Click to collapse or expand the workspace section"))
             .contextMenu {
                 Button(t("New Document")) { createDocument(in: nil) }
                 Button(t("New Folder")) { createFolder(in: nil) }
@@ -129,51 +131,57 @@ struct WorkspaceTreeView: View {
                     if renaming == node.url {
                         renameField(for: node)
                     } else {
-                        Label(node.name, systemImage: "folder")
-                            .font(.callout)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .contentShape(Rectangle())
-                            .pressFeedback()
-                            // 双击整行也切换展开/收起——箭头只有几像素宽，
-                            // 整行都该是开关（与工作区标题行同一习惯）。
-                            .onTapGesture(count: 2) {
-                                workspace.setExpanded(node.url, to: !workspace.isExpanded(node.url))
-                            }
-                            .dropHighlight(dropTarget == node.url)
-                            .onDrag { WorkspaceDrag.provider(for: node.url) }
-                            .onDrop(
-                                of: [WorkspaceDrag.type],
-                                isTargeted: dropBinding(for: node.url)
-                            ) { providers in
-                                acceptDrop(providers, into: node.url)
-                            }
+                        // 文件夹行同样走真 Button：tap 手势在 macOS 26 的 List 里
+                        // 收不到点击（#294 探针实测）。单击整行即展开/收起——
+                        // 与箭头同一个动作，好过「只有几像素的箭头能点」。
+                        Button {
+                            workspace.setExpanded(node.url, to: !workspace.isExpanded(node.url))
+                        } label: {
+                            Label(node.name, systemImage: "folder")
+                                .font(.callout)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(SidebarRowButtonStyle())
+                        .dropHighlight(dropTarget == node.url)
+                        .onDrag { WorkspaceDrag.provider(for: node.url) }
+                        .onDrop(
+                            of: [WorkspaceDrag.type],
+                            isTargeted: dropBinding(for: node.url)
+                        ) { providers in
+                            acceptDrop(providers, into: node.url)
+                        }
                     }
                 }
                 .contextMenu { contextMenu(for: node) }
             )
         }
 
+        // 文件行必须是真 Button：离屏探针实测（#294），macOS 26 的 List 里
+        // 挂 `.onTapGesture` 的行收不到任何点击——点击「毫无反应」就是这么来的。
+        // 只有真 Button 吃命中（与 #259 的分类头同一类坑）。拖拽挂在 Button
+        // 外层，按压反馈由 `SidebarRowButtonStyle` 承担。
         return AnyView(
             Group {
                 if renaming == node.url {
                     renameField(for: node)
                 } else {
-                    // 不用 Button：macOS 上按钮会吃掉拖拽手势，那样这一行就永远
-                    // 抓不起来。点击改用 tap，拖拽才拿得到鼠标。
-                    Label(node.name, systemImage: "doc.text")
-                        .font(.callout)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .pressFeedback()
-                        .foregroundStyle(
-                            workspace.selection == node.url ? Color.accentColor : Color.primary
-                        )
-                        .onTapGesture { store.open(url: node.url) }
-                        .accessibilityAddTraits(.isButton)
-                        .onDrag { WorkspaceDrag.provider(for: node.url) }
+                    Button {
+                        store.open(url: node.url)
+                    } label: {
+                        Label(node.name, systemImage: "doc.text")
+                            .font(.callout)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .foregroundStyle(
+                                workspace.selection == node.url ? Color.accentColor : Color.primary
+                            )
+                    }
+                    .buttonStyle(SidebarRowButtonStyle())
+                    .onDrag { WorkspaceDrag.provider(for: node.url) }
                 }
             }
             .contextMenu { contextMenu(for: node) }
