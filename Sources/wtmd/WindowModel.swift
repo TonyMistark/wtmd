@@ -267,14 +267,28 @@ final class WindowCoordinator: ObservableObject {
 
     func model(for id: UUID) -> WindowModel? { windows[id] }
 
-    /// 菜单 / 快捷键作用于前台窗口；没有前台窗口（欢迎页、失焦）时回退主窗口。
+    /// 菜单 / 快捷键作用于前台窗口；没有前台窗口（欢迎页、失焦）时回退
+    /// 还活着的那一扇，最后才是主窗。
     ///
-    /// 用 `NSApplication.shared` 而不是 `NSApp`：后者是隐式解包的全局变量，
-    /// 在没有 `NSApplication` 的进程（测试）里是 nil，取一下就崩。
+    /// 主窗 ⌘W 关掉后模型还在（会话要留给下次启动），但它已经没有桌子了——
+    /// 命令与文件再落进它，就是落进一扇看不见的窗（#290）。key window 是
+    /// 面板（取色器之类）时 `model(for:)` 也是 nil，同样不能闷头回主窗。
     func activeModel(focused: WindowModel?) -> WindowModel {
         if let focused { return focused }
         if let key = model(for: NSApplication.shared.keyWindow) { return key }
+        let alive = bindings.filter { isAlive($0.window) && !closedWindows.contains($0.model.id) }
+        if let lastKey = AppActivation.lastKey,
+           let hit = alive.last(where: { $0.window === lastKey }) {
+            return hit.model
+        }
+        if let recent = alive.last { return recent.model }
         return primary
+    }
+
+    /// 这扇窗还在吗？缩在 Dock 里的不算关（`isVisible` 对它返回 false，#175）。
+    private func isAlive(_ window: NSWindow?) -> Bool {
+        guard let window else { return false }
+        return window.isVisible || window.isMiniaturized
     }
 
     // MARK: - 打开文档
@@ -284,21 +298,23 @@ final class WindowCoordinator: ObservableObject {
     /// 带 `JumpRequest` 时还要在那扇窗里落到行列（`⌘⇧F` 的命中常常指着一篇
     /// 已经开着的文档）。窗口关着/最小化时先弄回眼前——「跳过去」得让人看见。
     ///
-    /// - Returns: `false` 表示表里的占主已经是幽灵（窗口没了）：调用方该把
-    ///   文件自己开起来，别让它落空。
+    /// **占主必须还有一张在场的桌子**：窗口关了（缩在 Dock 里的不算关，
+    /// #175）就不接这一手，返回 `false` 让调用方把文件在自己窗里开起来——
+    /// 否则稿子会被塞进一扇看不见的窗，人看到的永远是「点了没有用」（#290）。
+    ///
+    /// - Returns: `false` 表示占主已经是幽灵或够不着：调用方该把文件自己开起来。
     @discardableResult
     func revealDocument(_ id: UUID, url: URL, jumpingTo request: JumpRequest?) -> Bool {
         guard let model = windows[id] else { return false }
+        guard let target = window(for: id), isAlive(target) else { return false }
         // 登记可能晚了一步（那扇窗刚换了稿）：让它重新打开一次，顺带走一遍
         // 会话位置与冲突存档。
         let alreadyThere = model.store.fileURL.map { PathKey.isSame($0, url) } ?? false
         if request != nil || !alreadyThere {
             model.store.open(url: url, jumpingTo: request)
         }
-        if let target = window(for: id) {
-            // 连带激活应用：只把窗口在自己的层里往前提，人看到的还是别的 app。
-            AppActivation.bringToFront(target)
-        }
+        // 连带激活应用：只把窗口在自己的层里往前提，人看到的还是别的 app。
+        AppActivation.bringToFront(target)
         return true
     }
 
@@ -464,9 +480,13 @@ final class WindowCoordinator: ObservableObject {
     }
 
     /// 记下这扇窗口与它的 `NSWindow` 的对应关系（用于判断前台是哪扇窗）。
+    ///
+    /// 同一扇窗的旧记录与同一个模型的旧记录都清掉：主窗 ⌘W 后再开回来时，
+    /// 关掉那次的绑定还挂着，`window(for:)` 会先摸到那扇已经不在的旧窗，
+    /// 「跳过去」就永远跳了个空（#290）。
     func register(window: NSWindow?, for model: WindowModel) {
         guard let window else { return }
-        bindings.removeAll { $0.window === window }
+        bindings.removeAll { $0.window === window || $0.model.id == model.id }
         bindings.append(Binding(window: window, model: model))
         // 主窗 ⌘W 关掉又重开时，关窗那一刻放掉的登记在这里补回来；副窗则是
         // 每次都幂等地写一遍当前这一篇。

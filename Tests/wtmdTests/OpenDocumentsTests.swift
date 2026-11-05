@@ -314,11 +314,26 @@ private struct DocumentRig {
     }
 
     func newWindow() -> WindowModel {
-        coordinator.makeExtraWindow(inheriting: nil)
+        newWindow(inheriting: nil)
     }
 
     func newWorkspaceWindow(at root: URL) -> WindowModel {
-        coordinator.makeExtraWindow(inheriting: root)
+        newWindow(inheriting: root)
+    }
+
+    private func newWindow(inheriting root: URL?) -> WindowModel {
+        let model = coordinator.makeExtraWindow(inheriting: root)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        // 不 orderFront 的窗 isVisible 恒为 false，会被当成「不在场」。
+        window.orderFront(nil)
+        coordinator.register(window: window, for: model)
+        return model
     }
 
     func makeFile(_ name: String, _ content: String) throws -> URL {
