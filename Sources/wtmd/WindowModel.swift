@@ -203,9 +203,19 @@ final class WindowModel: ObservableObject, Identifiable {
     ///
     /// 关窗时的判据：草稿已经落盘，可窗口一关就再没有入口把它拿回来。没名字的
     /// 字不会陪窗口一起消失（见 `WindowCoordinator.finishRecord`）。
+    ///
+    /// 判据不能只看「有没有字」：欢迎页的文案也是一段真的 `text`，按字算的话
+    /// 每扇刚打开的窗都「欠着一篇稿子」——双击一个文件启动，前台窗就永远算占着
+    /// 东西，于是另开一扇，屏幕上出现两扇窗（#299）。
+    ///
+    /// 判断分两步：先要真有非空白的字（空白新稿不算），再要这些字不是欢迎页
+    /// 原文（`store.isUntouched` 认得那一份）。
     var holdsUnnamedWords: Bool {
         guard store.fileURL == nil else { return false }
-        return !store.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !store.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        return !store.isUntouched
     }
 }
 
