@@ -277,6 +277,9 @@ final class WorkspaceStore: ObservableObject {
     /// Where the workspace root and the expanded folders are remembered between
     /// launches. `nil` in tests, which must not read or write the real session.
     private let session: Session?
+    /// 启动时要不要把上次那间书房扫回来。生产跟着 `WorkspaceFeature` 走
+    /// （工作区暂时不对外时不扫盘）；测恢复逻辑的用例显式传 true。
+    private let restoresOnLaunch: Bool
     /// Every file in the tree, by canonical path: its URL plus its fingerprint.
     /// Rebuilt after each scan; **between** scans it doubles as the roster of
     /// what existed last time — and that is the only stable form of it. A file
@@ -286,8 +289,9 @@ final class WorkspaceStore: ObservableObject {
     /// while the file still existed.
     private var fileRecords: [String: FileRecord] = [:]
 
-    init(session: Session? = nil) {
+    init(session: Session? = nil, restoresOnLaunch: Bool = WorkspaceFeature.restoresOnLaunch) {
         self.session = session
+        self.restoresOnLaunch = restoresOnLaunch
         restore()
     }
 
@@ -304,6 +308,8 @@ final class WorkspaceStore: ObservableObject {
     /// 上次这一窗是「单独看一篇」的样子（`isDetached`）就只把根记回来，
     /// 不扫盘、不摆树：现场怎么关的就怎么回来。
     func restore() {
+        // 工作区暂时不对外：不扫盘、不挂 watcher，会话里的根原样留着。
+        guard restoresOnLaunch else { return }
         guard let session, let url = session.workspaceURL else { return }
         guard WorkspaceScanner.isDirectory(url) else {
             session.setWorkspace(nil)
@@ -367,6 +373,9 @@ final class WorkspaceStore: ObservableObject {
     }
 
     func openPanel() {
+        // 入口收起来之后这里仍然拦一道：以后若有人从别处直接调，也不会把
+        // 一间书房摆到一个不显示树的界面上。
+        guard WorkspaceFeature.isAvailable else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true

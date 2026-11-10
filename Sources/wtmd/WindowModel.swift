@@ -531,8 +531,33 @@ final class WindowCoordinator: ObservableObject {
     /// 同一扇窗的旧记录与同一个模型的旧记录都清掉：主窗 ⌘W 后再开回来时，
     /// 关掉那次的绑定还挂着，`window(for:)` 会先摸到那扇已经不在的旧窗，
     /// 「跳过去」就永远跳了个空（#290）。
-    func register(window: NSWindow?, for model: WindowModel) {
-        guard let window else { return }
+    ///
+    /// - Returns: `false` 表示这扇窗是系统为主场景新开的**替身**，已经关掉，
+    ///   调用方不必再给它挂标题同步与关窗观察。
+    ///
+    /// 一个模型只该有一扇真窗。系统每投递一次「打开文件」，都会给主场景再开一个
+    /// 组窗实例，而主场景渲染的永远是同一个 `primary`——屏幕上于是出现两扇一样的
+    /// 窗（#299）。`handlesExternalEvents(matching: [])` 拦不住它：实测那一条反而
+    /// 让主窗不出现、事件转给第二个场景，一次启动攒出一排空窗（#302）。
+    ///
+    /// 所以在这里收口：原来的窗还在场，就关掉新来的替身，留下读者一直在用的那扇。
+    /// 旧窗已经关了（⌘W 之后重开、场景重建）则照常换绑——那种情况不关任何窗。
+    @discardableResult
+    func register(window: NSWindow?, for model: WindowModel) -> Bool {
+        guard let window else { return false }
+        if let previous = bindings.first(where: { $0.model.id == model.id })?.window,
+           previous !== window,
+           isAlive(previous),
+           isTwinScene(window, of: previous) {
+            // 先关替身，再把焦点交回旧窗：关掉 key 窗之后键盘会悬空一会儿。
+            window.isRestorable = false
+            CrashBreadcrumbs.note(
+                "window duplicate num=\(window.windowNumber) kept=\(previous.windowNumber)"
+            )
+            window.close()
+            previous.makeKeyAndOrderFront(nil)
+            return false
+        }
         bindings.removeAll { $0.window === window || $0.model.id == model.id }
         bindings.append(Binding(window: window, model: model))
         // 主窗 ⌘W 关掉又重开时，关窗那一刻放掉的登记在这里补回来；副窗则是
@@ -543,6 +568,23 @@ final class WindowCoordinator: ObservableObject {
             context: model.store.fileURL.map { model.claimContext(for: $0) } ?? nil,
             for: model.id
         )
+        return true
+    }
+
+    /// 两扇窗是不是同一个场景的两次实例化。
+    ///
+    /// 系统给主场景建的窗按实例编号：`wtmd.main-AppWindow-1`、`-2`…… 同一扇窗
+    /// 被重建（全屏切换、视图换宿主）时编号不变，所以「前缀相同、编号不同」
+    /// 就是「又多开了一个实例」，可以放心关掉。拿不到 identifier 时一律不算——
+    /// 宁可多留一扇窗，也不能误关读者正在用的那扇。
+    private func isTwinScene(_ window: NSWindow, of other: NSWindow) -> Bool {
+        guard
+            let a = window.identifier?.rawValue,
+            let b = other.identifier?.rawValue,
+            a != b
+        else { return false }
+        let prefix = WindowScene.main + "-AppWindow-"
+        return a.hasPrefix(prefix) && b.hasPrefix(prefix)
     }
 
     func model(for window: NSWindow?) -> WindowModel? {

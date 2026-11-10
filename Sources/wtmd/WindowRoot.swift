@@ -112,7 +112,9 @@ private struct WindowBridge: NSViewRepresentable {
 
         private func hookWindowIfNeeded() {
             guard let view, let window = view.window else { return }
-            coordinator.register(window: window, for: model)
+            // 替身窗（系统为主场景多开的那个实例）在这里被关掉，剩下的钩子
+            // 一句都不该再挂——那扇窗马上就没了。
+            guard coordinator.register(window: window, for: model) else { return }
             // 桌面恢复只有账本一个事实来源。主窗也不交给系统：场景恢复会把
             // 已经关掉的窗重新实例化成空白僵尸，账本说的才算。
             window.isRestorable = false

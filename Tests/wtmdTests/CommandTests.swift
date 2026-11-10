@@ -126,7 +126,9 @@ import Testing
     #expect(CommandCatalog.command(for: .newDocument)?.title == "新建文档")
     #expect(shortcutLabel(.newDocument) == "⌘N")
     #expect(shortcutLabel(.openDocument) == "⌘O")
-    #expect(shortcutLabel(.openFolder) == "⇧⌘O")
+    // 工作区暂时不对外（`WorkspaceFeature`）：这两条命令不在目录里，
+    // 键位也就没有菜单项可以派发——恢复功能时这里要一起改回来。
+    #expect(shortcutLabel(.openFolder) == nil)
     #expect(shortcutLabel(.save) == "⌘S")
     #expect(shortcutLabel(.exportHTML) == "⇧⌘E")
     #expect(shortcutLabel(.exportPDF) == "⌘P")
@@ -136,8 +138,8 @@ import Testing
     #expect(shortcutLabel(.find) == "⌘F")
     // ⌥⌘F 已经归专注模式，替换只能另找一格：R 记 Replace
     #expect(shortcutLabel(.findReplace) == "⌥⌘R")
-    // 文档内是 ⌘F，整个工作区是 ⇧⌘F——同一件事的两个范围，顺手
-    #expect(shortcutLabel(.searchWorkspace) == "⇧⌘F")
+    // 文档内是 ⌘F。整个工作区那条（⇧⌘F）随工作区一起收起来了。
+    #expect(shortcutLabel(.searchWorkspace) == nil)
 }
 
 /// 查找与替换在同一个分组里：读者找东西时会想「顺便换掉」，
@@ -145,7 +147,8 @@ import Testing
 @Test func findCommandsLiveInTheEditSection() {
     #expect(CommandCatalog.command(for: .find)?.section == .edit)
     #expect(CommandCatalog.command(for: .findReplace)?.section == .edit)
-    #expect(CommandCatalog.command(for: .searchWorkspace)?.section == .edit)
+    // 整个工作区那条（`⌘⇧F`）随工作区一起收起来了。
+    #expect(CommandCatalog.command(for: .searchWorkspace) == nil)
 }
 
 /// 快捷键撞车是静默的：菜单里一条永远打不开，而且没人会发现。
@@ -276,20 +279,13 @@ import Testing
     }
 }
 
-/// 没有工作区时「关闭工作区」不该可点。
+/// 工作区收起之后，「关闭工作区」不是灰着摆在那儿，而是整条命令都不在目录里。
 @MainActor
-@Test func closingAWorkspaceIsDisabledWithoutOne() throws {
-    let harness = try CommandHarness()
-    defer { harness.cleanup() }
-    let command = try #require(CommandCatalog.command(for: .closeWorkspace))
-
-    #expect(!harness.runtime.isEnabled(command))
-
-    harness.workspace.open(harness.directory)
-    #expect(harness.runtime.isEnabled(command))
-
-    harness.runtime.run(command)
-    #expect(!harness.workspace.isOpen)
+@Test func closingAWorkspaceIsNotOfferedAtAll() throws {
+    #expect(
+        CommandCatalog.command(for: .closeWorkspace) == nil,
+        "工作区已经对外收起，菜单里不该还有「解除工作区」"
+    )
 }
 
 /// 顺带守住 #19：从欢迎页执行「新建文档」之后，不能再滑回欢迎页。

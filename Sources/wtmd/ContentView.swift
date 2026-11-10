@@ -217,7 +217,7 @@ struct ContentView: View {
             // Section 承担。收放不用 Section(isExpanded:)——收起后内容为空的
             // Section 头部照常渲染（离屏渲染验证过），而且自己管状态不用跟
             // 系统的收放动画抢控制权。
-            if workspace.showsTree {
+            if WorkspaceFeature.isAvailable, workspace.showsTree {
                 Section {
                     if workspace.sectionExpanded {
                         WorkspaceTreeView()
@@ -762,12 +762,16 @@ struct ContentView: View {
             .help(paletteHint)
             .accessibilityLabel(t("Search Commands"))
 
-            Button {
-                workspace.openPanel()
-            } label: {
-                Label(t("Open Folder"), systemImage: "folder.badge.plus")
+            // 打开文件夹暂时不对外（`WorkspaceFeature`）：产品只留「打开一篇
+            // → 编辑 / 阅读」，这颗按钮跟着一起收起来。
+            if WorkspaceFeature.isAvailable {
+                Button {
+                    workspace.openPanel()
+                } label: {
+                    Label(t("Open Folder"), systemImage: "folder.badge.plus")
+                }
+                .help(t("Open a folder as the workspace (⌘⇧O)"))
             }
-            .help(t("Open a folder as the workspace (⌘⇧O)"))
 
             Button {
                 store.sidebarVisible.toggle()
@@ -865,12 +869,15 @@ struct WelcomeView: View {
                 .controlSize(.large)
                 .help(t("Open a Markdown file (⌘O)"))
 
-                Button(action: onOpenFolder) {
-                    Label(t("Open Folder"), systemImage: "folder.badge.plus")
-                        .padding(.horizontal, 8)
+                // 工作区暂时不对外：欢迎页只留「开始写作 / 打开文件」两个入口。
+                if WorkspaceFeature.isAvailable {
+                    Button(action: onOpenFolder) {
+                        Label(t("Open Folder"), systemImage: "folder.badge.plus")
+                            .padding(.horizontal, 8)
+                    }
+                    .controlSize(.large)
+                    .help(t("Open a folder as the workspace (⌘⇧O)"))
                 }
-                .controlSize(.large)
-                .help(t("Open a folder as the workspace (⌘⇧O)"))
             }
 
             Spacer()

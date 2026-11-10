@@ -109,18 +109,73 @@ struct SingleWindowTests {
         #expect(route == .newWindow, "没名字的字被一个文件顶掉就真没了")
     }
 
+    // MARK: - 主场景的替身窗
+
+    /// 系统为「打开文件」给主场景再开一个实例时，屏幕上会出现两扇渲染同一份
+    /// 模型的窗（#299）。收口点在 `WindowCoordinator.register`：原来那扇还在场，
+    /// 就把后挂上来的关掉。
+    ///
+    /// `.handlesExternalEvents(matching: [])` 不能再用——实测它让主窗压根不出现、
+    /// 事件转给第二个场景，一次启动攒出一排空窗（#302）。
+    @Test("主场景被系统再实例化一次：替身关掉，留原来那扇")
+    func aTwinMainWindowIsClosed() throws {
+        let rig = try SingleWindowRig()
+        defer { rig.cleanup() }
+
+        let first = Self.mainWindow(index: 1)
+        let twin = Self.mainWindow(index: 2)
+        defer {
+            first.close()
+            twin.close()
+        }
+
+        #expect(rig.coordinator.register(window: first, for: rig.model), "第一扇当然要收下")
+        #expect(rig.coordinator.window(for: rig.model.id) === first)
+
+        #expect(!rig.coordinator.register(window: twin, for: rig.model), "替身不该被收下")
+        #expect(
+            rig.coordinator.window(for: rig.model.id) === first,
+            "留下的该是读者一直在用的那扇"
+        )
+        #expect(!twin.isVisible, "替身必须从屏幕上消失")
+    }
+
+    /// 一扇带主场景编号的窗。编号是系统给的（`wtmd.main-AppWindow-N`），
+    /// 替身判定就认这个。
+    private static func mainWindow(index: Int) -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 900, height: 600),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.identifier = NSUserInterfaceItemIdentifier(
+            "\(WindowScene.main)-AppWindow-\(index)"
+        )
+        window.isReleasedWhenClosed = false
+        window.orderFront(nil)
+        return window
+    }
+
     // MARK: - 源码守卫
 
-    @Test("主场景不响应外部事件开新窗")
-    func theMainSceneRefusesExternalEventWindows() {
-        let source = Self.code(of: Self.sourceURL("wtmdApp.swift"))
+    @Test("主场景仍是组窗，且不再声明不接外部事件")
+    func theMainSceneKeepsOneWindowPerModel() {
+        let app = Self.code(of: Self.sourceURL("wtmdApp.swift"))
         #expect(
-            source.contains("WindowGroup(id: WindowScene.main)"),
+            app.contains("WindowGroup(id: WindowScene.main)"),
             "主场景还是那个组窗：改成 `Window` 会让外部打开文件时把主窗关掉"
         )
         #expect(
-            source.contains(".handlesExternalEvents(matching: [])"),
-            "少了这一句，系统每投递一次「打开文件」就多开一扇渲染同一个 primary 的窗"
+            !app.contains("handlesExternalEvents"),
+            "别再声明它：实测会把主窗挤掉、把事件转给第二个场景，攒出一排空窗"
+        )
+
+        let model = Self.code(of: Self.sourceURL("WindowModel.swift"))
+        #expect(model.contains("isTwinScene"), "替身窗的判据不见了，两扇一样的窗会回来")
+        #expect(
+            model.contains("window duplicate"),
+            "关替身时该留一行轨迹——这条只在真机上复现，下次复发要能看见"
         )
     }
 }
@@ -133,6 +188,7 @@ private struct SingleWindowRig {
     let root: URL
     let session: Session
     let model: WindowModel
+    let coordinator: WindowCoordinator
 
     init(startsBlank: Bool = false) throws {
         defaultsName = "wtmd.tests.single.\(UUID().uuidString)"
@@ -153,6 +209,12 @@ private struct SingleWindowRig {
             shared: shared,
             draftDirectory: root.appendingPathComponent("drafts", isDirectory: true),
             startsBlank: startsBlank
+        )
+        coordinator = WindowCoordinator(
+            shared: shared,
+            primary: model,
+            draftRoot: root.appendingPathComponent("drafts", isDirectory: true),
+            defaults: defaults
         )
     }
 
