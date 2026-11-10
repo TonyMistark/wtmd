@@ -1700,6 +1700,47 @@ edit→live→preview→split。
 探针**：测试里按指定 appearance 把编辑器画进位图存 PNG 直接看像素——
 截图权限拿不到时的可靠视觉验证手段。
 
+### v0.15.47 — 一个文件一扇窗：主场景不再生双胞胎（#299）
+
+用一个 md 启动 wtmd（一扇窗），再从 Finder 打开第二个 md：屏幕上**多出一扇窗，
+而且两扇窗显示的都是第二个文件**。两件事叠在一起才成了这个样子。
+
+#### 成因一：主场景会为「打开文件」事件再开一个自己
+
+主场景是 `WindowGroup(id: wtmd.main)`，它渲染的永远是同一个
+`coordinator.primary`。系统每投递一次「打开文件」（Finder 双击、右键「打开
+方式」、拖到 Dock 图标）都会顺手给这个组窗**再开一个实例**——那个实例渲染的
+还是这份模型，于是屏幕上出现两扇一模一样的窗，关掉哪一扇都分不清。
+
+真正的定论来自离屏探针：隔离 `CFFIXED_USER_HOME` 的探针包（独立 bundle id，
+LSEnvironment 传家目录）用真实 LaunchServices 投递文件，bridge 每挂上一扇窗
+记一行。修复前每打开一次文件就多一条 `model=<primary> win=<新窗口>`；顺带看到
+`NSApp.windows` 的计数每次 +1。
+
+试过把主场景换成 `Window`（天然单实例）：重复窗确实没了，但**外部打开文件时
+系统会把主窗关掉**——比原来更糟。回退，改走 `.handlesExternalEvents(matching: [])`：
+声明这个场景不响应任何外部事件开新窗，文件落在哪扇窗仍由 `OpenRequest` 决定。
+修复后同一个探针重放两轮，模型数不增、没有新的主场景窗。
+
+#### 成因二：欢迎页被当成「欠着一篇没名字的稿子」
+
+`WindowModel.holdsUnnamedWords` 原来只看 `text` 有没有字。欢迎页的正文就存在
+`text` 里（`DocumentStore.welcomeMarkdown`），于是**每扇刚打开的窗都算占着一篇
+没保存的稿子**，`OpenRequest.plan` 只好为交来的文件另开一扇——用文件启动本该
+用同一扇窗。
+
+改判两步：先要真有非空白的字（空白新稿不算），再要这些字不是欢迎页原文
+（`store.isUntouched`）。真正没落盘的字照样护着：关窗依旧「留一手」，前台窗里
+有未保存草稿时打开文件仍旧另开一扇。
+
+#### 测试
+
+999 → 1006（`SingleWindowTests` 7 条）：欢迎页不算欠稿、空白新稿不算、在白纸上
+写了字才算、在欢迎页上补了字也算；用文件启动 `plan` 返回 `.reuseCurrent`，真有
+未保存草稿仍旧 `.newWindow`；外加一条源码守卫——主场景必须保留
+`WindowGroup(id: WindowScene.main)` 与 `.handlesExternalEvents(matching: [])`
+（换成 `Window` 会关掉主窗，去掉这一句会重新多出窗户）。
+
 ### v0.15.46 — 单独打开一篇稿子，不把上一间书房拖进来（#296）
 
 右键「打开方式」打开一篇 md，窗口里却挂着上次那个工作区的文件树——那棵树跟
