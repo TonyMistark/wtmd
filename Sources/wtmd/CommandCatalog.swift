@@ -319,6 +319,9 @@ enum CommandCatalog {
             subtitle: nil
         ),
     ]
+    // 工作区暂时不对外（见 `WorkspaceFeature`）：那几条命令不给出定义，
+    // 菜单与 ⌘K 就都看不到它们，快捷键也没有菜单项可以派发。
+    .filter { !WorkspaceFeature.hiddenCommands.contains($0.kind) }
 
     /// One command per theme, so the palette can switch themes without leaving
     /// the keyboard.

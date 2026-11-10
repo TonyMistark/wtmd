@@ -46,14 +46,13 @@ struct wtmdApp: App {
 
     var body: some Scene {
         // 主窗只有一份模型（`coordinator.primary`），所以也只能有一扇真窗。
-        // 系统每投递一次「打开文件」都会顺手开一个组窗实例，那个实例渲染的还是
-        // 同一个 primary，屏幕上就多出一扇和主窗一模一样的窗（#299）。
-        // `handlesExternalEvents(matching: [])` 让它一扇都不开：文件交给
-        // `OpenRequest` 决定落在哪扇窗。
+        // 系统每投递一次「打开文件」都会给这个组窗再开一个实例，而它渲染的还是
+        // 同一个 primary（#299）。这里不声明 `.handlesExternalEvents(matching: [])`：
+        // 实测那一条反而让主窗不出现、事件转给第二个场景，一次启动攒出一排空窗
+        // （#302）。替身窗交给 `WindowCoordinator.register` 在挂钩那一步关掉。
         WindowGroup(id: WindowScene.main) {
             WindowRoot(model: coordinator.primary, coordinator: coordinator)
         }
-        .handlesExternalEvents(matching: [])
         .commands {
             AppMenus(shared: shared, coordinator: coordinator)
         }

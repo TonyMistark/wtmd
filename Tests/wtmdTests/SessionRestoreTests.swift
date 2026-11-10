@@ -204,13 +204,14 @@ private func preserveRecentFiles() -> () -> Void {
         to: chapter.appendingPathComponent("一.md"), atomically: true, encoding: .utf8
     )
 
-    let first = WorkspaceStore(session: harness.session)
+    let first = WorkspaceStore(session: harness.session, restoresOnLaunch: true)
     first.open(harness.root)
     first.setExpanded(chapter, to: true)
     #expect(harness.session.workspaceURL?.path == harness.root.path)
 
-    // 下一次启动
-    let second = WorkspaceStore(session: harness.session)
+    // 下一次启动。恢复本身仍在，只是平时被 `WorkspaceFeature` 关着：
+    // 这条用例验的是恢复逻辑，显式打开它。
+    let second = WorkspaceStore(session: harness.session, restoresOnLaunch: true)
     #expect(second.isOpen)
     #expect(second.root?.path == harness.root.path)
     #expect(second.isExpanded(chapter))
@@ -225,7 +226,7 @@ private func preserveRecentFiles() -> () -> Void {
 
     harness.session.setWorkspace(harness.root.appendingPathComponent("不存在的目录"))
 
-    let store = WorkspaceStore(session: harness.session)
+    let store = WorkspaceStore(session: harness.session, restoresOnLaunch: true)
 
     #expect(!store.isOpen)
     #expect(harness.session.workspaceURL == nil)

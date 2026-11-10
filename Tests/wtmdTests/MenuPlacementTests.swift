@@ -47,8 +47,11 @@ struct MenuPlacementTests {
         })
 
         #expect(!kinds.isEmpty, "一条菜单命令都没扫到，正则和源码对不上了")
+        // 工作区暂时不对外：菜单结构里仍写着那三条，目录里刻意没有它们。
+        let hidden = Set(WorkspaceFeature.hiddenCommands.map(\.id))
         for kind in kinds.sorted() {
             let id = try #require(ids[kind], "菜单里写了 .\(kind)，但没有这种命令")
+            if hidden.contains(id) { continue }
             let catalogued = CommandCatalog.staticCommands.contains { $0.kind.id == id }
             #expect(catalogued, "菜单里写了 .\(kind)（\(id)），但目录里没有它——这一项不会出现")
         }

@@ -132,7 +132,10 @@ private final class Desk {
 
     #expect(restored.store.fileURL.map { PathKey.isSame($0, file) } == true)
     #expect(restored.store.text.contains("正文"))
-    #expect(restored.workspace.root.map { PathKey.isSame($0, folder) } == true)
+    // 工作区暂时不对外（`WorkspaceFeature`）：这一窗回来只带文件与位置，
+    // 不再把上次的书房扫回来。恢复逻辑本身由 `SessionRestoreTests` 钉着，
+    // 会话里那间书房的路径也照旧留着。
+    #expect(restored.workspace.root == nil)
     #expect(Session(window: id, defaults: desk.defaults).position(for: file) != nil)
 
     // 位置在视图建起来那一刻回填：文档换了代数，账本里就该是这篇的旧位置。
